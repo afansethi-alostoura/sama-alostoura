@@ -1,0 +1,23 @@
+# Next.js
+.next/
+out/
+node_modules/
+
+# Env files (contain secrets)
+.env
+.env.local
+.env.*.local
+
+# QuickBooks OAuth tokens & data cache (contain secrets)
+.qb-tokens.json
+.qb-data.json
+.qb-oauth-state.tmp
+
+# Debug route (remove before production)
+app/api/debug/
+
+# OS
+.DS_Store
+Thumbs.db
+
+.vercel
