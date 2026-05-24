@@ -1,157 +1,98 @@
 import Link from 'next/link'
-import {
-  Building2, TrendingUp, Wallet, AlertCircle, ArrowRight,
-  CheckCircle2, Clock, PauseCircle,
-} from 'lucide-react'
-import { DEMO_PROJECTS } from '@/lib/demo-data'
-import { formatCurrency, progressBarColor, statusBadge, statusLabel } from '@/lib/utils'
-import { CeoBriefing } from '@/components/dashboard/ceo-briefing'
-
-function StatCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color: string }) {
-  return (
-    <div className="bg-white rounded-xl border border-slate-100 p-5 shadow-sm">
-      <p className="text-slate-500 text-sm font-medium">{label}</p>
-      <p className={`text-2xl font-bold mt-1 ${color}`}>{value}</p>
-      {sub && <p className="text-slate-400 text-xs mt-1">{sub}</p>}
-    </div>
-  )
-}
+import { Building2, Calculator, TrendingUp, Home } from 'lucide-react'
 
 export default function DashboardPage() {
-  const projects       = DEMO_PROJECTS
-  const active         = projects.filter(p => p.status === 'active')
-  const totalContract  = projects.reduce((s, p) => s + p.contract_value, 0)
-  const totalReceived  = projects.reduce((s, p) => s + p.received_amount, 0)
-  const totalOutstanding = projects
-    .filter(p => p.status === 'active')
-    .reduce((s, p) => s + (p.contract_value - p.received_amount), 0)
-
-  const today = new Date().toLocaleDateString('en-AE', {
-    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-  })
-
   return (
-    <div className="p-8">
-      {/* Header */}
-      <div className="mb-8">
-        <p className="text-slate-500 text-sm">{today}</p>
-        <h1 className="text-2xl font-bold text-slate-900 mt-0.5">Good morning</h1>
-        <p className="text-slate-600 text-sm mt-1">Sama Alostoura Building Contracting LLC — Dubai, UAE</p>
-      </div>
+    <div className="ml-64 min-h-screen bg-slate-50 p-8">
+      <div className="max-w-6xl mx-auto">
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-4xl font-bold text-slate-900">Welcome to Sama Alostoura AI OS</h1>
+          <p className="text-slate-600 mt-2">Construction Management & Estimation System</p>
+        </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-4 gap-4 mb-8">
-        <StatCard
-          label="Active Projects"
-          value={String(active.length)}
-          sub={`${projects.length} total`}
-          color="text-slate-900"
-        />
-        <StatCard
-          label="Total Contract Value"
-          value={formatCurrency(totalContract)}
-          sub="All projects"
-          color="text-slate-900"
-        />
-        <StatCard
-          label="Total Received"
-          value={formatCurrency(totalReceived)}
-          sub={`${Math.round((totalReceived / totalContract) * 100)}% collected`}
-          color="text-emerald-600"
-        />
-        <StatCard
-          label="Outstanding"
-          value={formatCurrency(totalOutstanding)}
-          sub="Active projects only"
-          color="text-amber-600"
-        />
-      </div>
+        {/* Quick Access */}
+        <div className="grid grid-cols-3 gap-6 mb-12">
+          <Link href="/projects">
+            <div className="bg-white rounded-xl border border-slate-200 p-8 hover:shadow-lg transition-all cursor-pointer">
+              <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mb-4">
+                <Building2 className="w-6 h-6 text-blue-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-slate-900">Projects</h3>
+              <p className="text-slate-500 text-sm mt-2">Manage construction projects, track progress and finances</p>
+            </div>
+          </Link>
 
-      {/* CEO AI Briefing */}
-      <CeoBriefing projects={projects} />
+          <Link href="/estimation">
+            <div className="bg-white rounded-xl border border-slate-200 p-8 hover:shadow-lg transition-all cursor-pointer">
+              <div className="w-12 h-12 bg-emerald-100 rounded-lg flex items-center justify-center mb-4">
+                <Calculator className="w-6 h-6 text-emerald-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-slate-900">Estimation Engineer</h3>
+              <p className="text-slate-500 text-sm mt-2">Generate accurate BOQs from architectural drawings using AI</p>
+            </div>
+          </Link>
 
-      {/* Projects Grid */}
-      <div className="mt-8">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-slate-900">Active Projects</h2>
-          <Link href="/projects" className="text-sm text-brand-600 hover:text-brand-700 flex items-center gap-1 font-medium">
-            View all <ArrowRight className="w-3.5 h-3.5" />
+          <Link href="/accounting">
+            <div className="bg-white rounded-xl border border-slate-200 p-8 hover:shadow-lg transition-all cursor-pointer">
+              <div className="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center mb-4">
+                <TrendingUp className="w-6 h-6 text-amber-600" />
+              </div>
+              <h3 className="text-lg font-semibold text-slate-900">Accounting</h3>
+              <p className="text-slate-500 text-sm mt-2">Track finances, payments, and financial reporting</p>
+            </div>
           </Link>
         </div>
 
-        <div className="grid grid-cols-1 gap-4">
-          {projects.map(project => {
-            const outstanding = project.contract_value - project.received_amount
-            const retention   = project.received_amount * 0.1
+        {/* Getting Started */}
+        <div className="bg-white rounded-xl border border-slate-200 p-8">
+          <h2 className="text-2xl font-bold text-slate-900 mb-6">Getting Started</h2>
+          <div className="space-y-4">
+            <div className="flex gap-4">
+              <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center flex-shrink-0 font-semibold">1</div>
+              <div>
+                <h3 className="font-semibold text-slate-900">Upload a Drawing</h3>
+                <p className="text-slate-600 text-sm">Go to Estimation Engineer and upload your architectural drawing (PDF, JPG, PNG, DWG, or DXF)</p>
+              </div>
+            </div>
+            <div className="flex gap-4">
+              <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center flex-shrink-0 font-semibold">2</div>
+              <div>
+                <h3 className="font-semibold text-slate-900">AI Extraction</h3>
+                <p className="text-slate-600 text-sm">Our AI analyzes the drawing and extracts dimensions to generate a complete BOQ automatically</p>
+              </div>
+            </div>
+            <div className="flex gap-4">
+              <div className="w-8 h-8 rounded-full bg-amber-600 text-white flex items-center justify-center flex-shrink-0 font-semibold">3</div>
+              <div>
+                <h3 className="font-semibold text-slate-900">Review & Export</h3>
+                <p className="text-slate-600 text-sm">Edit quantities and rates as needed, then export a professional PDF BOQ with company branding</p>
+              </div>
+            </div>
+          </div>
+        </div>
 
-            return (
-              <Link key={project.id} href={`/projects/${project.id}`}>
-                <div className="bg-white rounded-xl border border-slate-100 p-5 shadow-sm hover:shadow-md hover:border-brand-200 transition-all group">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 bg-brand-50 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
-                        <Building2 className="w-5 h-5 text-brand-600" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-semibold text-slate-900 group-hover:text-brand-600 transition-colors">
-                            {project.name} Villa
-                          </h3>
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ring-1 ${statusBadge(project.status)}`}>
-                            {statusLabel(project.status)}
-                          </span>
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ring-1 ${statusBadge(project.type)}`}>
-                            {statusLabel(project.type)}
-                          </span>
-                        </div>
-                        <p className="text-slate-500 text-sm mt-0.5">{project.location}</p>
-                        {project.current_stage && (
-                          <p className="text-slate-600 text-xs mt-1 flex items-center gap-1">
-                            <Clock className="w-3 h-3" /> {project.current_stage}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="text-right flex-shrink-0">
-                      <p className="text-slate-900 font-semibold">{formatCurrency(project.contract_value)}</p>
-                      <p className="text-slate-500 text-xs mt-0.5">Contract value</p>
-                    </div>
-                  </div>
-
-                  {/* Progress */}
-                  <div className="mt-4">
-                    <div className="flex items-center justify-between text-xs mb-1.5">
-                      <span className="text-slate-500">Progress</span>
-                      <span className="font-semibold text-slate-700">{project.progress_percent}%</span>
-                    </div>
-                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all ${progressBarColor(project.progress_percent)}`}
-                        style={{ width: `${project.progress_percent}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Financial Row */}
-                  <div className="mt-4 grid grid-cols-3 gap-3">
-                    <div className="bg-emerald-50 rounded-lg px-3 py-2">
-                      <p className="text-emerald-700 font-semibold text-sm">{formatCurrency(project.received_amount)}</p>
-                      <p className="text-emerald-600 text-xs">Received</p>
-                    </div>
-                    <div className="bg-amber-50 rounded-lg px-3 py-2">
-                      <p className="text-amber-700 font-semibold text-sm">{formatCurrency(outstanding)}</p>
-                      <p className="text-amber-600 text-xs">Outstanding</p>
-                    </div>
-                    <div className="bg-slate-50 rounded-lg px-3 py-2">
-                      <p className="text-slate-700 font-semibold text-sm">{formatCurrency(retention)}</p>
-                      <p className="text-slate-500 text-xs">Retention (10%)</p>
-                    </div>
-                  </div>
-                </div>
-              </Link>
-            )
-          })}
+        {/* Features */}
+        <div className="mt-12">
+          <h2 className="text-2xl font-bold text-slate-900 mb-6">Available Features</h2>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-white rounded-lg border border-slate-200 p-4">
+              <h4 className="font-semibold text-slate-900 mb-2">✓ Estimation Engineer (Phase 1)</h4>
+              <p className="text-sm text-slate-600">AI-powered BOQ generation from drawings with auto-calculated quantities and professional PDF export</p>
+            </div>
+            <div className="bg-white rounded-lg border border-slate-200 p-4">
+              <h4 className="font-semibold text-slate-900 mb-2">✓ Projects Management</h4>
+              <p className="text-sm text-slate-600">Track construction projects, progress, and financial status in real-time</p>
+            </div>
+            <div className="bg-white rounded-lg border border-slate-200 p-4">
+              <h4 className="font-semibold text-slate-900 mb-2">✓ Accounting</h4>
+              <p className="text-sm text-slate-600">Financial tracking, payment schedules, and reporting</p>
+            </div>
+            <div className="bg-white rounded-lg border border-slate-200 p-4">
+              <h4 className="font-semibold text-slate-900 mb-2">Future: More Modules</h4>
+              <p className="text-sm text-slate-600">Procurement, HR, Site Reports, and more coming soon</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
