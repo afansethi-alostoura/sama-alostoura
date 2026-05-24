@@ -1,5 +1,3 @@
-'use server'
-
 import { RateLibraryItem } from '@/types'
 import { readStore, writeStore } from './projects-store'
 

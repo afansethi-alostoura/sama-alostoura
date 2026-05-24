@@ -3,10 +3,8 @@
  * Saved to .projects-data.json in the project root.
  * Upgrade path: swap readStore/writeStore for Supabase calls later.
  *
- * Server-only module - cannot be imported from client components
+ * @server Server-only module - only runs on Node.js runtime
  */
-'use server'
-
 import fs   from 'fs'
 import path from 'path'
 import type { Project } from '@/types'
