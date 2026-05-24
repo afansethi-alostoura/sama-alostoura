@@ -2,6 +2,18 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getBOQ } from '@/lib/boq-store'
 import { groupBySection } from '@/lib/boq-store'
 
+// HTML escape function for safe template literals
+function escapeHtml(text: string): string {
+  const map: { [key: string]: string } = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+  }
+  return text.replace(/[&<>"']/g, (char) => map[char] || char)
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
@@ -160,9 +172,9 @@ export async function GET(request: NextRequest) {
   </div>
 
   <div class="metadata">
-    <div>Drawing: ${boq.drawing_filename}</div>
+    <div>Drawing: ${escapeHtml(boq.drawing_filename)}</div>
     <div>Date: ${new Date(boq.createdAt).toLocaleDateString()}</div>
-    <div>BOQ ID: ${boq.id}</div>
+    <div>BOQ ID: ${escapeHtml(boq.id)}</div>
   </div>
 `
 
@@ -173,7 +185,7 @@ export async function GET(request: NextRequest) {
 
       html += `
   <div class="section">
-    <div class="section-title">${section.toUpperCase()}</div>
+    <div class="section-title">${escapeHtml(section).toUpperCase()}</div>
     <table>
       <thead>
         <tr>
@@ -192,9 +204,9 @@ export async function GET(request: NextRequest) {
         html += `
         <tr>
           <td>${item.itemNo}</td>
-          <td>${item.description}</td>
+          <td>${escapeHtml(item.description)}</td>
           <td class="text-right">${item.quantity}</td>
-          <td class="text-right">${item.unit}</td>
+          <td class="text-right">${escapeHtml(item.unit)}</td>
           <td class="text-right">${item.unitRate.toFixed(2)}</td>
           <td class="text-right">${item.amount.toFixed(2)}</td>
         </tr>
@@ -203,7 +215,7 @@ export async function GET(request: NextRequest) {
 
       html += `
         <tr class="subtotal-row">
-          <td colspan="5" style="text-align: right;">Subtotal for ${section}:</td>
+          <td colspan="5" style="text-align: right;">Subtotal for ${escapeHtml(section)}:</td>
           <td class="text-right">${sectionSubtotal.toFixed(2)}</td>
         </tr>
       </tbody>
