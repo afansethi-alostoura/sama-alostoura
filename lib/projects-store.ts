@@ -2,7 +2,11 @@
  * File-based project store — supplements demo data with real projects.
  * Saved to .projects-data.json in the project root.
  * Upgrade path: swap readStore/writeStore for Supabase calls later.
+ *
+ * Server-only module - cannot be imported from client components
  */
+'use server'
+
 import fs   from 'fs'
 import path from 'path'
 import type { Project } from '@/types'

@@ -1,3 +1,5 @@
+'use server'
+
 import { NextRequest, NextResponse } from 'next/server'
 import fs from 'fs'
 import { getAllRates } from '@/lib/rates-store'

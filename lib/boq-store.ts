@@ -1,3 +1,5 @@
+'use server'
+
 import { BOQ, BOQItem } from '@/types'
 import { readStore, writeStore } from './projects-store'
 
