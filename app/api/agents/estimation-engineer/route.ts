@@ -1,17 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { Anthropic } from '@anthropic-ai/sdk'
 import fs from 'fs'
-import path from 'path'
 import { getAllRates } from '@/lib/rates-store'
 import { BOQItem } from '@/types'
-
-const client = new Anthropic()
+import { anthropic } from '@/lib/anthropic'
 
 export async function POST(request: NextRequest) {
+  let filepath = ''
+  let body: any = null
+
   try {
-    const body = await request.json()
+    body = await request.json()
     const {
-      filepath,
+      filepath: fp,
       filename,
       filetype,
       projectId,
@@ -21,6 +21,7 @@ export async function POST(request: NextRequest) {
       rooms,
       additionalContext
     } = body
+    filepath = fp
 
     if (!filepath || !filename || !filetype) {
       return NextResponse.json(
@@ -126,7 +127,7 @@ Include a "notes" field for any assumptions or items not found in rate library.
 Return ONLY the JSON array, no other text.`
 
     // Call Claude Vision API
-    const response = await client.messages.create({
+    const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-6',
       max_tokens: 4000,
       system: systemPrompt,
@@ -199,9 +200,9 @@ Extract all dimensions and generate complete BOQ with accurate quantities and ra
     console.error('Error in estimation agent:', error)
 
     // Clean up file if it exists
-    if (body?.filepath && fs.existsSync(body.filepath)) {
+    if (filepath && fs.existsSync(filepath)) {
       try {
-        fs.unlinkSync(body.filepath)
+        fs.unlinkSync(filepath)
       } catch (e) {
         console.error('Error cleaning up file:', e)
       }

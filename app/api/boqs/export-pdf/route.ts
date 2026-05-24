@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import PDFDocument from 'pdfkit'
-import { Readable } from 'stream'
 import { getBOQ } from '@/lib/boq-store'
 import { groupBySection } from '@/lib/boq-store'
 
@@ -24,15 +23,16 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Create PDF
+    // Create PDF document
     const doc = new PDFDocument({
       size: 'A4',
-      margin: 50
+      margin: 50,
+      bufferPages: true
     })
 
-    // Convert stream to buffer
-    let buffers: Buffer[] = []
-    doc.on('data', (data) => buffers.push(data))
+    // Collect PDF data
+    const chunks: Buffer[] = []
+    doc.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
 
     // Header
     doc.fontSize(18).font('Helvetica-Bold').text('SAMA ALOSTOURA', { align: 'center' })
@@ -160,21 +160,31 @@ export async function GET(request: NextRequest) {
     doc.text('This BOQ is valid for 30 days from date of issue. Prices subject to market conditions.', { align: 'center' })
     doc.text(`Generated on ${new Date().toLocaleString()}`, { align: 'center' })
 
-    // Finish PDF
+    // Finish PDF and return response
     doc.end()
 
-    // Wait for PDF to be fully generated
-    return new Promise((resolve) => {
+    // Return PDF response
+    return new Promise<NextResponse>((resolve, reject) => {
       doc.on('end', () => {
-        const buffer = Buffer.concat(buffers)
-        resolve(
-          new NextResponse(buffer, {
-            headers: {
-              'Content-Type': 'application/pdf',
-              'Content-Disposition': `attachment; filename="BOQ_${boqId}.pdf"`
-            }
-          })
-        )
+        try {
+          const pdfBuffer = Buffer.concat(chunks)
+          resolve(
+            new NextResponse(pdfBuffer, {
+              status: 200,
+              headers: {
+                'Content-Type': 'application/pdf',
+                'Content-Disposition': `attachment; filename="BOQ_${boqId}.pdf"`,
+                'Content-Length': pdfBuffer.length.toString()
+              }
+            })
+          )
+        } catch (err) {
+          reject(err)
+        }
+      })
+
+      doc.on('error', (err) => {
+        reject(err)
       })
     })
   } catch (error) {
