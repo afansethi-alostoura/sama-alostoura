@@ -47,10 +47,22 @@ export default function LoginPage() {
       </div>
 
       {/* Login Card */}
-      <div className="relative w-full max-w-2xl">
+      <div className="relative w-full max-w-md">
         <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
-          {/* Header with branding */}
-          <div className="bg-white px-8 py-10 text-center border-b border-slate-100">
+          {/* Header with logo and branding */}
+          <div className="bg-gradient-to-br from-brand-50 to-white px-8 py-12 text-center border-b border-slate-100">
+            {/* Company Logo - Add your logo to public/logo.png */}
+            <div className="flex justify-center mb-6 h-16">
+              <img
+                src="/logo.png"
+                alt="Sama Alostoura"
+                className="h-full w-auto object-contain"
+                onError={(e) => {
+                  // Hide logo if file not found
+                  (e.target as HTMLImageElement).style.display = 'none'
+                }}
+              />
+            </div>
             <h1 className="text-3xl font-bold text-slate-900">Sama Alostoura</h1>
             <p className="text-slate-600 text-sm mt-2">AI Construction OS</p>
             <p className="text-slate-500 text-xs mt-3">Secure Construction Management System</p>

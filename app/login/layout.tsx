@@ -9,7 +9,8 @@ export const metadata: Metadata = {
 export default function LoginLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>
+      <body className="antialiased">
+        {/* Clean login page - no sidebar, no navigation */}
         {children}
       </body>
     </html>
