@@ -50,12 +50,17 @@ export default function CreateEstimationPage() {
         body: formData,
       })
 
-      if (!uploadRes.ok) {
-        const data = await uploadRes.json()
-        throw new Error(data.error || 'Upload failed')
+      let uploadData: any
+      try {
+        uploadData = await uploadRes.json()
+      } catch (e) {
+        const text = await uploadRes.text()
+        throw new Error(`Invalid response from upload: ${text.substring(0, 100)}`)
       }
 
-      const uploadData = await uploadRes.json()
+      if (!uploadRes.ok || !uploadData.success) {
+        throw new Error(uploadData.error || 'Upload failed')
+      }
 
       const extractRes = await fetch('/api/agents/estimation-engineer', {
         method: 'POST',

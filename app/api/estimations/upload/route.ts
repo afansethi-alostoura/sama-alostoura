@@ -7,28 +7,22 @@ const UPLOAD_DIR = path.join(process.cwd(), '.uploads')
 const ALLOWED_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'dwg', 'dxf', 'txt']
 const MAX_FILE_SIZE = 50 * 1024 * 1024 // 50MB
 
-// Ensure upload directory exists
-async function ensureUploadDir() {
+export async function POST(request: NextRequest) {
+  let filepath = ''
+
   try {
+    // Create upload directory if it doesn't exist
     if (!fs.existsSync(UPLOAD_DIR)) {
       fs.mkdirSync(UPLOAD_DIR, { recursive: true })
     }
-  } catch (error) {
-    console.error('Error creating upload directory:', error)
-    throw error
-  }
-}
 
-export async function POST(request: NextRequest) {
-  try {
-    await ensureUploadDir()
-
+    // Parse form data
     const formData = await request.formData()
     const file = formData.get('file') as File | null
 
     if (!file) {
       return NextResponse.json(
-        { error: 'No file provided' },
+        { success: false, error: 'No file provided' },
         { status: 400 }
       )
     }
@@ -36,7 +30,7 @@ export async function POST(request: NextRequest) {
     // Validate file size
     if (file.size > MAX_FILE_SIZE) {
       return NextResponse.json(
-        { error: `File size exceeds ${MAX_FILE_SIZE / 1024 / 1024}MB limit` },
+        { success: false, error: `File too large. Max size: ${MAX_FILE_SIZE / 1024 / 1024}MB` },
         { status: 400 }
       )
     }
@@ -45,7 +39,7 @@ export async function POST(request: NextRequest) {
     const ext = file.name.split('.').pop()?.toLowerCase()
     if (!ext || !ALLOWED_EXTENSIONS.includes(ext)) {
       return NextResponse.json(
-        { error: `Invalid file type. Allowed: ${ALLOWED_EXTENSIONS.join(', ')}` },
+        { success: false, error: `Invalid file type. Allowed: ${ALLOWED_EXTENSIONS.join(', ')}` },
         { status: 400 }
       )
     }
@@ -54,44 +48,47 @@ export async function POST(request: NextRequest) {
     const timestamp = Date.now()
     const random = Math.random().toString(36).substr(2, 9)
     const filename = `${timestamp}_${random}_${file.name}`
-    const filepath = path.join(UPLOAD_DIR, filename)
+    filepath = path.join(UPLOAD_DIR, filename)
 
-    try {
-      // Save file
-      const bytes = await file.arrayBuffer()
-      await writeFile(filepath, Buffer.from(bytes))
+    // Save file
+    const bytes = await file.arrayBuffer()
+    const buffer = Buffer.from(bytes)
+    await writeFile(filepath, buffer)
 
-      // Verify file was written
-      if (!fs.existsSync(filepath)) {
-        throw new Error('File was not written successfully')
-      }
-
-      // Return file info for AI processing
-      return NextResponse.json({
-        success: true,
-        filename: file.name,
-        savedAs: filename,
-        filepath,
-        size: file.size,
-        type: ext,
-        message: 'File uploaded successfully. Ready for AI extraction.'
-      }, { status: 201 })
-    } catch (writeError) {
-      console.error('Error writing file to disk:', writeError)
-      // Clean up if file partially written
-      try {
-        if (fs.existsSync(filepath)) {
-          fs.unlinkSync(filepath)
-        }
-      } catch (e) {
-        console.error('Error cleaning up file:', e)
-      }
-      throw writeError
+    // Verify file exists
+    if (!fs.existsSync(filepath)) {
+      return NextResponse.json(
+        { success: false, error: 'File save failed' },
+        { status: 500 }
+      )
     }
+
+    // Return success response
+    return NextResponse.json({
+      success: true,
+      filename: file.name,
+      savedAs: filename,
+      filepath: filepath,
+      size: file.size,
+      type: ext,
+      message: 'File uploaded successfully'
+    }, { status: 201 })
+
   } catch (error) {
-    console.error('Error uploading file:', error)
+    // Clean up if file was partially created
+    if (filepath && fs.existsSync(filepath)) {
+      try {
+        fs.unlinkSync(filepath)
+      } catch (e) {
+        // Ignore cleanup errors
+      }
+    }
+
+    console.error('Upload error:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+
     return NextResponse.json(
-      { error: 'Failed to upload file: ' + (error instanceof Error ? error.message : 'Unknown error') },
+      { success: false, error: `Upload failed: ${errorMessage}` },
       { status: 500 }
     )
   }
