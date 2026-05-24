@@ -7,7 +7,6 @@ import {
   LogOut,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { SamaLogoSmall } from '@/components/logo/sama-logo'
 
 const NAV_ITEMS = [
   { label: 'CEO Dashboard',  href: '/',             icon: LayoutDashboard, phase: 1 },
@@ -38,9 +37,10 @@ export function Sidebar() {
 
   return (
     <aside className="fixed left-0 top-0 h-screen w-64 bg-slate-900 flex flex-col z-40 shadow-xl">
-      {/* Logo */}
-      <div className="px-3 py-4 border-b border-slate-800">
-        <SamaLogoSmall className="w-full h-auto" />
+      {/* Branding */}
+      <div className="px-5 py-5 border-b border-slate-800">
+        <h1 className="text-white font-bold text-lg">Sama Alostoura</h1>
+        <p className="text-slate-400 text-xs mt-1">AI Construction OS</p>
       </div>
 
       {/* Navigation */}
