@@ -1,7 +1,8 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { HardHat, AlertCircle, Loader2 } from 'lucide-react'
+import { AlertCircle, Loader2 } from 'lucide-react'
+import { SamaLogo } from '@/components/logo/sama-logo'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -47,18 +48,14 @@ export default function LoginPage() {
       </div>
 
       {/* Login Card */}
-      <div className="relative w-full max-w-md">
+      <div className="relative w-full max-w-2xl">
         <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
           {/* Header with branding */}
-          <div className="bg-gradient-to-r from-slate-900 to-brand-900 px-8 py-12 text-center">
+          <div className="bg-white px-8 py-8 text-center border-b border-slate-100">
             <div className="flex justify-center mb-4">
-              <div className="w-14 h-14 bg-brand-500 rounded-xl flex items-center justify-center shadow-lg">
-                <HardHat className="w-8 h-8 text-white" />
-              </div>
+              <SamaLogo className="w-full h-auto max-w-sm" />
             </div>
-            <h1 className="text-2xl font-bold text-white">Sama Alostoura</h1>
-            <p className="text-brand-200 text-sm mt-1">AI Construction OS</p>
-            <p className="text-slate-300 text-xs mt-3">Secure Access — Project Management</p>
+            <p className="text-slate-600 text-sm mt-4">Secure Construction Management System</p>
           </div>
 
           {/* Form */}
@@ -130,8 +127,7 @@ export default function LoginPage() {
 
         {/* Info text below */}
         <div className="mt-6 text-center text-sm text-slate-300">
-          <p>Secure Construction Management System</p>
-          <p className="text-xs text-slate-400 mt-1">Your projects, payments, and progress — protected</p>
+          <p className="text-xs text-slate-400">Your projects, payments, and progress — protected</p>
         </div>
       </div>
     </div>

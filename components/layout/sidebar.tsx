@@ -4,9 +4,10 @@ import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard, Building2, Calculator, Wallet, ShoppingCart,
   FolderOpen, ClipboardList, Wrench, Users, UserPlus, Settings,
-  HardHat, LogOut,
+  LogOut,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { SamaLogoSmall } from '@/components/logo/sama-logo'
 
 const NAV_ITEMS = [
   { label: 'CEO Dashboard',  href: '/',             icon: LayoutDashboard, phase: 1 },
@@ -38,16 +39,8 @@ export function Sidebar() {
   return (
     <aside className="fixed left-0 top-0 h-screen w-64 bg-slate-900 flex flex-col z-40 shadow-xl">
       {/* Logo */}
-      <div className="px-5 py-5 border-b border-slate-800">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 bg-brand-500 rounded-lg flex items-center justify-center flex-shrink-0">
-            <HardHat className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <p className="text-white font-bold text-sm leading-tight">Sama Alostoura</p>
-            <p className="text-slate-400 text-xs leading-tight">AI Construction OS</p>
-          </div>
-        </div>
+      <div className="px-3 py-4 border-b border-slate-800">
+        <SamaLogoSmall className="w-full h-auto" />
       </div>
 
       {/* Navigation */}
