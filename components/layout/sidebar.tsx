@@ -12,7 +12,7 @@ const NAV_ITEMS = [
   { label: 'CEO Dashboard',  href: '/',             icon: LayoutDashboard, phase: 1 },
   { label: 'Projects',       href: '/projects',     icon: Building2,       phase: 1 },
   { label: 'Accounting',     href: '/accounting',   icon: Wallet,          phase: 1 },
-  { label: 'Estimation',     href: '/estimation',   icon: Calculator,      phase: 3 },
+  { label: 'Estimation',     href: '/estimation',   icon: Calculator,      phase: 1 },
   { label: 'Procurement',    href: '/procurement',  icon: ShoppingCart,    phase: 4 },
   { label: 'Documents',      href: '/documents',    icon: FolderOpen,      phase: 4 },
   { label: 'Site Reports',   href: '/reports',      icon: ClipboardList,   phase: 4 },

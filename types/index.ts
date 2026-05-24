@@ -106,3 +106,38 @@ export interface Supplier {
   rating: number | null
   payment_terms: string | null
 }
+
+// Estimation Engineer / BOQ Types
+export interface RateLibraryItem {
+  id: string
+  description: string
+  unit: string
+  unitRate: number
+  category: string // 'Mobilization', 'Excavation', 'Substructure', etc.
+  notes?: string
+}
+
+export interface BOQItem {
+  id: string
+  itemNo: number
+  section: string
+  description: string
+  quantity: number
+  unit: string
+  unitRate: number
+  amount: number // qty × rate
+  notes?: string
+}
+
+export interface BOQ {
+  id: string
+  projectId: string
+  drawing_filename: string
+  extracted_dimensions?: string
+  items: BOQItem[]
+  subtotal: number
+  vat?: number
+  total: number
+  createdAt: string
+  updatedAt: string
+}
