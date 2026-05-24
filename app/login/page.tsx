@@ -2,7 +2,6 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AlertCircle, Loader2 } from 'lucide-react'
-import { CompanyLogo } from '@/components/logo/company-logo'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -51,9 +50,10 @@ export default function LoginPage() {
       <div className="relative w-full max-w-2xl">
         <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
           {/* Header with branding */}
-          <div className="bg-white px-8 py-8 text-center border-b border-slate-100">
-            <CompanyLogo />
-            <p className="text-slate-600 text-sm mt-4">Secure Construction Management System</p>
+          <div className="bg-white px-8 py-10 text-center border-b border-slate-100">
+            <h1 className="text-3xl font-bold text-slate-900">Sama Alostoura</h1>
+            <p className="text-slate-600 text-sm mt-2">AI Construction OS</p>
+            <p className="text-slate-500 text-xs mt-3">Secure Construction Management System</p>
           </div>
 
           {/* Form */}
