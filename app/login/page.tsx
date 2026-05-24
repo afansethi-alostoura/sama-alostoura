@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AlertCircle, Loader2 } from 'lucide-react'
-import { SamaLogo } from '@/components/logo/sama-logo'
+import { CompanyLogo } from '@/components/logo/company-logo'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -52,9 +52,7 @@ export default function LoginPage() {
         <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
           {/* Header with branding */}
           <div className="bg-white px-8 py-8 text-center border-b border-slate-100">
-            <div className="flex justify-center mb-4">
-              <SamaLogo className="w-full h-auto max-w-sm" />
-            </div>
+            <CompanyLogo />
             <p className="text-slate-600 text-sm mt-4">Secure Construction Management System</p>
           </div>
 
