@@ -1,35 +1,52 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { useParams } from 'next/navigation'
+import { useRouter, useParams } from 'next/navigation'
+import { Edit2, Save, Trash2, Plus, Download, ArrowLeft, AlertCircle } from 'lucide-react'
 import Link from 'next/link'
-import { Save, Download, Plus, Trash2, Home, AlertCircle, CheckCircle, Loader2 } from 'lucide-react'
-import { BOQ, BOQItem } from '@/types'
-import { groupBySection } from '@/lib/boq-store'
 
-export default function EditBOQPage() {
+interface BOQItem {
+  id: string
+  itemNo: number
+  section: string
+  description: string
+  quantity: number
+  unit: string
+  unitRate: number
+  amount: number
+  notes?: string
+}
+
+interface BOQ {
+  id: string
+  projectId: string
+  drawing_filename: string
+  items: BOQItem[]
+  subtotal: number
+  vat: number
+  total: number
+}
+
+export default function BOQEditorPage() {
+  const router = useRouter()
   const params = useParams()
-  const boqId = params?.id as string
-
-  const [boq, setBoq] = useState<BOQ | null>(null)
+  const boqId = params.id as string
+  
+  const [boq, setBOQ] = useState<BOQ | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
-  const [editingItemId, setEditingItemId] = useState<string | null>(null)
+  const [editingCell, setEditingCell] = useState<string | null>(null)
+  const [editValue, setEditValue] = useState('')
 
   useEffect(() => {
-    if (!boqId) return
     fetchBOQ()
   }, [boqId])
 
   async function fetchBOQ() {
-    if (!boqId) return
     try {
-      setLoading(true)
       const res = await fetch(`/api/boqs?id=${boqId}`)
-      if (!res.ok) throw new Error('Failed to fetch BOQ')
       const data = await res.json()
-      setBoq(data)
+      setBOQ(data)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load BOQ')
     } finally {
@@ -37,115 +54,97 @@ export default function EditBOQPage() {
     }
   }
 
-  async function updateItem(itemId: string, updates: Partial<BOQItem>) {
+  async function saveBOQ() {
     if (!boq) return
-
+    setSaving(true)
     try {
-      setSaving(true)
-      const res = await fetch('/api/boqs/items', {
+      const res = await fetch('/api/boqs', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          boqId,
-          itemId,
-          updates
-        })
+        body: JSON.stringify(boq),
       })
-
-      if (!res.ok) throw new Error('Failed to update item')
-
-      const updated = await res.json()
-      setBoq(updated)
-      setEditingItemId(null)
-      setSuccess('Item updated')
-      setTimeout(() => setSuccess(''), 2000)
+      if (!res.ok) throw new Error('Failed to save')
+      alert('BOQ saved successfully')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update item')
+      alert('Error: ' + (err instanceof Error ? err.message : 'Unknown error'))
     } finally {
       setSaving(false)
     }
+  }
+
+  function startEdit(itemId: string, section: 'quantity' | 'unitRate' | 'description', value: string | number) {
+    setEditingCell(`${itemId}-${section}`)
+    setEditValue(String(value))
+  }
+
+  function finishEdit(itemId: string, section: string) {
+    if (!boq) return
+    const item = boq.items.find(i => i.id === itemId)
+    if (!item) return
+
+    let newValue: any = editValue
+    if (section === 'quantity' || section === 'unitRate') {
+      newValue = parseFloat(editValue) || 0
+      if (section === 'quantity') item.quantity = newValue
+      if (section === 'unitRate') item.unitRate = newValue
+      item.amount = item.quantity * item.unitRate
+    } else if (section === 'description') {
+      item.description = editValue
+    }
+
+    const subtotal = boq.items.reduce((sum, i) => sum + i.amount, 0)
+    const vat = subtotal * 0.05
+    const total = subtotal + vat
+
+    setBOQ({
+      ...boq,
+      subtotal,
+      vat,
+      total,
+    })
+    setEditingCell(null)
   }
 
   async function deleteItem(itemId: string) {
     if (!confirm('Delete this item?')) return
     if (!boq) return
 
-    try {
-      setSaving(true)
-      const res = await fetch(`/api/boqs/items?boqId=${boqId}&itemId=${itemId}`, {
-        method: 'DELETE'
-      })
+    const updatedItems = boq.items.filter(i => i.id !== itemId)
+    const subtotal = updatedItems.reduce((sum, i) => sum + i.amount, 0)
+    const vat = subtotal * 0.05
+    const total = subtotal + vat
 
-      if (!res.ok) throw new Error('Failed to delete item')
-
-      const updated = await res.json()
-      setBoq(updated)
-      setSuccess('Item deleted')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete item')
-    } finally {
-      setSaving(false)
-    }
+    setBOQ({
+      ...boq,
+      items: updatedItems,
+      subtotal,
+      vat,
+      total,
+    })
   }
 
-  async function addNewItem() {
-    if (!boq) return
-
-    const newItem: Omit<BOQItem, 'id' | 'amount'> = {
-      itemNo: Math.max(...boq.items.map(i => i.itemNo), 0) + 1,
-      section: 'Other',
-      description: 'New Item',
-      quantity: 1,
-      unit: 'L.S',
-      unitRate: 0
-    }
-
-    try {
-      setSaving(true)
-      const res = await fetch('/api/boqs/items', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          boqId,
-          item: newItem
-        })
-      })
-
-      if (!res.ok) throw new Error('Failed to add item')
-
-      const updated = await res.json()
-      setBoq(updated)
-      setSuccess('New item added')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add item')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function exportPDF() {
+  async function handleExport() {
     try {
       const res = await fetch(`/api/boqs/export-pdf?id=${boqId}`)
-      if (!res.ok) throw new Error('Failed to export PDF')
-      const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `BOQ_${boqId}.pdf`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      if (res.ok) {
+        const html = await res.text()
+        const printWindow = window.open('', '_blank')
+        if (printWindow) {
+          printWindow.document.write(html)
+          printWindow.document.close()
+          printWindow.print()
+        }
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to export PDF')
+      alert('Error: ' + (err instanceof Error ? err.message : 'Unknown'))
     }
   }
 
   if (loading) {
     return (
-      <div className="ml-64 min-h-screen bg-slate-50 p-8 flex items-center justify-center">
+      <div className="min-h-screen bg-slate-50 p-8 flex items-center justify-center">
         <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
+          <div className="w-12 h-12 border-4 border-slate-200 border-t-brand-500 rounded-full animate-spin mx-auto mb-4" />
           <p className="text-slate-600">Loading BOQ...</p>
         </div>
       </div>
@@ -154,205 +153,144 @@ export default function EditBOQPage() {
 
   if (!boq) {
     return (
-      <div className="ml-64 min-h-screen bg-slate-50 p-8">
-        <div className="max-w-6xl mx-auto">
-          <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="font-semibold text-red-900">BOQ not found</p>
-              <Link href="/estimation" className="text-red-700 hover:text-red-900 text-sm mt-2 inline-block">
-                Back to estimations
-              </Link>
-            </div>
+      <div className="min-h-screen bg-slate-50 p-8">
+        <div className="max-w-4xl mx-auto">
+          <Link href="/estimation" className="inline-flex items-center gap-2 text-brand-600 hover:text-brand-700 mb-6">
+            <ArrowLeft className="w-4 h-4" />
+            Back
+          </Link>
+          <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+            <p className="text-red-800">BOQ not found</p>
           </div>
         </div>
       </div>
     )
   }
 
-  const grouped = groupBySection(boq.items)
-  const sections = Object.keys(grouped).sort()
+  const sections = [...new Set(boq.items.map(i => i.section))]
 
   return (
-    <div className="ml-64 min-h-screen bg-slate-50 p-8">
+    <div className="min-h-screen bg-slate-50 p-8">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-8 flex items-start justify-between">
-          <div>
-            <div className="flex items-center gap-3 mb-2">
-              <Link href="/estimation" className="text-blue-600 hover:text-blue-700">
-                <Home className="w-5 h-5" />
-              </Link>
-              <h1 className="text-3xl font-bold text-slate-900">BOQ Editor</h1>
+        <Link href="/estimation" className="inline-flex items-center gap-2 text-brand-600 hover:text-brand-700 mb-6">
+          <ArrowLeft className="w-4 h-4" />
+          Back
+        </Link>
+
+        <div className="bg-white rounded-lg shadow-lg p-8 mb-6">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-3xl font-bold text-slate-900">{boq.drawing_filename}</h1>
+              <p className="text-slate-600">{boq.items.length} items</p>
             </div>
-            <p className="text-slate-600">{boq.drawing_filename}</p>
-          </div>
-          <div className="flex gap-3">
-            <button
-              onClick={exportPDF}
-              className="flex items-center gap-2 px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-all"
-            >
-              <Download className="w-4 h-4" />
-              Export PDF
-            </button>
-            <button
-              onClick={addNewItem}
-              disabled={saving}
-              className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white rounded-lg font-medium transition-all"
-            >
-              <Plus className="w-4 h-4" />
-              Add Item
-            </button>
-          </div>
-        </div>
-
-        {/* Alerts */}
-        {error && (
-          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg px-4 py-3 flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-            <p className="text-sm text-red-800">{error}</p>
-          </div>
-        )}
-
-        {success && (
-          <div className="mb-6 bg-green-50 border border-green-200 rounded-lg px-4 py-3 flex items-start gap-3">
-            <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-            <p className="text-sm text-green-800">{success}</p>
-          </div>
-        )}
-
-        {/* BOQ Items by Section */}
-        {sections.map((section) => (
-          <div key={section} className="mb-8 bg-white rounded-lg border border-slate-200 overflow-hidden">
-            {/* Section Header */}
-            <div className="bg-slate-50 px-6 py-4 border-b border-slate-200">
-              <h2 className="text-lg font-bold text-slate-900">{section}</h2>
-              <p className="text-sm text-slate-600 mt-1">
-                {grouped[section].length} items • Subtotal: AED{' '}
-                {grouped[section].reduce((sum, item) => sum + item.amount, 0).toFixed(2)}
-              </p>
+            <div className="flex gap-2">
+              <button onClick={handleExport} className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white font-medium rounded-lg">
+                Export PDF
+              </button>
+              <button onClick={saveBOQ} disabled={saving} className="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white font-medium rounded-lg">
+                {saving ? 'Saving' : 'Save'}
+              </button>
             </div>
+          </div>
 
-            {/* Items Table */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50 border-b border-slate-200">
-                  <tr>
-                    <th className="px-6 py-3 text-left font-semibold text-slate-900">Item</th>
-                    <th className="px-6 py-3 text-left font-semibold text-slate-900">Description</th>
-                    <th className="px-6 py-3 text-right font-semibold text-slate-900">Qty</th>
-                    <th className="px-6 py-3 text-left font-semibold text-slate-900">Unit</th>
-                    <th className="px-6 py-3 text-right font-semibold text-slate-900">Rate (AED)</th>
-                    <th className="px-6 py-3 text-right font-semibold text-slate-900">Amount (AED)</th>
-                    <th className="px-6 py-3 text-right font-semibold text-slate-900">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {grouped[section].map((item) => (
-                    <tr key={item.id} className="hover:bg-slate-50 transition-all">
-                      <td className="px-6 py-4 text-slate-600">{item.itemNo}</td>
-                      <td className="px-6 py-4 text-slate-900">
-                        {editingItemId === item.id ? (
-                          <input
-                            type="text"
-                            value={item.description}
-                            onChange={(e) => {
-                              const updated = boq.items.map(i =>
-                                i.id === item.id ? { ...i, description: e.target.value } : i
-                              )
-                              setBoq({ ...boq, items: updated })
-                            }}
-                            onBlur={() => updateItem(item.id, { description: item.description })}
-                            onKeyPress={(e) => {
-                              if (e.key === 'Enter') updateItem(item.id, { description: item.description })
-                            }}
-                            autoFocus
-                            className="w-full px-2 py-1 border border-blue-300 rounded focus:outline-none"
-                          />
-                        ) : (
-                          <button
-                            onClick={() => setEditingItemId(item.id)}
-                            className="text-left hover:text-blue-600 cursor-pointer"
-                          >
-                            {item.description}
-                          </button>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <input
-                          type="number"
-                          value={item.quantity}
-                          onChange={(e) => {
-                            const qty = Number(e.target.value)
-                            const updated = boq.items.map(i =>
-                              i.id === item.id
-                                ? { ...i, quantity: qty, amount: qty * i.unitRate }
-                                : i
-                            )
-                            setBoq({ ...boq, items: updated })
-                          }}
-                          onBlur={() => updateItem(item.id, { quantity: item.quantity })}
-                          className="w-full px-2 py-1 border border-slate-300 rounded focus:outline-none text-right"
-                          step="0.01"
-                        />
-                      </td>
-                      <td className="px-6 py-4 text-slate-600">{item.unit}</td>
-                      <td className="px-6 py-4 text-right">
-                        <input
-                          type="number"
-                          value={item.unitRate}
-                          onChange={(e) => {
-                            const rate = Number(e.target.value)
-                            const updated = boq.items.map(i =>
-                              i.id === item.id
-                                ? { ...i, unitRate: rate, amount: i.quantity * rate }
-                                : i
-                            )
-                            setBoq({ ...boq, items: updated })
-                          }}
-                          onBlur={() => updateItem(item.id, { unitRate: item.unitRate })}
-                          className="w-full px-2 py-1 border border-slate-300 rounded focus:outline-none text-right"
-                          step="0.01"
-                        />
-                      </td>
-                      <td className="px-6 py-4 text-right font-semibold text-slate-900">
-                        {item.amount.toFixed(2)}
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <button
-                          onClick={() => deleteItem(item.id)}
-                          disabled={saving}
-                          className="text-red-600 hover:text-red-700 disabled:text-slate-400"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
+          <div className="overflow-x-auto border rounded-lg">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-100 border-b border-slate-300">
+                  <th className="px-4 py-3 text-left font-semibold">No.</th>
+                  <th className="px-4 py-3 text-left font-semibold">Description</th>
+                  <th className="px-4 py-3 text-right font-semibold">Qty</th>
+                  <th className="px-4 py-3 text-left font-semibold">Unit</th>
+                  <th className="px-4 py-3 text-right font-semibold">Rate</th>
+                  <th className="px-4 py-3 text-right font-semibold">Amount</th>
+                  <th className="px-4 py-3 text-center font-semibold">Delete</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sections.map(section => (
+                  <>
+                    <tr key={`section-${section}`} className="bg-slate-50 border-b border-slate-200">
+                      <td colSpan={7} className="px-4 py-3 font-semibold">{section}</td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                    {boq.items.filter(i => i.section === section).map(item => (
+                      <tr key={item.id} className="border-b border-slate-200 hover:bg-slate-50">
+                        <td className="px-4 py-3">{item.itemNo}</td>
+                        <td className="px-4 py-3">
+                          {editingCell === `${item.id}-description` ? (
+                            <input
+                              autoFocus
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              onBlur={() => finishEdit(item.id, 'description')}
+                              className="w-full px-2 py-1 border border-slate-300 rounded"
+                            />
+                          ) : (
+                            <span onClick={() => startEdit(item.id, 'description', item.description)} className="cursor-pointer hover:text-brand-600">
+                              {item.description}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          {editingCell === `${item.id}-quantity` ? (
+                            <input
+                              autoFocus
+                              type="number"
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              onBlur={() => finishEdit(item.id, 'quantity')}
+                              className="w-20 px-2 py-1 border border-slate-300 rounded text-right"
+                            />
+                          ) : (
+                            <span onClick={() => startEdit(item.id, 'quantity', item.quantity)} className="cursor-pointer hover:text-brand-600">
+                              {item.quantity}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">{item.unit}</td>
+                        <td className="px-4 py-3 text-right">
+                          {editingCell === `${item.id}-unitRate` ? (
+                            <input
+                              autoFocus
+                              type="number"
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              onBlur={() => finishEdit(item.id, 'unitRate')}
+                              className="w-24 px-2 py-1 border border-slate-300 rounded text-right"
+                            />
+                          ) : (
+                            <span onClick={() => startEdit(item.id, 'unitRate', item.unitRate)} className="cursor-pointer hover:text-brand-600">
+                              {item.unitRate.toFixed(2)}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right font-semibold">
+                          {item.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <button onClick={() => deleteItem(item.id)} className="text-red-600 hover:bg-red-100 p-1 rounded">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </>
+                ))}
+              </tbody>
+            </table>
           </div>
-        ))}
 
-        {/* Summary */}
-        <div className="bg-white rounded-lg border border-slate-200 p-6">
-          <div className="flex justify-end items-end">
-            <div className="w-64">
-              <div className="flex justify-between text-sm text-slate-600 mb-2">
-                <span>Subtotal:</span>
-                <span>AED {boq.subtotal.toFixed(2)}</span>
-              </div>
-              {boq.vat && boq.vat > 0 && (
-                <div className="flex justify-between text-sm text-slate-600 mb-3 pb-3 border-b">
-                  <span>VAT (5%):</span>
-                  <span>AED {boq.vat.toFixed(2)}</span>
-                </div>
-              )}
-              <div className="flex justify-between text-lg font-bold text-slate-900">
-                <span>Total:</span>
-                <span>AED {boq.total.toFixed(2)}</span>
-              </div>
+          <div className="mt-8 flex justify-end gap-8 border-t pt-6">
+            <div className="text-right">
+              <p className="text-slate-600 text-sm">Subtotal</p>
+              <p className="text-xl font-bold">AED {boq.subtotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-slate-600 text-sm">VAT (5%)</p>
+              <p className="text-xl font-bold">AED {boq.vat.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
+            </div>
+            <div className="text-right min-w-48">
+              <p className="text-slate-600 text-sm">Total</p>
+              <p className="text-3xl font-bold text-brand-600">AED {boq.total.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
             </div>
           </div>
         </div>

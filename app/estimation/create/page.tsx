@@ -1,84 +1,53 @@
-'use client'
-import { useState } from 'react'
+﻿'use client'
+import { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { Upload, AlertCircle, Loader2, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
-import { Upload, ArrowRight, Loader2, AlertCircle, CheckCircle, Home } from 'lucide-react'
-import { BOQItem } from '@/types'
-
-type Step = 'upload' | 'extract' | 'review' | 'complete'
-
-interface ExtractedBOQ {
-  boqItems: BOQItem[]
-  extractedDimensions: string
-  itemCount: number
-}
 
 export default function CreateEstimationPage() {
   const router = useRouter()
-  const [step, setStep] = useState<Step>('upload')
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [extractedBOQ, setExtractedBOQ] = useState<ExtractedBOQ | null>(null)
-
-  // Project context fields
+  const [projectId, setProjectId] = useState('')
   const [projectName, setProjectName] = useState('')
   const [plotSize, setPlotSize] = useState('')
   const [floors, setFloors] = useState('')
   const [rooms, setRooms] = useState('')
   const [additionalContext, setAdditionalContext] = useState('')
-  const [projectId, setProjectId] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
-  const ALLOWED_TYPES = ['pdf', 'jpg', 'jpeg', 'png', 'dwg', 'dxf']
-  const MAX_SIZE = 50 * 1024 * 1024 // 50MB
-
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const selectedFile = e.target.files?.[0]
-    if (!selectedFile) return
-
-    setError('')
-
-    // Validate file size
-    if (selectedFile.size > MAX_SIZE) {
-      setError(`File size exceeds ${MAX_SIZE / 1024 / 1024}MB limit`)
-      return
+    if (selectedFile) {
+      const validExtensions = ['pdf', 'jpg', 'jpeg', 'png', 'dwg', 'dxf']
+      const fileExt = selectedFile.name.split('.').pop()?.toLowerCase()
+      if (!fileExt || !validExtensions.includes(fileExt)) {
+        setError('Invalid file type. Allowed: PDF, JPG, PNG, DWG, DXF')
+        return
+      }
+      setFile(selectedFile)
+      setError('')
     }
-
-    // Validate file type
-    const ext = selectedFile.name.split('.').pop()?.toLowerCase()
-    if (!ext || !ALLOWED_TYPES.includes(ext)) {
-      setError(`Invalid file type. Allowed: ${ALLOWED_TYPES.join(', ')}`)
-      return
-    }
-
-    setFile(selectedFile)
-    setSuccess(`File selected: ${selectedFile.name}`)
   }
 
-  async function handleUploadAndExtract() {
-    if (!file) {
-      setError('Please select a file')
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!file || !projectId) {
+      setError('Please select a file and enter a project ID')
       return
     }
 
-    if (!projectName) {
-      setError('Please enter project name')
-      return
-    }
+    setLoading(true)
+    setError('')
 
     try {
-      setLoading(true)
-      setError('')
-      setStep('extract')
-
-      // Step 1: Upload file
       const formData = new FormData()
       formData.append('file', file)
 
       const uploadRes = await fetch('/api/estimations/upload', {
         method: 'POST',
-        body: formData
+        body: formData,
       })
 
       if (!uploadRes.ok) {
@@ -87,24 +56,21 @@ export default function CreateEstimationPage() {
       }
 
       const uploadData = await uploadRes.json()
-      setSuccess(`File uploaded: ${uploadData.filename}`)
 
-      // Step 2: Extract BOQ using AI
-      const filetype = file.name.split('.').pop()?.toLowerCase() || 'pdf'
       const extractRes = await fetch('/api/agents/estimation-engineer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           filepath: uploadData.filepath,
           filename: uploadData.filename,
-          filetype,
+          filetype: uploadData.type,
           projectId,
-          projectName,
-          plotSize,
-          floors,
-          rooms,
-          additionalContext
-        })
+          projectName: projectName || 'Untitled Project',
+          plotSize: plotSize || 'Unknown',
+          floors: floors || 'Unknown',
+          rooms: rooms || 'Unknown',
+          additionalContext: additionalContext || 'None',
+        }),
       })
 
       if (!extractRes.ok) {
@@ -112,337 +78,196 @@ export default function CreateEstimationPage() {
         throw new Error(data.error || 'Extraction failed')
       }
 
-      const boqData = await extractRes.json()
-      setExtractedBOQ(boqData)
-      setSuccess(`Extracted ${boqData.itemCount} BOQ items`)
-      setStep('review')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to process drawing')
-      setStep('upload')
-    } finally {
-      setLoading(false)
-    }
-  }
+      const extractData = await extractRes.json()
 
-  async function handleSaveBOQ() {
-    if (!extractedBOQ) {
-      setError('No BOQ data to save')
-      return
-    }
-
-    try {
-      setLoading(true)
-      setError('')
-
-      // Create BOQ
       const boqRes = await fetch('/api/boqs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          projectId: projectId || 'manual_entry',
-          drawing_filename: file?.name || 'drawing',
-          extracted_dimensions: extractedBOQ.extractedDimensions,
-          items: extractedBOQ.boqItems,
-          subtotal: extractedBOQ.boqItems.reduce((sum, item) => sum + item.amount, 0),
-          vat: 0,
-          total: extractedBOQ.boqItems.reduce((sum, item) => sum + item.amount, 0)
-        })
+          projectId,
+          drawing_filename: file.name,
+          extracted_dimensions: extractData.extractedDimensions,
+          items: extractData.boqItems,
+        }),
       })
 
       if (!boqRes.ok) {
-        const data = await boqRes.json()
-        throw new Error(data.error || 'Save failed')
+        throw new Error('Failed to save BOQ')
       }
 
-      const createdBOQ = await boqRes.json()
-      setSuccess('BOQ saved successfully!')
-      setStep('complete')
-
-      // Redirect to editor after 2 seconds
-      setTimeout(() => {
-        router.push(`/estimation/${createdBOQ.id}`)
-      }, 1500)
+      const boq = await boqRes.json()
+      router.push(`/estimation/${boq.id}`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save BOQ')
+      setError(err instanceof Error ? err.message : 'An error occurred')
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="ml-64 min-h-screen bg-slate-50 p-8">
-      <div className="max-w-3xl mx-auto">
-        {/* Header */}
-        <div className="mb-8 flex items-center gap-3">
-          <Link href="/estimation" className="text-blue-600 hover:text-blue-700">
-            <Home className="w-5 h-5" />
-          </Link>
-          <h1 className="text-3xl font-bold text-slate-900">Create BOQ from Drawing</h1>
-        </div>
+    <div className="min-h-screen bg-slate-50 p-8">
+      <div className="max-w-2xl mx-auto">
+        <Link
+          href="/estimation"
+          className="inline-flex items-center gap-2 text-brand-600 hover:text-brand-700 mb-6"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back to Estimations
+        </Link>
 
-        {/* Progress Steps */}
-        <div className="mb-8 flex items-center justify-between">
-          {(['upload', 'extract', 'review', 'complete'] as const).map((s, i) => (
-            <div key={s} className="flex items-center flex-1">
-              <div
-                className={`w-8 h-8 rounded-full flex items-center justify-center font-semibold text-sm ${
-                  s === step
-                    ? 'bg-blue-600 text-white'
-                    : ['upload', 'extract', 'review'].indexOf(s) < ['upload', 'extract', 'review'].indexOf(step)
-                      ? 'bg-green-600 text-white'
-                      : 'bg-slate-200 text-slate-600'
-                }`}
-              >
-                {['upload', 'extract', 'review'].indexOf(s) < ['upload', 'extract', 'review'].indexOf(step) ? (
-                  '✓'
-                ) : (
-                  i + 1
-                )}
+        <div className="bg-white rounded-lg shadow-lg p-8">
+          <h1 className="text-3xl font-bold text-slate-900 mb-2">New Estimation</h1>
+          <p className="text-slate-600 mb-8">Upload an architectural drawing and we will extract dimensions to generate your BOQ</p>
+
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {error && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                <p className="text-red-800">{error}</p>
               </div>
-              <div className={`flex-1 h-1 mx-2 ${i < 3 ? 'bg-slate-200' : ''}`} />
+            )}
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-3">
+                Project ID (Required)
+              </label>
+              <input
+                type="text"
+                value={projectId}
+                onChange={(e) => setProjectId(e.target.value)}
+                placeholder="e.g., PROJ-2025-001"
+                className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                disabled={loading}
+              />
             </div>
-          ))}
-        </div>
 
-        {/* Alerts */}
-        {error && (
-          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg px-4 py-3 flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-            <p className="text-sm text-red-800">{error}</p>
-          </div>
-        )}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-3">
+                Project Name
+              </label>
+              <input
+                type="text"
+                value={projectName}
+                onChange={(e) => setProjectName(e.target.value)}
+                placeholder="e.g., Villa Development"
+                className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                disabled={loading}
+              />
+            </div>
 
-        {success && (
-          <div className="mb-6 bg-green-50 border border-green-200 rounded-lg px-4 py-3 flex items-start gap-3">
-            <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0 mt-0.5" />
-            <p className="text-sm text-green-800">{success}</p>
-          </div>
-        )}
-
-        {/* Step 1: Upload */}
-        {step === 'upload' && (
-          <div className="bg-white rounded-lg border border-slate-200 p-8">
-            <h2 className="text-xl font-bold text-slate-900 mb-6">Step 1: Upload & Project Details</h2>
-
-            {/* File Upload */}
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-slate-700 mb-3">Architectural Drawing *</label>
-              <div className="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center hover:border-blue-400 transition-all cursor-pointer">
-                <input
-                  type="file"
-                  onChange={handleFileChange}
-                  accept=".pdf,.jpg,.jpeg,.png,.dwg,.dxf"
-                  className="hidden"
-                  id="file-input"
-                />
-                <label htmlFor="file-input" className="cursor-pointer">
-                  <Upload className="w-8 h-8 text-slate-400 mx-auto mb-2" />
-                  <p className="text-sm text-slate-600">
-                    {file ? file.name : 'Click to upload or drag and drop'}
-                  </p>
-                  <p className="text-xs text-slate-500 mt-1">PDF, JPG, PNG, DWG, or DXF (max 50MB)</p>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Plot Size (m2)
                 </label>
-              </div>
-            </div>
-
-            {/* Project Details */}
-            <div className="grid grid-cols-2 gap-4 mb-6">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Project Name *</label>
-                <input
-                  type="text"
-                  value={projectName}
-                  onChange={(e) => setProjectName(e.target.value)}
-                  placeholder="e.g., Al Mirdif Villa"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Plot Size (sq.m)</label>
                 <input
                   type="text"
                   value={plotSize}
                   onChange={(e) => setPlotSize(e.target.value)}
                   placeholder="e.g., 500"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                  disabled={loading}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Floors</label>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Floors
+                </label>
                 <input
                   type="text"
                   value={floors}
                   onChange={(e) => setFloors(e.target.value)}
-                  placeholder="e.g., G+2"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g., 2"
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                  disabled={loading}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Number of Rooms</label>
+                <label className="block text-sm font-medium text-slate-700 mb-2">
+                  Rooms
+                </label>
                 <input
                   type="text"
                   value={rooms}
                   onChange={(e) => setRooms(e.target.value)}
                   placeholder="e.g., 6"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                  disabled={loading}
                 />
               </div>
             </div>
 
-            <div className="mb-6">
-              <label className="block text-sm font-medium text-slate-700 mb-2">Additional Context</label>
-              <textarea
-                value={additionalContext}
-                onChange={(e) => setAdditionalContext(e.target.value)}
-                placeholder="Any special requirements or notes..."
-                rows={3}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            <div className="border-2 border-dashed border-slate-300 rounded-lg p-8 text-center">
+              <input
+                ref={fileInputRef}
+                type="file"
+                onChange={handleFileUpload}
+                accept=".pdf,.jpg,.jpeg,.png,.dwg,.dxf"
+                className="hidden"
+                disabled={loading}
               />
+              {file ? (
+                <div>
+                  <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <Upload className="w-6 h-6 text-green-600" />
+                  </div>
+                  <p className="font-medium text-slate-900">{file.name}</p>
+                  <p className="text-sm text-slate-600 mt-1">
+                    {(file.size / 1024 / 1024).toFixed(2)} MB
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFile(null)
+                      if (fileInputRef.current) fileInputRef.current.value = ''
+                    }}
+                    className="mt-3 text-sm text-blue-600 hover:text-blue-700 underline"
+                    disabled={loading}
+                  >
+                    Change file
+                  </button>
+                </div>
+              ) : (
+                <div>
+                  <Upload className="w-12 h-12 text-slate-400 mx-auto mb-3" />
+                  <p className="font-medium text-slate-900 mb-1">Upload architectural drawing</p>
+                  <p className="text-sm text-slate-600 mb-4">PDF, JPG, PNG, DWG, or DXF files</p>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white font-medium rounded-lg transition-colors inline-block"
+                    disabled={loading}
+                  >
+                    Select File
+                  </button>
+                </div>
+              )}
             </div>
 
-            {/* Action Button */}
-            <div className="flex gap-3">
-              <button
-                onClick={handleUploadAndExtract}
-                disabled={loading || !file || !projectName}
-                className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-all"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Processing...
-                  </>
-                ) : (
-                  <>
-                    <Upload className="w-4 h-4" />
-                    Upload & Extract
-                  </>
-                )}
-              </button>
+            <div className="flex gap-4">
               <Link
                 href="/estimation"
-                className="px-6 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-900 rounded-lg font-medium transition-all"
+                className="flex-1 px-6 py-3 bg-slate-100 hover:bg-slate-200 text-slate-900 font-medium rounded-lg transition-colors text-center"
               >
                 Cancel
               </Link>
-            </div>
-          </div>
-        )}
-
-        {/* Step 2 & 3: Extract & Review */}
-        {(step === 'extract' || step === 'review') && (
-          <div className="bg-white rounded-lg border border-slate-200 p-8">
-            <h2 className="text-xl font-bold text-slate-900 mb-6">
-              {step === 'extract' ? 'Step 2: Extracting BOQ...' : 'Step 3: Review BOQ Items'}
-            </h2>
-
-            {step === 'extract' && (
-              <div className="text-center py-12">
-                <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
-                <p className="text-slate-600">Analyzing drawing and extracting BOQ items...</p>
-              </div>
-            )}
-
-            {step === 'review' && extractedBOQ && (
-              <div>
-                <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                  <p className="text-sm text-blue-800">
-                    <strong>{extractedBOQ.itemCount}</strong> BOQ items extracted. Review the summary below, then proceed to edit in detail.
-                  </p>
-                </div>
-
-                {/* Items Summary Table */}
-                <div className="overflow-x-auto mb-6">
-                  <table className="w-full text-sm">
-                    <thead className="bg-slate-50 border-b">
-                      <tr>
-                        <th className="px-4 py-2 text-left font-semibold text-slate-900">Section</th>
-                        <th className="px-4 py-2 text-left font-semibold text-slate-900">Description</th>
-                        <th className="px-4 py-2 text-right font-semibold text-slate-900">Qty</th>
-                        <th className="px-4 py-2 text-right font-semibold text-slate-900">Rate</th>
-                        <th className="px-4 py-2 text-right font-semibold text-slate-900">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {extractedBOQ.boqItems.slice(0, 10).map((item) => (
-                        <tr key={item.id} className="hover:bg-slate-50">
-                          <td className="px-4 py-2 text-slate-600">{item.section}</td>
-                          <td className="px-4 py-2 text-slate-900">{item.description}</td>
-                          <td className="px-4 py-2 text-right text-slate-600">{item.quantity}</td>
-                          <td className="px-4 py-2 text-right text-slate-600">AED {item.unitRate}</td>
-                          <td className="px-4 py-2 text-right font-medium text-slate-900">AED {item.amount.toFixed(2)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {extractedBOQ.boqItems.length > 10 && (
-                    <p className="text-sm text-slate-600 mt-3">
-                      ... and {extractedBOQ.boqItems.length - 10} more items
-                    </p>
-                  )}
-                </div>
-
-                {/* Totals */}
-                <div className="mb-6 p-4 bg-slate-50 rounded-lg">
-                  <div className="flex justify-between text-sm mb-2">
-                    <span className="text-slate-600">Subtotal:</span>
-                    <span className="font-semibold text-slate-900">
-                      AED {extractedBOQ.boqItems.reduce((sum, item) => sum + item.amount, 0).toFixed(2)}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Action Buttons */}
-                <div className="flex gap-3">
-                  <button
-                    onClick={handleSaveBOQ}
-                    disabled={loading}
-                    className="flex items-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 text-white rounded-lg font-medium transition-all"
-                  >
-                    {loading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Saving...
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle className="w-4 h-4" />
-                        Save & Continue
-                      </>
-                    )}
-                  </button>
-                  <button
-                    onClick={() => {
-                      setStep('upload')
-                      setExtractedBOQ(null)
-                    }}
-                    className="px-6 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-900 rounded-lg font-medium transition-all"
-                  >
-                    Back
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Step 4: Complete */}
-        {step === 'complete' && (
-          <div className="bg-white rounded-lg border border-slate-200 p-8">
-            <div className="text-center py-12">
-              <CheckCircle className="w-16 h-16 text-green-600 mx-auto mb-4" />
-              <h2 className="text-2xl font-bold text-slate-900 mb-2">BOQ Created Successfully!</h2>
-              <p className="text-slate-600 mb-6">Redirecting to editor...</p>
-              <Link
-                href="/estimation"
-                className="inline-flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-all"
+              <button
+                type="submit"
+                disabled={loading || !file || !projectId}
+                className="flex-1 px-6 py-3 bg-brand-500 hover:bg-brand-600 disabled:bg-slate-300 text-white font-medium rounded-lg transition-colors disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
-                <ArrowRight className="w-4 h-4" />
-                View BOQs
-              </Link>
+                {loading ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  'Generate BOQ'
+                )}
+              </button>
             </div>
-          </div>
-        )}
+          </form>
+        </div>
       </div>
     </div>
   )
