@@ -1,11 +1,27 @@
+import fs from 'fs'
+import path from 'path'
 import { RateLibraryItem } from '@/types'
-import { readStore, writeStore } from './projects-store'
 
-const RATES_FILE = '.rates-data.json'
+const RATES_FILE = path.join(process.cwd(), '.rates-data.json')
+
+function readRates(): RateLibraryItem[] {
+  try {
+    if (!fs.existsSync(RATES_FILE)) {
+      return []
+    }
+    const data = fs.readFileSync(RATES_FILE, 'utf-8')
+    return JSON.parse(data) as RateLibraryItem[]
+  } catch {
+    return []
+  }
+}
+
+function writeRates(data: RateLibraryItem[]): void {
+  fs.writeFileSync(RATES_FILE, JSON.stringify(data, null, 2), 'utf-8')
+}
 
 export async function getAllRates(): Promise<RateLibraryItem[]> {
-  const data = await readStore<RateLibraryItem[]>(RATES_FILE, [])
-  return data
+  return readRates()
 }
 
 export async function getRatesByCategory(category: string): Promise<RateLibraryItem[]> {
@@ -25,7 +41,7 @@ export async function addRate(rate: Omit<RateLibraryItem, 'id'>): Promise<RateLi
     id: `rate_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
   }
   all.push(newRate)
-  await writeStore(RATES_FILE, all)
+  writeRates(all)
   return newRate
 }
 
@@ -36,7 +52,7 @@ export async function updateRate(id: string, updates: Partial<RateLibraryItem>):
 
   const updated = { ...all[index], ...updates, id }
   all[index] = updated
-  await writeStore(RATES_FILE, all)
+  writeRates(all)
   return updated
 }
 
@@ -44,7 +60,7 @@ export async function deleteRate(id: string): Promise<boolean> {
   const all = await getAllRates()
   const filtered = all.filter(r => r.id !== id)
   if (filtered.length === all.length) return false
-  await writeStore(RATES_FILE, filtered)
+  writeRates(filtered)
   return true
 }
 
@@ -67,5 +83,5 @@ export async function seedRates(rates: Omit<RateLibraryItem, 'id'>[]): Promise<v
     id: `rate_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
   }))
 
-  await writeStore(RATES_FILE, newRates)
+  writeRates(newRates)
 }

@@ -1,11 +1,27 @@
+import fs from 'fs'
+import path from 'path'
 import { BOQ, BOQItem } from '@/types'
-import { readStore, writeStore } from './projects-store'
 
-const BOQS_FILE = '.boq-data.json'
+const BOQS_FILE = path.join(process.cwd(), '.boq-data.json')
+
+function readBOQs(): BOQ[] {
+  try {
+    if (!fs.existsSync(BOQS_FILE)) {
+      return []
+    }
+    const data = fs.readFileSync(BOQS_FILE, 'utf-8')
+    return JSON.parse(data) as BOQ[]
+  } catch {
+    return []
+  }
+}
+
+function writeBOQs(data: BOQ[]): void {
+  fs.writeFileSync(BOQS_FILE, JSON.stringify(data, null, 2), 'utf-8')
+}
 
 export async function getAllBOQs(): Promise<BOQ[]> {
-  const data = await readStore<BOQ[]>(BOQS_FILE, [])
-  return data
+  return readBOQs()
 }
 
 export async function getBOQsByProjectId(projectId: string): Promise<BOQ[]> {
@@ -28,7 +44,7 @@ export async function createBOQ(boq: Omit<BOQ, 'id' | 'createdAt' | 'updatedAt'>
     updatedAt: now
   }
   all.push(newBOQ)
-  await writeStore(BOQS_FILE, all)
+  writeBOQs(all)
   return newBOQ
 }
 
@@ -44,7 +60,7 @@ export async function updateBOQ(id: string, updates: Partial<BOQ>): Promise<BOQ 
     updatedAt: new Date().toISOString()
   }
   all[index] = updated
-  await writeStore(BOQS_FILE, all)
+  writeBOQs(all)
   return updated
 }
 
@@ -112,7 +128,7 @@ export async function deleteBOQ(id: string): Promise<boolean> {
   const all = await getAllBOQs()
   const filtered = all.filter(b => b.id !== id)
   if (filtered.length === all.length) return false
-  await writeStore(BOQS_FILE, filtered)
+  writeBOQs(filtered)
   return true
 }
 
