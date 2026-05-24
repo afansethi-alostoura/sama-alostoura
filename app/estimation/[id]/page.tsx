@@ -8,7 +8,7 @@ import { groupBySection } from '@/lib/boq-store'
 
 export default function EditBOQPage() {
   const params = useParams()
-  const boqId = params.id as string
+  const boqId = params?.id as string
 
   const [boq, setBoq] = useState<BOQ | null>(null)
   const [loading, setLoading] = useState(true)
@@ -18,10 +18,12 @@ export default function EditBOQPage() {
   const [editingItemId, setEditingItemId] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!boqId) return
     fetchBOQ()
   }, [boqId])
 
   async function fetchBOQ() {
+    if (!boqId) return
     try {
       setLoading(true)
       const res = await fetch(`/api/boqs?id=${boqId}`)

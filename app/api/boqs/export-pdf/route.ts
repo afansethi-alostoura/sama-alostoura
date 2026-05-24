@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import PDFDocument from 'pdfkit'
 import { getBOQ } from '@/lib/boq-store'
 import { groupBySection } from '@/lib/boq-store'
 
@@ -23,174 +22,246 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Create PDF document
-    const doc = new PDFDocument({
-      size: 'A4',
-      margin: 50,
-      bufferPages: true
-    })
-
-    // Collect PDF data
-    const chunks: Buffer[] = []
-    doc.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
-
-    // Header
-    doc.fontSize(18).font('Helvetica-Bold').text('SAMA ALOSTOURA', { align: 'center' })
-    doc.fontSize(10).font('Helvetica').text('Building Contracting LLC', { align: 'center' })
-    doc.fontSize(9).fillColor('#666666').text('Dubai, UAE | Est. 2020', { align: 'center' })
-
-    doc.moveDown()
-    doc.moveTo(50, doc.y).lineTo(550, doc.y).stroke()
-
-    // Title
-    doc.moveDown()
-    doc.fontSize(14).fillColor('#000000').font('Helvetica-Bold').text('BILL OF QUANTITIES', { align: 'center' })
-
-    // Project Info
-    doc.moveDown()
-    doc.fontSize(10).font('Helvetica')
-    doc.text(`Drawing: ${boq.drawing_filename}`, 70)
-    doc.text(`Date: ${new Date(boq.createdAt).toLocaleDateString()}`)
-    doc.text(`BOQ ID: ${boq.id}`)
-
-    doc.moveDown()
-
-    // Group items by section
+    // Generate HTML that can be printed as PDF
     const grouped = groupBySection(boq.items)
     const sections = Object.keys(grouped).sort()
 
-    // Table headers
-    const startY = doc.y
-    const colX = { itemNo: 70, description: 150, qty: 430, unit: 460, rate: 490, amount: 520 }
-    const rowHeight = 20
+    let html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>BOQ - ${boq.drawing_filename}</title>
+  <style>
+    @media print {
+      body { margin: 0; padding: 0; }
+      .page-break { page-break-before: always; }
+    }
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      color: #333;
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 20px;
+      border-bottom: 2px solid #333;
+      padding-bottom: 15px;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 24px;
+      color: #1e40af;
+    }
+    .header p {
+      margin: 5px 0;
+      font-size: 12px;
+      color: #666;
+    }
+    .metadata {
+      font-size: 11px;
+      margin: 10px 0;
+      color: #666;
+    }
+    .section {
+      margin-top: 20px;
+    }
+    .section-title {
+      background-color: #1e40af;
+      color: white;
+      padding: 8px 12px;
+      font-weight: bold;
+      margin-bottom: 5px;
+      font-size: 12px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 15px;
+      font-size: 11px;
+    }
+    th {
+      background-color: #1e40af;
+      color: white;
+      padding: 8px;
+      text-align: left;
+      font-weight: bold;
+      border: 1px solid #ddd;
+    }
+    td {
+      padding: 8px;
+      border: 1px solid #ddd;
+    }
+    tr:nth-child(even) {
+      background-color: #f3f4f6;
+    }
+    .text-right {
+      text-align: right;
+    }
+    .subtotal-row {
+      background-color: #e0e7ff;
+      font-weight: bold;
+    }
+    .total-section {
+      margin-top: 20px;
+      padding: 15px;
+      background-color: #f3f4f6;
+      border: 1px solid #ddd;
+    }
+    .total-row {
+      display: flex;
+      justify-content: space-between;
+      margin: 8px 0;
+      font-size: 12px;
+    }
+    .total-final {
+      background-color: #1e40af;
+      color: white;
+      padding: 10px;
+      font-size: 14px;
+      font-weight: bold;
+      display: flex;
+      justify-content: space-between;
+      margin-top: 10px;
+    }
+    .signature {
+      margin-top: 40px;
+      padding-top: 20px;
+      border-top: 1px solid #ddd;
+    }
+    .signature-line {
+      border-bottom: 1px solid #333;
+      width: 200px;
+      margin: 40px 0 5px 0;
+    }
+    .signature-text {
+      font-size: 11px;
+      color: #666;
+    }
+    .footer {
+      margin-top: 20px;
+      text-align: center;
+      font-size: 10px;
+      color: #666;
+      border-top: 1px solid #ddd;
+      padding-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>SAMA ALOSTOURA</h1>
+    <p>Building Contracting LLC</p>
+    <p>Dubai, UAE | Est. 2020</p>
+  </div>
 
-    // Header row
-    doc.fontSize(9).font('Helvetica-Bold').fillColor('#FFFFFF')
-    doc.rect(50, startY, 500, 20).fill('#1e40af')
+  <div style="text-align: center; margin-bottom: 20px;">
+    <h2 style="margin: 10px 0; color: #1e40af;">BILL OF QUANTITIES</h2>
+  </div>
 
-    doc.text('Item', colX.itemNo, startY + 5)
-    doc.text('Description', colX.description, startY + 5)
-    doc.text('Qty', colX.qty, startY + 5)
-    doc.text('Unit', colX.unit, startY + 5)
-    doc.text('Rate', colX.rate, startY + 5)
-    doc.text('Amount', colX.amount, startY + 5)
+  <div class="metadata">
+    <div>Drawing: ${boq.drawing_filename}</div>
+    <div>Date: ${new Date(boq.createdAt).toLocaleDateString()}</div>
+    <div>BOQ ID: ${boq.id}</div>
+  </div>
+`
 
-    let y = startY + 25
-    let itemCounter = 0
-    let sectionSubtotal = 0
-
-    // Render sections
+    // Add sections with tables
     sections.forEach((section) => {
-      // Section header
-      doc.fontSize(10).font('Helvetica-Bold').fillColor('#1e40af')
-      doc.text(section.toUpperCase(), 70, y)
-      y += rowHeight + 5
-
-      // Section items
       const sectionItems = grouped[section]
-      sectionSubtotal = 0
+      const sectionSubtotal = sectionItems.reduce((sum, item) => sum + item.amount, 0)
+
+      html += `
+  <div class="section">
+    <div class="section-title">${section.toUpperCase()}</div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 5%">Item</th>
+          <th style="width: 40%">Description</th>
+          <th style="width: 10%" class="text-right">Qty</th>
+          <th style="width: 10%" class="text-right">Unit</th>
+          <th style="width: 15%" class="text-right">Rate (AED)</th>
+          <th style="width: 20%" class="text-right">Amount (AED)</th>
+        </tr>
+      </thead>
+      <tbody>
+`
 
       sectionItems.forEach((item) => {
-        itemCounter++
-
-        // Alternate row background
-        if (itemCounter % 2 === 0) {
-          doc.rect(50, y - 5, 500, rowHeight).fill('#f3f4f6').stroke()
-        } else {
-          doc.rect(50, y - 5, 500, rowHeight).stroke()
-        }
-
-        doc.fontSize(8).font('Helvetica').fillColor('#000000')
-        doc.text(String(item.itemNo), colX.itemNo, y)
-        doc.text(item.description, colX.description, y, { width: 270 })
-        doc.text(String(item.quantity), colX.qty, y)
-        doc.text(item.unit, colX.unit, y)
-        doc.text(`AED ${item.unitRate.toFixed(2)}`, colX.rate, y, { align: 'right' })
-        doc.text(`AED ${item.amount.toFixed(2)}`, colX.amount, y, { align: 'right' })
-
-        sectionSubtotal += item.amount
-        y += rowHeight
-
-        // Check for page break
-        if (y > 700) {
-          doc.addPage()
-          y = 50
-        }
+        html += `
+        <tr>
+          <td>${item.itemNo}</td>
+          <td>${item.description}</td>
+          <td class="text-right">${item.quantity}</td>
+          <td class="text-right">${item.unit}</td>
+          <td class="text-right">${item.unitRate.toFixed(2)}</td>
+          <td class="text-right">${item.amount.toFixed(2)}</td>
+        </tr>
+`
       })
 
-      // Section subtotal
-      doc.fontSize(9).font('Helvetica-Bold').fillColor('#1e40af')
-      doc.rect(50, y - 5, 500, 20).fill('#e0e7ff')
-      doc.text(`Subtotal for ${section}:`, colX.description, y)
-      doc.text(`AED ${sectionSubtotal.toFixed(2)}`, colX.amount, y, { align: 'right' })
-
-      y += 25
+      html += `
+        <tr class="subtotal-row">
+          <td colspan="5" style="text-align: right;">Subtotal for ${section}:</td>
+          <td class="text-right">${sectionSubtotal.toFixed(2)}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+`
     })
 
     // Summary
-    y += 10
-    doc.fontSize(11).font('Helvetica-Bold').fillColor('#000000')
-    doc.text(`SUBTOTAL:`, colX.description, y)
-    doc.text(`AED ${boq.subtotal.toFixed(2)}`, colX.amount, y, { align: 'right' })
+    html += `
+  <div class="total-section">
+    <div class="total-row">
+      <span>SUBTOTAL:</span>
+      <span>AED ${boq.subtotal.toFixed(2)}</span>
+    </div>
+`
 
-    y += 25
     if (boq.vat && boq.vat > 0) {
-      doc.fontSize(10).font('Helvetica')
-      doc.text(`VAT (5%):`, colX.description, y)
-      doc.text(`AED ${boq.vat.toFixed(2)}`, colX.amount, y, { align: 'right' })
-
-      y += 25
+      html += `
+    <div class="total-row">
+      <span>VAT (5%):</span>
+      <span>AED ${boq.vat.toFixed(2)}</span>
+    </div>
+`
     }
 
-    doc.fontSize(12).font('Helvetica-Bold').fillColor('#1e40af')
-    doc.rect(50, y - 5, 500, 25).fill('#1e40af')
-    doc.fillColor('#FFFFFF')
-    doc.text(`TOTAL:`, colX.description, y + 3)
-    doc.text(`AED ${boq.total.toFixed(2)}`, colX.amount, y + 3, { align: 'right' })
+    html += `
+    <div class="total-final">
+      <span>TOTAL:</span>
+      <span>AED ${boq.total.toFixed(2)}</span>
+    </div>
+  </div>
 
-    // Footer
-    y += 40
-    doc.fontSize(9).fillColor('#666666').font('Helvetica')
-    doc.text('', 70, y)
-    doc.text('_________________________________', colX.description)
-    doc.text('Authorized Signature')
+  <div class="signature">
+    <div class="signature-line"></div>
+    <div class="signature-text">Authorized Signature</div>
+    <div class="signature-text">Date: _________________</div>
+  </div>
 
-    doc.moveDown(2)
-    doc.fontSize(8).fillColor('#999999')
-    doc.text('This BOQ is valid for 30 days from date of issue. Prices subject to market conditions.', { align: 'center' })
-    doc.text(`Generated on ${new Date().toLocaleString()}`, { align: 'center' })
+  <div class="footer">
+    <p>This BOQ is valid for 30 days from date of issue. Prices subject to market conditions.</p>
+    <p>Generated on ${new Date().toLocaleString()}</p>
+  </div>
+</body>
+</html>
+`
 
-    // Finish PDF and return response
-    doc.end()
-
-    // Return PDF response
-    return new Promise<NextResponse>((resolve, reject) => {
-      doc.on('end', () => {
-        try {
-          const pdfBuffer = Buffer.concat(chunks)
-          resolve(
-            new NextResponse(pdfBuffer, {
-              status: 200,
-              headers: {
-                'Content-Type': 'application/pdf',
-                'Content-Disposition': `attachment; filename="BOQ_${boqId}.pdf"`,
-                'Content-Length': pdfBuffer.length.toString()
-              }
-            })
-          )
-        } catch (err) {
-          reject(err)
-        }
-      })
-
-      doc.on('error', (err) => {
-        reject(err)
-      })
+    return new NextResponse(html, {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Content-Disposition': `inline; filename="BOQ_${boqId}.html"`
+      }
     })
   } catch (error) {
-    console.error('Error generating PDF:', error)
+    console.error('Error generating BOQ:', error)
     return NextResponse.json(
-      { error: 'Failed to generate PDF' },
+      { error: 'Failed to generate BOQ: ' + (error instanceof Error ? error.message : String(error)) },
       { status: 500 }
     )
   }
