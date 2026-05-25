@@ -47,13 +47,15 @@ export default function CEODashboard() {
     const totalReceived = activeProjects.reduce((sum, p) => sum + p.received_amount, 0)
     const outstandingBalance = totalContractValue - totalReceived
     const receivedPercentage = totalContractValue > 0 ? (totalReceived / totalContractValue) * 100 : 0
+    const pipelineProjects = DEMO_PROJECTS.filter(p => p.status === 'on_hold' || p.status === 'completed')
+    const pipelineValue = pipelineProjects.reduce((sum, p) => sum + p.contract_value, 0)
 
     setStats({
       totalContractValue,
       totalReceived,
       outstandingBalance,
       activeProjectsCount: activeProjects.length,
-      pipelineValue: DEMO_PROJECTS.filter(p => p.status === 'pipeline').reduce((sum, p) => sum + p.contract_value, 0),
+      pipelineValue,
       receivedPercentage,
     })
 
