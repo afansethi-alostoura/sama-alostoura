@@ -56,7 +56,8 @@ export async function GET() {
     }
     const snap: QBSnapshot = JSON.parse(fs.readFileSync(SNAP_FILE, 'utf8'))
     return NextResponse.json({ synced: true, ...snap })
-  } catch {
-    return NextResponse.json({ error: 'Failed to read cached data' }, { status: 500 })
+  } catch (error) {
+    console.error('Sync GET error:', error)
+    return NextResponse.json({ synced: false, message: 'Failed to read cached data' })
   }
 }
