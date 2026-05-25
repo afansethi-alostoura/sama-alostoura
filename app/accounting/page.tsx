@@ -26,11 +26,13 @@ export default function AccountingPage() {
 
   useEffect(() => {
     Promise.all([
-      fetch('/api/quickbooks/status').then(r => r.json()),
-      fetch('/api/quickbooks/sync').then(r => r.json()),
+      fetch('/api/quickbooks/status').then(r => r.json()).catch(() => ({ connected: false, client_configured: false, environment: 'production' })),
+      fetch('/api/quickbooks/sync').then(r => r.json()).catch(() => ({ synced: false })),
     ]).then(([s, snap]) => {
       setStatus(s)
-      if (snap.synced) setSnapshot(snap)
+      if (snap && snap.synced) setSnapshot(snap)
+    }).catch(err => {
+      console.error('Page load error:', err)
     }).finally(() => setLoading(false))
   }, [])
 
