@@ -3,7 +3,7 @@
  * Docs: https://developer.intuit.com/app/developer/qbo/docs/api/accounting/all-entities
  */
 import {
-  loadTokens, saveTokens, clearTokens,
+  loadTokens, loadTokensAsync, saveTokens, clearTokens,
   isAccessTokenFresh, isRefreshTokenValid,
 } from './tokens'
 import type { QBTokens, QBInvoice, QBPayment, QBCustomer, QBCompanyInfo, QBQueryResponse } from './types'
@@ -63,7 +63,7 @@ export async function exchangeCode(code: string, realmId: string): Promise<QBTok
 
   const data = await res.json()
   const tokens: QBTokens = { ...data, realm_id: realmId, created_at: Date.now() }
-  saveTokens(tokens)
+  await saveTokens(tokens)
   return tokens
 }
 
@@ -94,13 +94,13 @@ export async function refreshAccessToken(tokens: QBTokens): Promise<QBTokens> {
 
   const data = await res.json()
   const refreshed: QBTokens = { ...tokens, ...data, created_at: Date.now() }
-  saveTokens(refreshed)
+  await saveTokens(refreshed)
   return refreshed
 }
 
 /** Revoke tokens and clear local storage */
 export async function revokeTokens(): Promise<void> {
-  const tokens = loadTokens()
+  const tokens = await loadTokensAsync()
   if (!tokens) return
 
   await fetch(REVOKE_URL, {
@@ -113,12 +113,12 @@ export async function revokeTokens(): Promise<void> {
     body: new URLSearchParams({ token: tokens.refresh_token }),
   }).catch(() => {}) // ignore revoke errors, still clear local
 
-  clearTokens()
+  await clearTokens()
 }
 
 // ── Authenticated API call (with auto-refresh) ───────────────
 async function qbFetch(path: string): Promise<Response> {
-  let tokens = loadTokens()
+  let tokens = await loadTokensAsync()
   if (!tokens) throw new Error('QuickBooks not connected')
 
   if (!isAccessTokenFresh(tokens)) {
@@ -170,7 +170,7 @@ export async function fetchCustomers(maxResults = 100): Promise<QBCustomer[]> {
 }
 
 export async function fetchCompanyInfo(): Promise<QBCompanyInfo | null> {
-  const tokens = loadTokens()
+  const tokens = await loadTokensAsync()
   if (!tokens) return null
   const res  = await qbFetch(`companyinfo/${tokens.realm_id}?`)
   if (!res.ok) return null
@@ -190,9 +190,9 @@ export interface QBStatus {
   client_configured: boolean
 }
 
-export function getStatus(): QBStatus {
+export async function getStatus(): Promise<QBStatus> {
   const configured = !!(CLIENT_ID && CLIENT_SECRET)
-  const tokens     = loadTokens()
+  const tokens     = await loadTokensAsync()
 
   if (!tokens) {
     return { connected: false, client_configured: configured, environment: ENVIRONMENT }

@@ -1,6 +1,6 @@
 import { NextResponse }                                   from 'next/server'
 import { fetchInvoices, fetchPayments, fetchCustomers, fetchCompanyInfo } from '@/lib/quickbooks/client'
-import { loadTokens }                                    from '@/lib/quickbooks/tokens'
+import { loadTokensAsync }                               from '@/lib/quickbooks/tokens'
 import type { QBSnapshot }                               from '@/lib/quickbooks/types'
 import fs                                                from 'fs'
 import path                                              from 'path'
@@ -8,7 +8,7 @@ import path                                              from 'path'
 const SNAP_FILE = path.join(process.cwd(), '.qb-data.json')
 
 export async function POST() {
-  const tokens = loadTokens()
+  const tokens = await loadTokensAsync()
   if (!tokens) {
     return NextResponse.json({ error: 'QuickBooks not connected' }, { status: 401 })
   }

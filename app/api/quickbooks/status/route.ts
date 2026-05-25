@@ -3,7 +3,8 @@ import { getStatus }    from '@/lib/quickbooks/client'
 
 export async function GET() {
   try {
-    return NextResponse.json(getStatus())
+    const status = await getStatus()
+    return NextResponse.json(status)
   } catch (error) {
     console.error('Status check error:', error)
     return NextResponse.json({
