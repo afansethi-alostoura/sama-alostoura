@@ -25,14 +25,28 @@ export async function POST(req: Request) {
     }
 
     // Validate credentials (timing-safe comparison to prevent timing attacks)
-    const usernameMatch = crypto.timingSafeEqual(
-      Buffer.from(username),
-      Buffer.from(ADMIN_USERNAME)
-    )
-    const passwordMatch = crypto.timingSafeEqual(
-      Buffer.from(password),
-      Buffer.from(ADMIN_PASSWORD)
-    )
+    // timingSafeEqual requires equal length buffers, so check length first
+    let usernameMatch = false
+    let passwordMatch = false
+
+    try {
+      if (username.length === ADMIN_USERNAME.length) {
+        usernameMatch = crypto.timingSafeEqual(
+          Buffer.from(username),
+          Buffer.from(ADMIN_USERNAME)
+        )
+      }
+      if (password.length === ADMIN_PASSWORD.length) {
+        passwordMatch = crypto.timingSafeEqual(
+          Buffer.from(password),
+          Buffer.from(ADMIN_PASSWORD)
+        )
+      }
+    } catch {
+      // If comparison fails, credentials are invalid
+      usernameMatch = false
+      passwordMatch = false
+    }
 
     if (!usernameMatch || !passwordMatch) {
       return NextResponse.json(
