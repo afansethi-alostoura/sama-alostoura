@@ -97,7 +97,9 @@ export async function POST(request: NextRequest) {
 // GET: List uploaded files (for debugging)
 export async function GET() {
   try {
-    await ensureUploadDir()
+    if (!fs.existsSync(UPLOAD_DIR)) {
+      fs.mkdirSync(UPLOAD_DIR, { recursive: true })
+    }
     const files = fs.readdirSync(UPLOAD_DIR)
     return NextResponse.json({ files, count: files.length })
   } catch (error) {
