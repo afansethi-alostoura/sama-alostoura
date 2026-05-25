@@ -42,6 +42,13 @@ export function getAuthUrl(state: string): string {
 
 /** Exchange authorization code for access + refresh tokens */
 export async function exchangeCode(code: string, realmId: string): Promise<QBTokens> {
+  console.log('[QB] Exchanging code for tokens...')
+  console.log('[QB] Config:', {
+    clientId: CLIENT_ID?.substring(0, 10) + '...',
+    redirectUri: REDIRECT_URI,
+    environment: ENVIRONMENT
+  })
+
   const res = await fetch(TOKEN_URL, {
     method: 'POST',
     headers: {
@@ -56,15 +63,25 @@ export async function exchangeCode(code: string, realmId: string): Promise<QBTok
     }),
   })
 
+  console.log('[QB] Token exchange response:', res.status, res.statusText)
+
   if (!res.ok) {
     const err = await res.text()
+    console.error('[QB] Token exchange error:', err)
     throw new Error(`Token exchange failed (${res.status}): ${err}`)
   }
 
-  const data = await res.json()
-  const tokens: QBTokens = { ...data, realm_id: realmId, created_at: Date.now() }
-  await saveTokens(tokens)
-  return tokens
+  try {
+    const data = await res.json()
+    console.log('[QB] Token received, saving to Supabase...')
+    const tokens: QBTokens = { ...data, realm_id: realmId, created_at: Date.now() }
+    await saveTokens(tokens)
+    console.log('[QB] Tokens saved successfully!')
+    return tokens
+  } catch (err) {
+    console.error('[QB] Error parsing or saving tokens:', err)
+    throw err
+  }
 }
 
 /** Refresh the access token using the refresh token */
