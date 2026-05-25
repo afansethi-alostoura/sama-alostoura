@@ -1,17 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAuthUrl }   from '@/lib/quickbooks/client'
+import { cookies }      from 'next/headers'
 import crypto           from 'crypto'
-import fs               from 'fs'
-import path             from 'path'
-
-// Store OAuth state temporarily so we can validate the callback
-function saveState(state: string) {
-  fs.writeFileSync(
-    path.join(process.cwd(), '.qb-oauth-state.tmp'),
-    JSON.stringify({ state, expires: Date.now() + 10 * 60 * 1000 }), // 10 min
-    'utf8'
-  )
-}
 
 export async function GET() {
   if (!process.env.QUICKBOOKS_CLIENT_ID || !process.env.QUICKBOOKS_CLIENT_SECRET) {
@@ -20,10 +10,26 @@ export async function GET() {
     }, { status: 400 })
   }
 
-  const state   = crypto.randomBytes(16).toString('hex')
-  const authUrl = getAuthUrl(state)
-  saveState(state)
+  try {
+    const state   = crypto.randomBytes(16).toString('hex')
+    const authUrl = getAuthUrl(state)
 
-  // Redirect the browser to Intuit's OAuth page
-  return NextResponse.redirect(authUrl)
+    // Store state in secure cookie (10 minute expiry)
+    const response = NextResponse.redirect(authUrl)
+    const cookieStore = await cookies()
+    cookieStore.set('qb-oauth-state', state, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 600, // 10 minutes
+      path: '/',
+    })
+
+    return response
+  } catch (error) {
+    console.error('QB connect error:', error)
+    return NextResponse.json({
+      error: 'Failed to initiate QB connection',
+    }, { status: 500 })
+  }
 }

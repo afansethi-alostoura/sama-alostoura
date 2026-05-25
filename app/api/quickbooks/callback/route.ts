@@ -1,16 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { exchangeCode }              from '@/lib/quickbooks/client'
-import fs                            from 'fs'
-import path                          from 'path'
+import { cookies }                   from 'next/headers'
 
-function validateState(state: string): boolean {
+async function validateState(state: string): Promise<boolean> {
   try {
-    const file = path.join(process.cwd(), '.qb-oauth-state.tmp')
-    if (!fs.existsSync(file)) return false
-    const { state: saved, expires } = JSON.parse(fs.readFileSync(file, 'utf8'))
-    fs.unlinkSync(file) // one-time use
-    return saved === state && Date.now() < expires
-  } catch { return false }
+    const cookieStore = await cookies()
+    const savedState = cookieStore.get('qb-oauth-state')?.value
+
+    // Delete the cookie (one-time use)
+    cookieStore.delete('qb-oauth-state')
+
+    return savedState === state
+  } catch {
+    return false
+  }
 }
 
 export async function GET(req: NextRequest) {
@@ -23,26 +26,27 @@ export async function GET(req: NextRequest) {
   // User denied access
   if (error) {
     return NextResponse.redirect(
-      new URL(`/settings?qb_error=${encodeURIComponent(error)}`, req.url)
+      new URL(`/accounting?qb_error=${encodeURIComponent(error)}`, req.url)
     )
   }
 
   if (!code || !realmId || !state) {
-    return NextResponse.redirect(new URL('/settings?qb_error=missing_params', req.url))
+    return NextResponse.redirect(new URL('/accounting?qb_error=missing_params', req.url))
   }
 
   // CSRF check
-  if (!validateState(state)) {
-    return NextResponse.redirect(new URL('/settings?qb_error=invalid_state', req.url))
+  const isValidState = await validateState(state)
+  if (!isValidState) {
+    return NextResponse.redirect(new URL('/accounting?qb_error=invalid_state', req.url))
   }
 
   try {
     await exchangeCode(code, realmId)
-    return NextResponse.redirect(new URL('/settings?qb_connected=1', req.url))
+    return NextResponse.redirect(new URL('/accounting?qb_connected=1', req.url))
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error'
     return NextResponse.redirect(
-      new URL(`/settings?qb_error=${encodeURIComponent(msg)}`, req.url)
+      new URL(`/accounting?qb_error=${encodeURIComponent(msg)}`, req.url)
     )
   }
 }
