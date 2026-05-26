@@ -7,8 +7,8 @@ import {
   UserPlus, Shield, Handshake, BarChart3, ArrowUpRight, ArrowDownRight,
   Plus, Activity,
 } from 'lucide-react'
-import { DEMO_PROJECTS } from '@/lib/demo-data'
 import { formatCurrency } from '@/lib/utils'
+import { useAllProjects } from '@/hooks/useAllProjects'
 
 const AGENTS = [
   { id: 'ceo-dashboard',         name: 'CEO Agent',          desc: 'Strategic portfolio insights',  icon: BarChart3,    color: 'blue'   },
@@ -39,12 +39,12 @@ const COLOR_MAP: Record<string, { bg: string; text: string; badge: string }> = {
 interface AgentState { briefing: string; loading: boolean; time: string }
 
 const ACTIVITY_FEED = [
-  { time: '09:14', text: 'Al Qubaisi — Snagging completed, ready for handover', type: 'success', project: 'Al Qubaisi' },
-  { time: '09:02', text: 'Invoice #INV-2024-041 sent to Khalid Al Mansouri', type: 'info', project: 'Khalid' },
-  { time: '08:47', text: 'Al Rashidi — Ground floor concrete pour completed', type: 'success', project: 'Al Rashidi' },
-  { time: '08:30', text: 'New material delivery scheduled — Steel rebar 12mm', type: 'info', project: 'Al Rashidi' },
-  { time: 'Yesterday', text: 'Payment received AED 280,000 from Rashid Al Rashidi', type: 'payment', project: 'Al Rashidi' },
-  { time: 'Yesterday', text: 'BOQ revision submitted for Al Falasi project', type: 'info', project: 'Al Falasi' },
+  { time: '09:14', text: 'Fahad Al Serkal Villa — Project mobilization started', type: 'success', project: 'Fahad' },
+  { time: '09:02', text: 'Khalid Al Ameri Villa — MEP & finishing works in progress', type: 'info', project: 'Khalid' },
+  { time: '08:47', text: 'Al Mirdif Renovation — External painting 80% complete', type: 'success', project: 'Al Mirdif' },
+  { time: '08:30', text: 'Khalid Al Ameri — MBHRE Stage 4 payment AED 200,000 applied', type: 'info', project: 'Khalid' },
+  { time: 'Yesterday', text: 'Payment received AED 162,000 from Al Mirdif project', type: 'payment', project: 'Al Mirdif' },
+  { time: 'Yesterday', text: 'Fahad Al Serkal — BOQ signed, contract value AED 1,993,450', type: 'info', project: 'Fahad' },
 ]
 
 const QUICK_ACTIONS = [
@@ -60,11 +60,8 @@ export default function CEODashboard() {
   const [morningLoading, setMorningLoading] = useState(true)
   const [mounted, setMounted] = useState(false)
 
-  const activeProjects       = DEMO_PROJECTS.filter(p => p.status === 'active')
-  const totalContract        = activeProjects.reduce((s, p) => s + p.contract_value, 0)
-  const totalReceived        = activeProjects.reduce((s, p) => s + p.received_amount, 0)
-  const outstanding          = totalContract - totalReceived
-  const collectionRate       = totalContract > 0 ? (totalReceived / totalContract) * 100 : 0
+  const { projects, activeProjects, totalContract, totalReceived, totalOutstanding: outstanding } = useAllProjects()
+  const collectionRate = totalContract > 0 ? (totalReceived / totalContract) * 100 : 0
 
   useEffect(() => {
     setMounted(true)
