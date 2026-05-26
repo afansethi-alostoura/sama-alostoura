@@ -202,6 +202,35 @@ CREATE TABLE IF NOT EXISTS leads (
   created_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- ── 16. COMPANY BOQ ─────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS company_boq (
+  id                 UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  project_id         TEXT UNIQUE NOT NULL,
+  project_number     TEXT        DEFAULT '',
+  project_name       TEXT        DEFAULT '',
+  area               TEXT        DEFAULT '',
+  owner              TEXT        DEFAULT '',
+  contractor         TEXT        DEFAULT 'SAMA ALOSTOURA BUILDING CONTRACTING L.L.C',
+  items              JSONB       NOT NULL DEFAULT '[]'::jsonb,
+  created_at         TIMESTAMPTZ DEFAULT NOW(),
+  updated_at         TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ── 17. MBHRE BOQ ────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS mbhre_boq (
+  id                   UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  project_id           TEXT UNIQUE NOT NULL,
+  date_field           TEXT DEFAULT '',
+  file_no              TEXT DEFAULT '',
+  contract_value_text  TEXT DEFAULT '',
+  owner_name           TEXT DEFAULT '',
+  contractor           TEXT DEFAULT 'سماء السطورة لمقاولات البناء ش.ذ.م.م',
+  consultant           TEXT DEFAULT '',
+  items                JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at           TIMESTAMPTZ DEFAULT NOW(),
+  updated_at           TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ── INDEXES ─────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_projects_status       ON projects(status);
 CREATE INDEX IF NOT EXISTS idx_projects_client        ON projects(client_id);

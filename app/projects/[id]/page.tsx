@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, MapPin, Calendar, Building2, CheckCircle2, Clock, AlertCircle, Loader2, Sparkles, TrendingUp } from 'lucide-react'
+import { ArrowLeft, MapPin, Calendar, Building2, CheckCircle2, Clock, AlertCircle, Loader2, Sparkles, TrendingUp, FileText } from 'lucide-react'
 import { getDemoProject } from '@/lib/demo-data'
 import { formatCurrency, formatDate, progressBarColor, statusBadge, statusLabel } from '@/lib/utils'
 import type { StoredProject } from '@/lib/projects-store'
@@ -223,7 +223,9 @@ export default function ProjectPage() {
           {isMBHRE && (
             <div className="bg-indigo-50 rounded-lg px-4 py-3">
               <p className="text-xs text-slate-600">MBHRE Approved</p>
-              <p className="font-bold text-slate-900 mt-0.5">{project.mbhre_approved_progress}%</p>
+              <p className="font-bold text-slate-900 mt-0.5">
+                {project.mbhre_approved_progress != null ? `${project.mbhre_approved_progress}%` : 'Pending'}
+              </p>
               <p className="text-xs text-slate-500 mt-0.5">Progress</p>
             </div>
           )}
@@ -239,6 +241,20 @@ export default function ProjectPage() {
         >
           <TrendingUp className="w-4 h-4" /> Update Progress
         </button>
+
+        {/* BOQ Buttons */}
+        <Link
+          href={`/projects/${project.id}/boq/company`}
+          className="flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors shadow-sm"
+        >
+          <FileText className="w-4 h-4 text-slate-500" /> Company BOQ
+        </Link>
+        <Link
+          href={`/projects/${project.id}/boq/mbhre`}
+          className="flex items-center gap-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors shadow-sm"
+        >
+          <FileText className="w-4 h-4 text-indigo-500" /> MBHRE BOQ
+        </Link>
 
         {/* Brief Me */}
         <button
