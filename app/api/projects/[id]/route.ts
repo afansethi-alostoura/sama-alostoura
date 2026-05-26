@@ -1,5 +1,13 @@
 import { NextResponse }         from 'next/server'
-import { updateStoredProject, deleteStoredProject } from '@/lib/projects-store'
+import { getAllStoredProjects, updateStoredProject, deleteStoredProject } from '@/lib/projects-store'
+
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const all = getAllStoredProjects()
+  const project = all.find(p => p.id === id)
+  if (!project) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  return NextResponse.json(project)
+}
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params

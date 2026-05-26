@@ -2,10 +2,11 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, MapPin, Calendar, Building2, AlertTriangle, CheckCircle2, Clock, AlertCircle, Loader2, Sparkles } from 'lucide-react'
+import { ArrowLeft, MapPin, Calendar, Building2, CheckCircle2, Clock, AlertCircle, Loader2, Sparkles, TrendingUp } from 'lucide-react'
 import { getDemoProject } from '@/lib/demo-data'
 import { formatCurrency, formatDate, progressBarColor, statusBadge, statusLabel } from '@/lib/utils'
 import type { StoredProject } from '@/lib/projects-store'
+import { ProgressUpdateModal, type BOQSection } from '@/components/projects/progress-update-modal'
 
 interface ProjectData {
   id: string
@@ -28,6 +29,7 @@ interface ProjectData {
   mbhre_approved_amount?: number
   mbhre_approved_progress?: number
   plot_number?: string
+  boq_sections?: BOQSection[]
 }
 
 export default function ProjectPage() {
@@ -37,6 +39,7 @@ export default function ProjectPage() {
   const [loading, setLoading] = useState(true)
   const [briefing, setBriefing] = useState<string>('')
   const [briefingLoading, setBriefingLoading] = useState(false)
+  const [showProgressModal, setShowProgressModal] = useState(false)
 
   useEffect(() => {
     // Try stored projects first, fall back to demo
@@ -215,12 +218,21 @@ export default function ProjectPage() {
         </div>
       </div>
 
-      {/* Brief Me Button */}
-      <div className="mb-6 flex gap-3">
+      {/* Action Buttons */}
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        {/* Update Progress */}
+        <button
+          onClick={() => setShowProgressModal(true)}
+          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors shadow-sm"
+        >
+          <TrendingUp className="w-4 h-4" /> Update Progress
+        </button>
+
+        {/* Brief Me */}
         <button
           onClick={handleBriefMe}
           disabled={briefingLoading}
-          className="flex items-center gap-2 bg-gradient-to-r from-brand-500 to-brand-600 hover:from-brand-600 hover:to-brand-700 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-all disabled:opacity-60 shadow-sm"
+          className="flex items-center gap-2 bg-gradient-to-r from-brand-500 to-brand-600 hover:from-brand-600 hover:to-brand-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-all disabled:opacity-60 shadow-sm"
         >
           {briefingLoading ? (
             <><Loader2 className="w-4 h-4 animate-spin" /> Briefing…</>
@@ -228,8 +240,25 @@ export default function ProjectPage() {
             <><Sparkles className="w-4 h-4" /> Brief Me</>
           )}
         </button>
-        <p className="text-sm text-slate-500 flex items-center">AI Project Manager will analyze everything and brief you</p>
       </div>
+
+      {/* Progress Update Modal */}
+      {showProgressModal && project && (
+        <ProgressUpdateModal
+          projectId={project.id}
+          projectName={project.name}
+          contractValue={project.contract_value}
+          initialSections={project.boq_sections ?? []}
+          initialStage={project.current_stage ?? ''}
+          onClose={() => setShowProgressModal(false)}
+          onSaved={(pct, stage, sections) => {
+            setProject(prev => prev
+              ? { ...prev, progress_percent: pct, current_stage: stage, boq_sections: sections }
+              : prev
+            )
+          }}
+        />
+      )}
 
       {/* AI Briefing Response */}
       {briefing && (
@@ -252,6 +281,49 @@ export default function ProjectPage() {
 
       {/* Work Stages */}
       <div className="space-y-6">
+
+        {/* BOQ Sections Progress (shown when sections exist) */}
+        {project.boq_sections && project.boq_sections.length > 0 && (
+          <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+              <h2 className="font-semibold text-slate-900">BOQ Section Progress</h2>
+              <button
+                onClick={() => setShowProgressModal(true)}
+                className="flex items-center gap-1.5 text-blue-600 hover:text-blue-700 text-xs font-semibold transition-colors"
+              >
+                <TrendingUp className="w-3.5 h-3.5" /> Update
+              </button>
+            </div>
+            <div className="divide-y divide-slate-50">
+              {project.boq_sections.map((s, i) => {
+                const pct = s.progress ?? 0
+                const barC = pct === 100 ? 'bg-emerald-500' : pct > 0 ? 'bg-amber-400' : 'bg-slate-200'
+                return (
+                  <div key={i} className="flex items-center gap-4 px-6 py-3">
+                    <div className="w-5 flex-shrink-0">
+                      {pct === 100
+                        ? <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                        : pct > 0
+                          ? <Clock className="w-4 h-4 text-amber-500" />
+                          : <div className="w-4 h-4 rounded-full border-2 border-slate-300" />
+                      }
+                    </div>
+                    <span className="flex-1 text-sm text-slate-700 font-medium">{s.section}</span>
+                    <span className="text-xs text-slate-400 w-28 text-right">AED {s.amount.toLocaleString()}</span>
+                    <div className="flex items-center gap-2 w-40">
+                      <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full transition-all ${barC}`} style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className={`text-xs font-semibold w-8 text-right ${pct === 100 ? 'text-emerald-600' : pct > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
+                        {pct}%
+                      </span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Completed Works */}
         {project.completed_works && project.completed_works.length > 0 && (

@@ -11,6 +11,13 @@ import type { Project } from '@/types'
 
 const FILE = path.join(process.cwd(), '.projects-data.json')
 
+export interface BOQSection {
+  section:    string
+  amount:     number
+  percentage: number   // % of total contract value
+  progress:   number   // 0–100 completion %
+}
+
 export interface StoredProject {
   id:               string
   name:             string
@@ -27,6 +34,9 @@ export interface StoredProject {
   expected_completion: string
   created_at:       string
   updated_at:       string
+  // Optional extended fields
+  boq_sections?:   BOQSection[]
+  [key: string]:   unknown   // allow extra project-specific metadata
 }
 
 function readStore(): StoredProject[] {
