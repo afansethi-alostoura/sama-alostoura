@@ -35,8 +35,27 @@ export interface StoredProject {
   created_at:       string
   updated_at:       string
   // Optional extended fields
-  boq_sections?:   BOQSection[]
-  [key: string]:   unknown   // allow extra project-specific metadata
+  boq_sections?:        BOQSection[]
+  // Extra metadata stored in JSON but not typed strictly
+  mbhre_approved_amount?:    number
+  mbhre_approved_progress?:  number
+  plot_number?:              string
+  consultant?:               string
+  owner_share?:              number
+  retention_percent?:        number
+  file_number?:              string
+  owner_paid?:               number
+  mbhre_payment_1?:          number
+  mbhre_payment_1_retention?: number
+  mbhre_payment_2?:          number
+  mbhre_payment_2_retention?: number
+  total_retention_held?:     number
+  outstanding_to_collect?:   number
+  next_payment_claimable?:   number
+  completed_works?:          string[]
+  partial_works?:            Array<{ name: string; progress: number }>
+  pending_works?:            string[]
+  scope_changes?:            string
 }
 
 function readStore(): StoredProject[] {
