@@ -69,22 +69,33 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   let body: MetaWebhookBody
+  let rawText = ''
 
   try {
-    body = await req.json()
+    rawText = await req.text()
+    body = JSON.parse(rawText) as MetaWebhookBody
   } catch {
+    console.error('[WhatsApp] POST received non-JSON body:', rawText.slice(0, 500))
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
+  // Log every POST so we can see it in Vercel logs
+  console.log('[WhatsApp] POST received — object:', body.object, '| entries:', body.entry?.length ?? 0)
+
   // Always return 200 immediately — Meta will retry if we don't
   if (body.object !== 'whatsapp_business_account') {
+    console.log('[WhatsApp] Ignored — unexpected object type:', body.object)
     return NextResponse.json({ status: 'ignored' })
   }
 
+  let messageCount = 0
+
   for (const entry of body.entry ?? []) {
     for (const change of entry.changes ?? []) {
+      console.log('[WhatsApp] Change field:', change.field)
       if (change.field !== 'messages') continue
       const { messages, contacts } = change.value
+      console.log('[WhatsApp] Messages in payload:', messages?.length ?? 0)
       if (!messages?.length) continue
 
       for (const msg of messages) {
@@ -97,6 +108,8 @@ export async function POST(req: Request) {
 
         const from       = msg.from
         const senderName = contacts?.find(c => c.wa_id === from)?.profile.name ?? 'Unknown'
+        console.log(`[WhatsApp] Message from ${senderName} (${from}): "${text.slice(0, 100)}"`)
+        messageCount++
 
         // Fire and forget — we already returned 200
         handleMessage({ text: text.trim(), from, senderName }).catch(err =>
@@ -106,7 +119,8 @@ export async function POST(req: Request) {
     }
   }
 
-  return NextResponse.json({ status: 'ok' })
+  console.log(`[WhatsApp] Processed ${messageCount} message(s)`)
+  return NextResponse.json({ status: 'ok', processed: messageCount })
 }
 
 // ─── Core message handler ─────────────────────────────────────────────────────
