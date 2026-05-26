@@ -114,15 +114,15 @@ export default function ProjectPage() {
     : []
 
   return (
-    <div className="p-8 max-w-6xl mx-auto">
+    <div className="p-4 sm:p-8 max-w-6xl mx-auto">
       {/* Back */}
       <Link href="/projects" className="inline-flex items-center gap-1.5 text-slate-500 hover:text-slate-700 text-sm mb-6 transition-colors">
         <ArrowLeft className="w-4 h-4" /> All Projects
       </Link>
 
       {/* Header Card */}
-      <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-6 mb-6">
-        <div className="flex items-start justify-between gap-4 mb-5">
+      <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 sm:p-6 mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-5">
           <div className="flex items-start gap-4 flex-1">
             <div className="w-14 h-14 bg-brand-50 rounded-xl flex items-center justify-center flex-shrink-0">
               <Building2 className="w-7 h-7 text-brand-600" />
@@ -200,7 +200,7 @@ export default function ProjectPage() {
         </div>
 
         {/* Financials Grid */}
-        <div className={`grid gap-4 ${isMBHRE ? 'grid-cols-5' : 'grid-cols-4'}`}>
+        <div className={`grid gap-4 grid-cols-2 ${isMBHRE ? 'sm:grid-cols-5' : 'sm:grid-cols-4'}`}>
           <div className="bg-emerald-50 rounded-lg px-4 py-3">
             <p className="text-xs text-slate-600">Received</p>
             <p className="font-bold text-slate-900 mt-0.5">{formatCurrency(project.received_amount)}</p>
@@ -345,7 +345,7 @@ export default function ProjectPage() {
               <h2 className="font-semibold text-slate-900">Completed Works ({completedSections.length})</h2>
             </div>
             <div className="p-6">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {completedSections.map((s, i) => (
                   <div key={i} className="flex items-start gap-3 p-3 bg-emerald-50 rounded-lg">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
@@ -413,7 +413,7 @@ export default function ProjectPage() {
                   <h2 className="font-semibold text-slate-900">Completed Works ({project.completed_works.length})</h2>
                 </div>
                 <div className="p-6">
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {project.completed_works.map((work, i) => (
                       <div key={i} className="flex items-start gap-3 p-3 bg-emerald-50 rounded-lg">
                         <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />

@@ -65,9 +65,9 @@ export default function AccountingPage() {
   const vatDue           = totalReceived * 0.05  // 5% UAE VAT estimate
 
   return (
-    <div className="p-6 max-w-[1400px] mx-auto animate-fade-in">
+    <div className="p-4 sm:p-6 max-w-[1400px] mx-auto animate-fade-in">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Accounting</h1>
           <p className="text-slate-500 text-sm mt-0.5">
@@ -108,7 +108,7 @@ export default function AccountingPage() {
       )}
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <StatCard label="Total Billed"      value={`AED ${(totalBilled / 1000).toFixed(0)}K`}      sub={snapshot ? 'From QuickBooks' : 'From contracts'} color="text-slate-900" />
         <StatCard label="Total Received"    value={`AED ${(totalReceived / 1000).toFixed(0)}K`}    sub={`${Math.round((totalReceived / totalBilled) * 100)}% collected`} color="text-emerald-600" />
         <StatCard label="Outstanding"       value={`AED ${(totalOutstanding / 1000).toFixed(0)}K`} sub={overdueCount > 0 ? `${overdueCount} overdue` : 'All current'} color={overdueCount > 0 ? 'text-red-600' : 'text-amber-600'} />

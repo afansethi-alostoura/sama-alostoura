@@ -40,10 +40,10 @@ export default function ProjectsPage() {
   const completedCount = completedProjects.length
 
   return (
-    <div className="p-6 max-w-[1400px] mx-auto animate-fade-in">
+    <div className="p-4 sm:p-6 max-w-[1400px] mx-auto animate-fade-in">
 
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Projects</h1>
           <p className="text-slate-500 text-sm mt-0.5">
@@ -52,7 +52,7 @@ export default function ProjectsPage() {
         </div>
         <Link
           href="/projects/add"
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors shadow-sm"
+          className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors shadow-sm self-start sm:self-auto"
         >
           <Plus className="w-4 h-4" />
           New Project
@@ -60,7 +60,7 @@ export default function ProjectsPage() {
       </div>
 
       {/* Stats row */}
-      <div className="grid grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         {[
           { label: 'Total Portfolio Value', value: formatCurrency(totalValue), color: 'text-blue-600' },
           { label: 'Active Projects',       value: String(activeCount),        color: 'text-emerald-600' },
@@ -75,7 +75,7 @@ export default function ProjectsPage() {
 
       {/* Filters + Search */}
       <div className="bg-white rounded-xl border border-slate-100 shadow-card overflow-hidden">
-        <div className="flex items-center gap-3 px-5 py-3.5 border-b border-slate-100">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 px-4 sm:px-5 py-3.5 border-b border-slate-100">
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
@@ -104,8 +104,9 @@ export default function ProjectsPage() {
           </div>
         </div>
 
-        {/* Table */}
-        <table className="w-full">
+        {/* Table — horizontally scrollable on mobile */}
+        <div className="overflow-x-auto">
+        <table className="w-full min-w-[700px]">
           <thead>
             <tr className="border-b border-slate-100 bg-slate-50/50">
               {['Project', 'Client', 'Contract Value', 'Received', 'Progress', 'Status', 'Stage', ''].map(h => (
@@ -189,6 +190,7 @@ export default function ProjectsPage() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   )

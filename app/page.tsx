@@ -98,16 +98,16 @@ export default function CEODashboard() {
   const today = new Date().toLocaleDateString('en-AE', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
 
   return (
-    <div className="p-6 max-w-[1600px] mx-auto space-y-6 animate-fade-in">
+    <div className="p-4 sm:p-6 max-w-[1600px] mx-auto space-y-4 sm:space-y-6 animate-fade-in">
 
       {/* Page header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">CEO Dashboard</h1>
           <p className="text-slate-500 text-sm mt-0.5">{today}</p>
         </div>
-        <div className="flex gap-2">
-          {QUICK_ACTIONS.map(({ label, href, icon: Icon, color }) => (
+        <div className="flex flex-wrap gap-2">
+          {QUICK_ACTIONS.map(({ label, href, icon: Icon }) => (
             <Link key={href} href={href}
               className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all shadow-card"
             >
@@ -119,7 +119,7 @@ export default function CEODashboard() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           {
             label: 'Total Contract Value', value: formatCurrency(totalContract),
@@ -161,10 +161,10 @@ export default function CEODashboard() {
       </div>
 
       {/* Main content grid */}
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
         {/* Morning briefing + project health */}
-        <div className="col-span-2 space-y-6">
+        <div className="lg:col-span-2 space-y-6">
 
           {/* Morning Briefing */}
           <div className="bg-white rounded-xl border border-slate-100 shadow-card overflow-hidden">
@@ -278,7 +278,7 @@ export default function CEODashboard() {
           </span>
         </div>
 
-        <div className="grid grid-cols-5 gap-0 divide-x divide-y divide-slate-100">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-0 divide-x divide-y divide-slate-100">
           {AGENTS.map(agent => {
             const c     = COLOR_MAP[agent.color]
             const state = agents[agent.id]
