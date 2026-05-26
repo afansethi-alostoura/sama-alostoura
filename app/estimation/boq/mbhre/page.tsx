@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, Save, Printer, CheckCircle } from 'lucide-react'
@@ -104,7 +104,7 @@ function fmt(n: number) {
   return n.toLocaleString('en-AE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
-export default function MBHREBOQPage() {
+function MBHREBOQInner() {
   const router       = useRouter()
   const searchParams = useSearchParams()
   const boqId        = searchParams.get('id')
@@ -308,5 +308,13 @@ export default function MBHREBOQPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function MBHREBOQPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-slate-50 flex items-center justify-center"><div className="w-10 h-10 border-4 border-slate-200 border-t-indigo-500 rounded-full animate-spin" /></div>}>
+      <MBHREBOQInner />
+    </Suspense>
   )
 }
