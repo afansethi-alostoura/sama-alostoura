@@ -10,10 +10,10 @@ import { DEMO_PROJECTS }       from '@/lib/demo-data'
 
 function StatCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color: string }) {
   return (
-    <div className="bg-white rounded-xl border border-slate-100 p-5 shadow-sm">
-      <p className="text-slate-500 text-sm font-medium">{label}</p>
-      <p className={`text-2xl font-bold mt-1 ${color}`}>{value}</p>
-      {sub && <p className="text-slate-400 text-xs mt-1">{sub}</p>}
+    <div className="bg-white rounded-xl border border-slate-100 p-5 shadow-card card-hover">
+      <p className="text-xs text-slate-500 font-medium">{label}</p>
+      <p className={`text-2xl font-bold mt-2 ${color}`}>{value}</p>
+      {sub && <p className="text-xs text-slate-400 mt-1">{sub}</p>}
     </div>
   )
 }
@@ -63,12 +63,12 @@ export default function AccountingPage() {
   const vatDue           = totalReceived * 0.05  // 5% UAE VAT estimate
 
   return (
-    <div className="p-8">
+    <div className="p-6 max-w-[1400px] mx-auto animate-fade-in">
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Accounting</h1>
-          <p className="text-slate-500 text-sm mt-1">
+          <p className="text-slate-500 text-sm mt-0.5">
             {status?.connected
               ? <>Connected to QuickBooks {status.environment} · {status.synced_at ? `Last sync ${new Date(status.synced_at).toLocaleString('en-AE')}` : 'Not yet synced'}</>
               : 'QuickBooks not connected — showing project database figures'}
@@ -79,12 +79,12 @@ export default function AccountingPage() {
             <button
               onClick={syncNow}
               disabled={syncing}
-              className="flex items-center gap-2 bg-[#2CA01C] hover:bg-[#238016] text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-60"
+              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors disabled:opacity-60 shadow-sm"
             >
               {syncing ? <><Loader2 className="w-4 h-4 animate-spin" /> Syncing…</> : <><RefreshCw className="w-4 h-4" /> Sync QB</>}
             </button>
           ) : (
-            <Link href="/settings" className="flex items-center gap-2 bg-[#2CA01C] hover:bg-[#238016] text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+            <Link href="/settings" className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors shadow-sm">
               <Link2 className="w-4 h-4" /> Connect QuickBooks
             </Link>
           )}
@@ -93,20 +93,20 @@ export default function AccountingPage() {
 
       {/* QB not connected banner */}
       {!loading && !status?.connected && (
-        <div className="mb-6 bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+        <div className="mb-6 bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
           <div>
-            <p className="text-amber-800 text-sm font-semibold">QuickBooks not connected</p>
-            <p className="text-amber-700 text-sm mt-0.5">
-              Showing figures from your project database. {' '}
-              <Link href="/settings" className="underline font-medium">Connect QuickBooks</Link> to see live invoices and payments.
+            <p className="text-blue-900 text-sm font-semibold">QuickBooks not connected</p>
+            <p className="text-blue-700 text-sm mt-0.5">
+              Showing figures from your project database.{' '}
+              <Link href="/settings" className="underline font-medium">Connect QuickBooks</Link> for live invoices and payments.
             </p>
           </div>
         </div>
       )}
 
       {/* Stats */}
-      <div className="grid grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-4 gap-4 mb-6">
         <StatCard label="Total Billed"      value={`AED ${(totalBilled / 1000).toFixed(0)}K`}      sub={snapshot ? 'From QuickBooks' : 'From contracts'} color="text-slate-900" />
         <StatCard label="Total Received"    value={`AED ${(totalReceived / 1000).toFixed(0)}K`}    sub={`${Math.round((totalReceived / totalBilled) * 100)}% collected`} color="text-emerald-600" />
         <StatCard label="Outstanding"       value={`AED ${(totalOutstanding / 1000).toFixed(0)}K`} sub={overdueCount > 0 ? `${overdueCount} overdue` : 'All current'} color={overdueCount > 0 ? 'text-red-600' : 'text-amber-600'} />

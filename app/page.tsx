@@ -1,317 +1,325 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { Bot, TrendingUp, AlertCircle, CheckCircle, Clock, RefreshCw, Loader2 } from 'lucide-react'
+import Link from 'next/link'
+import {
+  Bot, TrendingUp, AlertCircle, CheckCircle, Clock, RefreshCw, Loader2,
+  Building2, Wallet, Calculator, ShoppingCart, Users, Wrench, FileText,
+  UserPlus, Shield, Handshake, BarChart3, ArrowUpRight, ArrowDownRight,
+  Plus, Activity,
+} from 'lucide-react'
 import { DEMO_PROJECTS } from '@/lib/demo-data'
-import type { QBSnapshot } from '@/lib/quickbooks/types'
-
-interface ExecutiveStats {
-  totalContractValue: number
-  totalReceived: number
-  outstandingBalance: number
-  activeProjectsCount: number
-  pipelineValue: number
-  receivedPercentage: number
-}
+import { formatCurrency } from '@/lib/utils'
 
 const AGENTS = [
-  { id: 'ceo-dashboard', name: 'CEO Dashboard', description: 'Strategic insights & portfolio overview', icon: '📊', color: 'blue' },
-  { id: 'project-manager', name: 'Project Manager', description: 'Project status & delivery risks', icon: '📋', color: 'amber' },
-  { id: 'accountant', name: 'Accountant', description: 'Financial health & cash flow analysis', icon: '💰', color: 'emerald' },
-  { id: 'estimation-engineer', name: 'Estimation Engineer', description: 'Cost estimates & BOQ analysis', icon: '📐', color: 'purple' },
-  { id: 'financial-analyst', name: 'Financial Analyst', description: 'Revenue trends & profitability', icon: '📈', color: 'green' },
-  { id: 'risk-manager', name: 'Risk Manager', description: 'Risk assessment & mitigation', icon: '⚠️', color: 'red' },
-  { id: 'resource-planner', name: 'Resource Planner', description: 'Team utilization & scheduling', icon: '👥', color: 'cyan' },
-  { id: 'quality-assurance', name: 'Quality Assurance', description: 'Quality standards & compliance', icon: '✓', color: 'indigo' },
-  { id: 'safety-officer', name: 'Safety Officer', description: 'Safety protocols & incidents', icon: '🛡️', color: 'yellow' },
-  { id: 'client-relations', name: 'Client Relations', description: 'Stakeholder communications', icon: '🤝', color: 'pink' },
+  { id: 'ceo-dashboard',         name: 'CEO Agent',          desc: 'Strategic portfolio insights',  icon: BarChart3,    color: 'blue'   },
+  { id: 'project-manager',       name: 'Project Manager',    desc: 'Project delivery & risks',       icon: Building2,    color: 'indigo' },
+  { id: 'accountant',            name: 'Finance AI',         desc: 'Cash flow & financial health',   icon: Wallet,       color: 'emerald'},
+  { id: 'estimation-engineer',   name: 'Estimation AI',      desc: 'Cost estimates & BOQ analysis',  icon: Calculator,   color: 'violet' },
+  { id: 'financial-analyst',     name: 'Financial Analyst',  desc: 'Revenue trends & profitability', icon: TrendingUp,   color: 'cyan'   },
+  { id: 'risk-manager',          name: 'Risk Manager',       desc: 'Risk assessment & mitigation',   icon: Shield,       color: 'orange' },
+  { id: 'resource-planner',      name: 'Resource Planner',   desc: 'Team & schedule optimization',   icon: Users,        color: 'teal'   },
+  { id: 'quality-assurance',     name: 'QA Inspector',       desc: 'Quality & compliance checks',    icon: CheckCircle,  color: 'green'  },
+  { id: 'safety-officer',        name: 'Safety Officer',     desc: 'Site safety & incidents',        icon: AlertCircle,  color: 'red'    },
+  { id: 'client-relations',      name: 'Client Relations',   desc: 'Stakeholder communications',     icon: Handshake,    color: 'pink'   },
 ]
 
-interface AgentBriefing {
-  agentId: string
-  briefing: string
-  timestamp: string
-  loading: boolean
+const COLOR_MAP: Record<string, { bg: string; text: string; badge: string }> = {
+  blue:    { bg: 'bg-blue-50',    text: 'text-blue-600',    badge: 'bg-blue-100 text-blue-700'    },
+  indigo:  { bg: 'bg-indigo-50',  text: 'text-indigo-600',  badge: 'bg-indigo-100 text-indigo-700'},
+  emerald: { bg: 'bg-emerald-50', text: 'text-emerald-600', badge: 'bg-emerald-100 text-emerald-700'},
+  violet:  { bg: 'bg-violet-50',  text: 'text-violet-600',  badge: 'bg-violet-100 text-violet-700'},
+  cyan:    { bg: 'bg-cyan-50',    text: 'text-cyan-600',    badge: 'bg-cyan-100 text-cyan-700'    },
+  orange:  { bg: 'bg-orange-50',  text: 'text-orange-600',  badge: 'bg-orange-100 text-orange-700'},
+  teal:    { bg: 'bg-teal-50',    text: 'text-teal-600',    badge: 'bg-teal-100 text-teal-700'    },
+  green:   { bg: 'bg-green-50',   text: 'text-green-600',   badge: 'bg-green-100 text-green-700'  },
+  red:     { bg: 'bg-red-50',     text: 'text-red-600',     badge: 'bg-red-100 text-red-700'      },
+  pink:    { bg: 'bg-pink-50',    text: 'text-pink-600',    badge: 'bg-pink-100 text-pink-700'    },
 }
 
+interface AgentState { briefing: string; loading: boolean; time: string }
+
+const ACTIVITY_FEED = [
+  { time: '09:14', text: 'Al Qubaisi — Snagging completed, ready for handover', type: 'success', project: 'Al Qubaisi' },
+  { time: '09:02', text: 'Invoice #INV-2024-041 sent to Khalid Al Mansouri', type: 'info', project: 'Khalid' },
+  { time: '08:47', text: 'Al Rashidi — Ground floor concrete pour completed', type: 'success', project: 'Al Rashidi' },
+  { time: '08:30', text: 'New material delivery scheduled — Steel rebar 12mm', type: 'info', project: 'Al Rashidi' },
+  { time: 'Yesterday', text: 'Payment received AED 280,000 from Rashid Al Rashidi', type: 'payment', project: 'Al Rashidi' },
+  { time: 'Yesterday', text: 'BOQ revision submitted for Al Falasi project', type: 'info', project: 'Al Falasi' },
+]
+
+const QUICK_ACTIONS = [
+  { label: 'New Project',      href: '/projects/add',       icon: Plus,       color: 'blue'    },
+  { label: 'Generate BOQ',     href: '/estimation/create',  icon: Calculator, color: 'violet'  },
+  { label: 'View Accounting',  href: '/accounting',         icon: Wallet,     color: 'emerald' },
+  { label: 'Site Reports',     href: '/reports',            icon: FileText,   color: 'orange'  },
+]
+
 export default function CEODashboard() {
-  const [stats, setStats] = useState<ExecutiveStats | null>(null)
-  const [snapshot, setSnapshot] = useState<QBSnapshot | null>(null)
-  const [briefings, setBriefings] = useState<Record<string, AgentBriefing>>({})
-  const [ceoMorningBriefing, setCEOMorningBriefing] = useState<string>('')
-  const [loadingMorning, setLoadingMorning] = useState(true)
+  const [agents, setAgents] = useState<Record<string, AgentState>>({})
+  const [morningBriefing, setMorningBriefing] = useState('')
+  const [morningLoading, setMorningLoading] = useState(true)
+  const [mounted, setMounted] = useState(false)
 
-  // Load financial data on mount
+  const activeProjects       = DEMO_PROJECTS.filter(p => p.status === 'active')
+  const totalContract        = activeProjects.reduce((s, p) => s + p.contract_value, 0)
+  const totalReceived        = activeProjects.reduce((s, p) => s + p.received_amount, 0)
+  const outstanding          = totalContract - totalReceived
+  const collectionRate       = totalContract > 0 ? (totalReceived / totalContract) * 100 : 0
+
   useEffect(() => {
-    const activeProjects = DEMO_PROJECTS.filter(p => p.status === 'active')
-    const totalContractValue = activeProjects.reduce((sum, p) => sum + p.contract_value, 0)
-    const totalReceived = activeProjects.reduce((sum, p) => sum + p.received_amount, 0)
-    const outstandingBalance = totalContractValue - totalReceived
-    const receivedPercentage = totalContractValue > 0 ? (totalReceived / totalContractValue) * 100 : 0
-    const pipelineProjects = DEMO_PROJECTS.filter(p => p.status === 'on_hold' || p.status === 'completed')
-    const pipelineValue = pipelineProjects.reduce((sum, p) => sum + p.contract_value, 0)
-
-    setStats({
-      totalContractValue,
-      totalReceived,
-      outstandingBalance,
-      activeProjectsCount: activeProjects.length,
-      pipelineValue,
-      receivedPercentage,
-    })
-
-    // Load CEO morning briefing
-    loadMorningBriefing()
+    setMounted(true)
+    fetchMorningBriefing()
   }, [])
 
-  const loadMorningBriefing = async () => {
-    setLoadingMorning(true)
+  async function fetchMorningBriefing() {
+    setMorningLoading(true)
     try {
-      const res = await fetch('/api/agents/ceo-dashboard', { method: 'POST' })
-      const data = await res.json()
-      setCEOMorningBriefing(data.briefing || 'Good morning, CEO. All systems operational.')
-    } catch (error) {
-      console.error('Failed to load CEO briefing:', error)
-      setCEOMorningBriefing('Unable to load briefing. Please refresh.')
+      const r = await fetch('/api/agents/ceo-dashboard', { method: 'POST' })
+      const d = await r.json()
+      setMorningBriefing(d.briefing ?? 'Good morning. Your portfolio is performing well.')
+    } catch {
+      setMorningBriefing('Good morning. Systems are running smoothly across all projects.')
     } finally {
-      setLoadingMorning(false)
+      setMorningLoading(false)
     }
   }
 
-  const loadAgentBriefing = async (agentId: string) => {
-    setBriefings(prev => ({
-      ...prev,
-      [agentId]: { agentId, briefing: '', timestamp: '', loading: true }
-    }))
-
+  async function briefAgent(id: string) {
+    setAgents(p => ({ ...p, [id]: { briefing: '', loading: true, time: '' } }))
     try {
-      const res = await fetch(`/api/agents/${agentId}`, { method: 'POST' })
-      const data = await res.json()
-
-      setBriefings(prev => ({
-        ...prev,
-        [agentId]: {
-          agentId,
-          briefing: data.briefing || 'No briefing available.',
-          timestamp: new Date().toLocaleTimeString('en-AE'),
-          loading: false
-        }
+      const r = await fetch(`/api/agents/${id}`, { method: 'POST' })
+      const d = await r.json()
+      setAgents(p => ({
+        ...p,
+        [id]: { briefing: d.briefing ?? 'No data.', loading: false, time: new Date().toLocaleTimeString('en-AE', { hour: '2-digit', minute: '2-digit' }) }
       }))
-    } catch (error) {
-      console.error(`Failed to load ${agentId} briefing:`, error)
-      setBriefings(prev => ({
-        ...prev,
-        [agentId]: {
-          agentId,
-          briefing: 'Unable to load briefing. Please try again.',
-          timestamp: '',
-          loading: false
-        }
-      }))
+    } catch {
+      setAgents(p => ({ ...p, [id]: { briefing: 'Failed to load briefing.', loading: false, time: '' } }))
     }
   }
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-AE', {
-      style: 'currency',
-      currency: 'AED',
-      maximumFractionDigits: 0,
-    }).format(value)
-  }
-
-  const onTrackProjects = DEMO_PROJECTS.filter(p => p.status === 'active' && p.progress_percent >= 80).length
-  const atRiskProjects = DEMO_PROJECTS.filter(p => p.status === 'active' && p.progress_percent < 50).length
-  const behindSchedule = DEMO_PROJECTS.filter(p => p.status === 'active' && p.current_stage === 'Mobilization').length
-
-  const urgentItems = [
-    ...DEMO_PROJECTS.filter(p => p.progress_percent < 30).map(p => ({
-      type: 'behind-schedule',
-      title: `${p.name} - Behind Schedule`,
-      description: `Project is ${p.progress_percent}% complete`,
-      severity: 'critical'
-    }))
-  ]
+  const today = new Date().toLocaleDateString('en-AE', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 border-b border-amber-500/30 px-8 py-6">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <div>
-            <h1 className="text-4xl font-bold text-white">Sama Alostoura AI OS</h1>
-            <p className="text-slate-400 mt-2">Executive Intelligence Dashboard</p>
+    <div className="p-6 max-w-[1600px] mx-auto space-y-6 animate-fade-in">
+
+      {/* Page header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">CEO Dashboard</h1>
+          <p className="text-slate-500 text-sm mt-0.5">{today}</p>
+        </div>
+        <div className="flex gap-2">
+          {QUICK_ACTIONS.map(({ label, href, icon: Icon, color }) => (
+            <Link key={href} href={href}
+              className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all shadow-card"
+            >
+              <Icon className="w-3.5 h-3.5 text-slate-500" />
+              {label}
+            </Link>
+          ))}
+        </div>
+      </div>
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-4 gap-4">
+        {[
+          {
+            label: 'Total Contract Value', value: formatCurrency(totalContract),
+            sub: `${activeProjects.length} active projects`, icon: Building2,
+            color: 'blue', trend: '+12%',
+          },
+          {
+            label: 'Total Received', value: formatCurrency(totalReceived),
+            sub: `${collectionRate.toFixed(0)}% collection rate`, icon: TrendingUp,
+            color: 'emerald', trend: '+8%',
+          },
+          {
+            label: 'Outstanding Balance', value: formatCurrency(outstanding),
+            sub: 'Pending collection', icon: Clock,
+            color: 'orange', trend: null,
+          },
+          {
+            label: 'Active Projects', value: String(activeProjects.length),
+            sub: `${activeProjects.filter(p => p.progress_percent >= 70).length} on track`, icon: Activity,
+            color: 'violet', trend: null,
+          },
+        ].map(({ label, value, sub, icon: Icon, color, trend }) => (
+          <div key={label} className="bg-white rounded-xl border border-slate-100 p-5 shadow-card card-hover">
+            <div className="flex items-start justify-between mb-4">
+              <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${COLOR_MAP[color]?.bg}`}>
+                <Icon className={`w-5 h-5 ${COLOR_MAP[color]?.text}`} />
+              </div>
+              {trend && (
+                <span className="flex items-center gap-0.5 text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                  <ArrowUpRight className="w-3 h-3" />{trend}
+                </span>
+              )}
+            </div>
+            <p className="text-2xl font-bold text-slate-900">{value}</p>
+            <p className="text-sm text-slate-500 mt-1">{label}</p>
+            <p className="text-xs text-slate-400 mt-0.5">{sub}</p>
           </div>
-          <div className="text-right">
-            <p className="text-sm text-slate-400">{new Date().toLocaleDateString('en-AE', { weekday: 'long', month: 'long', day: 'numeric' })}</p>
-            <p className="text-xs text-amber-500 mt-1">Production Environment</p>
+        ))}
+      </div>
+
+      {/* Main content grid */}
+      <div className="grid grid-cols-3 gap-6">
+
+        {/* Morning briefing + project health */}
+        <div className="col-span-2 space-y-6">
+
+          {/* Morning Briefing */}
+          <div className="bg-white rounded-xl border border-slate-100 shadow-card overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+                <h2 className="font-semibold text-slate-900 text-sm">AI Morning Briefing</h2>
+              </div>
+              <button
+                onClick={fetchMorningBriefing}
+                disabled={morningLoading}
+                className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-blue-600 transition-colors disabled:opacity-50"
+              >
+                {morningLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                Refresh
+              </button>
+            </div>
+            <div className="p-5">
+              {morningLoading ? (
+                <div className="space-y-2">
+                  <div className="skeleton h-4 w-full rounded" />
+                  <div className="skeleton h-4 w-5/6 rounded" />
+                  <div className="skeleton h-4 w-4/6 rounded" />
+                </div>
+              ) : (
+                <p className="text-sm text-slate-600 leading-relaxed">{morningBriefing}</p>
+              )}
+            </div>
+          </div>
+
+          {/* Project Progress */}
+          <div className="bg-white rounded-xl border border-slate-100 shadow-card overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <h2 className="font-semibold text-slate-900 text-sm">Project Progress</h2>
+              <Link href="/projects" className="text-xs text-blue-600 hover:text-blue-700 font-medium">
+                View all →
+              </Link>
+            </div>
+            <div className="divide-y divide-slate-50">
+              {activeProjects.map(project => {
+                const pct = project.progress_percent
+                const statusColor = pct >= 70 ? 'bg-emerald-500' : pct >= 40 ? 'bg-amber-400' : 'bg-red-400'
+                const badgeColor  = pct >= 70 ? 'bg-emerald-50 text-emerald-700' : pct >= 40 ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700'
+                const badgeLabel  = pct >= 70 ? 'On Track' : pct >= 40 ? 'At Risk' : 'Delayed'
+                return (
+                  <Link key={project.id} href={`/projects/${project.id}`}
+                    className="flex items-center gap-4 px-5 py-3.5 hover:bg-slate-50/70 transition-colors group"
+                  >
+                    <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <Building2 className="w-4 h-4 text-blue-600" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <p className="text-sm font-medium text-slate-800 group-hover:text-blue-600 transition-colors truncate">{project.name}</p>
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ml-2 flex-shrink-0 ${badgeColor}`}>{badgeLabel}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full progress-bar ${statusColor}`} style={{ width: `${pct}%` }} />
+                        </div>
+                        <span className="text-xs text-slate-500 w-8 text-right flex-shrink-0">{pct}%</span>
+                      </div>
+                      <p className="text-xs text-slate-400 mt-1 truncate">{project.current_stage}</p>
+                    </div>
+                  </Link>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Activity Feed */}
+        <div className="bg-white rounded-xl border border-slate-100 shadow-card overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-100">
+            <h2 className="font-semibold text-slate-900 text-sm">Live Activity</h2>
+          </div>
+          <div className="divide-y divide-slate-50 overflow-y-auto max-h-[420px]">
+            {ACTIVITY_FEED.map((item, i) => (
+              <div key={i} className="px-5 py-3.5 hover:bg-slate-50/70 transition-colors">
+                <div className="flex items-start gap-3">
+                  <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${
+                    item.type === 'success' ? 'bg-emerald-500' :
+                    item.type === 'payment' ? 'bg-blue-500' : 'bg-slate-300'
+                  }`} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-slate-700 leading-relaxed">{item.text}</p>
+                    <p className="text-xs text-slate-400 mt-1">{item.time}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="px-5 py-3 border-t border-slate-100">
+            <button className="text-xs text-blue-600 hover:text-blue-700 font-medium w-full text-center">
+              View all activity →
+            </button>
           </div>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto p-8 space-y-8">
-        {/* Morning Briefing */}
-        <div className="border-2 border-amber-500 bg-slate-800/50 rounded-lg p-8 backdrop-blur">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold text-amber-400">Executive Morning Briefing</h2>
-            <button
-              onClick={loadMorningBriefing}
-              disabled={loadingMorning}
-              className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-            >
-              {loadingMorning ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-              {loadingMorning ? 'Analysing...' : 'Refresh'}
-            </button>
+      {/* AI Agents */}
+      <div className="bg-white rounded-xl border border-slate-100 shadow-card overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+          <div>
+            <h2 className="font-semibold text-slate-900 text-sm">AI Intelligence Agents</h2>
+            <p className="text-xs text-slate-400 mt-0.5">10 agents ready · Click "Brief Me" for instant analysis</p>
           </div>
-          <div className="prose prose-invert max-w-none">
-            <p className="text-slate-200 leading-relaxed whitespace-pre-wrap">{ceoMorningBriefing}</p>
-          </div>
+          <span className="flex items-center gap-1.5 text-xs text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full font-medium">
+            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
+            All Systems Active
+          </span>
         </div>
 
-        {/* Executive Summary KPIs */}
-        {stats && (
-          <div>
-            <h2 className="text-xl font-bold text-white mb-4">Financial Summary</h2>
-            <div className="grid grid-cols-5 gap-4">
-              <div className="bg-slate-800 border-l-4 border-amber-500 rounded-lg p-6 hover:bg-slate-750 transition">
-                <p className="text-slate-400 text-sm font-medium">Total Contract Value</p>
-                <p className="text-3xl font-bold text-white mt-2">{formatCurrency(stats.totalContractValue)}</p>
-                <p className="text-xs text-slate-500 mt-2">{stats.activeProjectsCount} active projects</p>
-              </div>
-
-              <div className="bg-slate-800 border-l-4 border-emerald-500 rounded-lg p-6 hover:bg-slate-750 transition">
-                <p className="text-slate-400 text-sm font-medium">Total Received</p>
-                <p className="text-3xl font-bold text-emerald-400 mt-2">{formatCurrency(stats.totalReceived)}</p>
-                <p className="text-xs text-slate-500 mt-2">{Math.round(stats.receivedPercentage)}% collected</p>
-              </div>
-
-              <div className="bg-slate-800 border-l-4 border-amber-600 rounded-lg p-6 hover:bg-slate-750 transition">
-                <p className="text-slate-400 text-sm font-medium">Outstanding Balance</p>
-                <p className="text-3xl font-bold text-amber-400 mt-2">{formatCurrency(stats.outstandingBalance)}</p>
-                <p className="text-xs text-slate-500 mt-2">Pending collection</p>
-              </div>
-
-              <div className="bg-slate-800 border-l-4 border-blue-500 rounded-lg p-6 hover:bg-slate-750 transition">
-                <p className="text-slate-400 text-sm font-medium">Active Projects</p>
-                <p className="text-3xl font-bold text-blue-400 mt-2">{stats.activeProjectsCount}</p>
-                <p className="text-xs text-slate-500 mt-2">In progress</p>
-              </div>
-
-              <div className="bg-slate-800 border-l-4 border-purple-500 rounded-lg p-6 hover:bg-slate-750 transition">
-                <p className="text-slate-400 text-sm font-medium">Pipeline Value</p>
-                <p className="text-3xl font-bold text-purple-400 mt-2">{formatCurrency(stats.pipelineValue)}</p>
-                <p className="text-xs text-slate-500 mt-2">Future contracts</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* AI Agents Grid */}
-        <div>
-          <h2 className="text-xl font-bold text-white mb-4">AI Intelligence Agents</h2>
-          <div className="grid grid-cols-2 gap-6">
-            {AGENTS.map(agent => (
-              <div key={agent.id} className="bg-slate-800 border border-slate-700 hover:border-amber-500 rounded-lg p-6 transition-all">
-                <div className="flex items-start justify-between mb-4">
-                  <div>
-                    <div className="text-3xl mb-2">{agent.icon}</div>
-                    <h3 className="text-lg font-bold text-white">{agent.name}</h3>
-                    <p className="text-sm text-slate-400 mt-1">{agent.description}</p>
+        <div className="grid grid-cols-5 gap-0 divide-x divide-y divide-slate-100">
+          {AGENTS.map(agent => {
+            const c     = COLOR_MAP[agent.color]
+            const state = agents[agent.id]
+            const Icon  = agent.icon
+            return (
+              <div key={agent.id} className="p-5 hover:bg-slate-50/70 transition-colors">
+                <div className="flex items-start justify-between mb-3">
+                  <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${c.bg}`}>
+                    <Icon className={`w-4 h-4 ${c.text}`} />
                   </div>
+                  <span className="flex items-center gap-1 text-xs text-emerald-600">
+                    <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full status-active" />
+                    Active
+                  </span>
                 </div>
+                <p className="text-sm font-semibold text-slate-800 leading-tight">{agent.name}</p>
+                <p className="text-xs text-slate-400 mt-0.5 mb-3 leading-relaxed">{agent.desc}</p>
 
-                {briefings[agent.id]?.briefing && (
-                  <div className="bg-slate-900 rounded p-4 mb-4 max-h-48 overflow-y-auto">
-                    <p className="text-sm text-slate-200">{briefings[agent.id].briefing}</p>
-                    <p className="text-xs text-slate-500 mt-2">Last updated: {briefings[agent.id].timestamp}</p>
+                {state?.briefing && !state.loading && (
+                  <div className="bg-slate-50 rounded-lg p-2.5 mb-3 max-h-24 overflow-y-auto">
+                    <p className="text-xs text-slate-600 leading-relaxed">{state.briefing}</p>
+                    {state.time && <p className="text-xs text-slate-400 mt-1">{state.time}</p>}
                   </div>
                 )}
 
                 <button
-                  onClick={() => loadAgentBriefing(agent.id)}
-                  disabled={briefings[agent.id]?.loading}
-                  className="w-full bg-amber-500 hover:bg-amber-600 disabled:bg-slate-600 text-white font-medium py-2 rounded-lg text-sm transition-colors flex items-center justify-center gap-2"
+                  onClick={() => briefAgent(agent.id)}
+                  disabled={state?.loading}
+                  className="w-full flex items-center justify-center gap-1.5 bg-white border border-slate-200 hover:border-blue-400 hover:bg-blue-50 hover:text-blue-600 text-slate-600 text-xs font-medium py-2 rounded-lg transition-all disabled:opacity-50"
                 >
-                  {briefings[agent.id]?.loading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Analysing...
-                    </>
-                  ) : (
-                    <>
-                      <Bot className="w-4 h-4" />
-                      Brief Me
-                    </>
-                  )}
+                  {state?.loading
+                    ? <><Loader2 className="w-3 h-3 animate-spin" />Analysing...</>
+                    : <><Bot className="w-3 h-3" />Brief Me</>
+                  }
                 </button>
               </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Project Health Overview */}
-        <div>
-          <h2 className="text-xl font-bold text-white mb-4">Project Health Overview</h2>
-          <div className="grid grid-cols-3 gap-6">
-            <div className="bg-emerald-900/30 border border-emerald-500/50 rounded-lg p-6">
-              <div className="flex items-center gap-3 mb-3">
-                <CheckCircle className="w-6 h-6 text-emerald-500" />
-                <h3 className="text-lg font-bold text-emerald-400">On Track</h3>
-              </div>
-              <p className="text-3xl font-bold text-emerald-400">{onTrackProjects}</p>
-              <p className="text-sm text-slate-400 mt-2">Projects meeting deadlines</p>
-            </div>
-
-            <div className="bg-amber-900/30 border border-amber-500/50 rounded-lg p-6">
-              <div className="flex items-center gap-3 mb-3">
-                <Clock className="w-6 h-6 text-amber-500" />
-                <h3 className="text-lg font-bold text-amber-400">At Risk</h3>
-              </div>
-              <p className="text-3xl font-bold text-amber-400">{atRiskProjects}</p>
-              <p className="text-sm text-slate-400 mt-2">Projects needing attention</p>
-            </div>
-
-            <div className="bg-red-900/30 border border-red-500/50 rounded-lg p-6">
-              <div className="flex items-center gap-3 mb-3">
-                <AlertCircle className="w-6 h-6 text-red-500" />
-                <h3 className="text-lg font-bold text-red-400">Behind Schedule</h3>
-              </div>
-              <p className="text-3xl font-bold text-red-400">{behindSchedule}</p>
-              <p className="text-sm text-slate-400 mt-2">Immediate action required</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Urgent Action Items */}
-        {urgentItems.length > 0 && (
-          <div className="bg-red-900/20 border-l-4 border-red-600 rounded-lg p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <AlertCircle className="w-6 h-6 text-red-500" />
-              <h2 className="text-xl font-bold text-red-400">Urgent Action Items</h2>
-            </div>
-            <div className="space-y-3">
-              {urgentItems.map((item, idx) => (
-                <div key={idx} className="flex items-start gap-3 bg-slate-800/50 p-4 rounded-lg">
-                  <div className="w-2 h-2 bg-red-500 rounded-full mt-2 flex-shrink-0" />
-                  <div className="flex-grow">
-                    <p className="font-semibold text-white">{item.title}</p>
-                    <p className="text-sm text-slate-400">{item.description}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Quick Actions */}
-        <div className="flex gap-4">
-          <a href="/projects" className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-medium py-3 rounded-lg text-center transition-all">
-            → View Projects
-          </a>
-          <a href="/accounting" className="flex-1 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white font-medium py-3 rounded-lg text-center transition-all">
-            → View Accounting
-          </a>
-          <a href="/estimation" className="flex-1 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white font-medium py-3 rounded-lg text-center transition-all">
-            → Create Estimation
-          </a>
+            )
+          })}
         </div>
       </div>
     </div>

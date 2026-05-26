@@ -4,94 +4,124 @@ import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard, Building2, Calculator, Wallet, ShoppingCart,
   FolderOpen, ClipboardList, Wrench, Users, UserPlus, Settings,
-  LogOut,
+  LogOut, ChevronLeft, ChevronRight, Bot,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const NAV_ITEMS = [
-  { label: 'CEO Dashboard',  href: '/',             icon: LayoutDashboard, phase: 1 },
-  { label: 'Projects',       href: '/projects',     icon: Building2,       phase: 1 },
-  { label: 'Accounting',     href: '/accounting',   icon: Wallet,          phase: 1 },
-  { label: 'Estimation',     href: '/estimation',   icon: Calculator,      phase: 1 },
-  { label: 'Procurement',    href: '/procurement',  icon: ShoppingCart,    phase: 4 },
-  { label: 'Documents',      href: '/documents',    icon: FolderOpen,      phase: 4 },
-  { label: 'Site Reports',   href: '/reports',      icon: ClipboardList,   phase: 4 },
-  { label: 'Leads',          href: '/leads',        icon: UserPlus,        phase: 4 },
-  { label: 'Maintenance',    href: '/maintenance',  icon: Wrench,          phase: 5 },
-  { label: 'HR & Admin',     href: '/hr',           icon: Users,           phase: 5 },
-  { label: 'Settings',       href: '/settings',     icon: Settings,        phase: 1 },
+  { label: 'CEO Dashboard',  href: '/',             icon: LayoutDashboard },
+  { label: 'Projects',       href: '/projects',     icon: Building2       },
+  { label: 'Accounting',     href: '/accounting',   icon: Wallet          },
+  { label: 'Estimation',     href: '/estimation',   icon: Calculator      },
+  { label: 'Procurement',    href: '/procurement',  icon: ShoppingCart    },
+  { label: 'Documents',      href: '/documents',    icon: FolderOpen      },
+  { label: 'Site Reports',   href: '/reports',      icon: ClipboardList   },
+  { label: 'Leads',          href: '/leads',        icon: UserPlus        },
+  { label: 'Maintenance',    href: '/maintenance',  icon: Wrench          },
+  { label: 'HR & Admin',     href: '/hr',           icon: Users           },
+  { label: 'Settings',       href: '/settings',     icon: Settings        },
 ]
 
-export function Sidebar() {
+interface SidebarProps {
+  collapsed: boolean
+  onToggle: () => void
+}
+
+export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   const pathname = usePathname()
-  const router = useRouter()
+  const router   = useRouter()
 
   async function handleLogout() {
     try {
       await fetch('/api/auth/logout', { method: 'POST' })
       router.push('/login')
-    } catch (err) {
-      console.error('Logout failed:', err)
-    }
+    } catch {}
   }
 
   return (
-    <aside className="fixed left-0 top-0 h-screen w-64 bg-slate-900 flex flex-col z-40 shadow-xl">
-      {/* Branding */}
-      <div className="px-5 py-5 border-b border-slate-800">
-        <h1 className="text-white font-bold text-lg">Sama Alostoura</h1>
-        <p className="text-slate-400 text-xs mt-1">AI Construction OS</p>
+    <aside
+      className={cn(
+        'fixed left-0 top-0 h-screen bg-[#1a1f2e] flex flex-col z-40 overflow-hidden',
+        'transition-[width] duration-300 ease-in-out',
+        collapsed ? 'w-[68px]' : 'w-64'
+      )}
+    >
+      {/* Logo */}
+      <div className={cn(
+        'flex items-center border-b border-white/10 flex-shrink-0 h-[60px]',
+        collapsed ? 'justify-center px-4' : 'px-5'
+      )}>
+        <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
+          <Bot className="w-4 h-4 text-white" />
+        </div>
+        {!collapsed && (
+          <div className="ml-3 overflow-hidden">
+            <p className="text-white font-semibold text-sm leading-tight whitespace-nowrap">Sama Alostoura</p>
+            <p className="text-slate-400 text-xs whitespace-nowrap">AI Construction OS</p>
+          </div>
+        )}
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-        {NAV_ITEMS.map(({ label, href, icon: Icon, phase }) => {
+      <nav className="flex-1 px-2 py-4 space-y-0.5 overflow-y-auto overflow-x-hidden">
+        {NAV_ITEMS.map(({ label, href, icon: Icon }) => {
           const isActive = href === '/' ? pathname === '/' : pathname.startsWith(href)
-          const isLive   = phase <= 1
-
           return (
             <Link
               key={href}
-              href={isLive ? href : '#'}
+              href={href}
+              title={collapsed ? label : undefined}
               className={cn(
-                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all group',
+                'flex items-center rounded-lg transition-all duration-150 group relative',
+                collapsed ? 'px-0 py-2.5 justify-center' : 'px-3 py-2.5 gap-3',
                 isActive
-                  ? 'bg-brand-500 text-white font-medium'
-                  : isLive
-                  ? 'text-slate-400 hover:text-white hover:bg-slate-800'
-                  : 'text-slate-600 cursor-default'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-slate-400 hover:bg-white/5 hover:text-white'
               )}
             >
-              <Icon className="w-4 h-4 flex-shrink-0" />
-              <span className="flex-1">{label}</span>
-              {phase > 1 && (
-                <span className="text-xs bg-slate-800 text-slate-500 px-1.5 py-0.5 rounded font-medium">
-                  P{phase}
-                </span>
+              <Icon className={cn(
+                'w-[18px] h-[18px] flex-shrink-0 transition-colors',
+                isActive ? 'text-white' : 'text-slate-400 group-hover:text-white'
+              )} />
+              {!collapsed && (
+                <span className="text-sm font-medium whitespace-nowrap">{label}</span>
               )}
             </Link>
           )
         })}
       </nav>
 
-      {/* Footer */}
-      <div className="px-5 py-4 border-t border-slate-800 space-y-4">
+      {/* Bottom */}
+      <div className="border-t border-white/10 p-2 flex-shrink-0 space-y-1">
+        {!collapsed && (
+          <div className="px-3 py-2">
+            <p className="text-white text-sm font-medium truncate">Admin</p>
+            <p className="text-slate-500 text-xs truncate">sama@construction.ae</p>
+          </div>
+        )}
         <button
           onClick={handleLogout}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-slate-400 hover:text-white hover:bg-slate-800 transition-all"
+          title={collapsed ? 'Logout' : undefined}
+          className={cn(
+            'flex items-center rounded-lg text-slate-400 hover:bg-red-500/10 hover:text-red-400 transition-all w-full',
+            collapsed ? 'justify-center py-2.5' : 'gap-3 px-3 py-2.5'
+          )}
         >
-          <LogOut className="w-4 h-4 flex-shrink-0" />
-          <span>Logout</span>
+          <LogOut className="w-[18px] h-[18px] flex-shrink-0" />
+          {!collapsed && <span className="text-sm font-medium">Logout</span>}
         </button>
-
-        <div>
-          <p className="text-slate-500 text-xs">Phase 1 of 5</p>
-          <div className="mt-1.5 h-1 bg-slate-800 rounded-full">
-            <div className="h-1 bg-brand-500 rounded-full w-[20%]" />
-          </div>
-          <p className="text-slate-600 text-xs mt-2">Dubai, UAE  •  2024</p>
-        </div>
       </div>
+
+      {/* Collapse toggle */}
+      <button
+        onClick={onToggle}
+        className="absolute -right-3 top-[72px] w-6 h-6 bg-white border border-slate-200 rounded-full flex items-center justify-center shadow-md hover:bg-slate-50 transition-colors z-50"
+      >
+        {collapsed
+          ? <ChevronRight className="w-3 h-3 text-slate-500" />
+          : <ChevronLeft  className="w-3 h-3 text-slate-500" />
+        }
+      </button>
     </aside>
   )
 }
