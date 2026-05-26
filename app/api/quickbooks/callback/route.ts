@@ -23,7 +23,17 @@ export async function GET(req: NextRequest) {
   const state   = searchParams.get('state')
   const error   = searchParams.get('error')
 
-  console.log('[QB Callback] Received params:', { code: !!code, realmId, state: !!state, error })
+  // Full diagnostic logging
+  console.log('[QB Callback] ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
+  console.log('[QB Callback] Full URL:', req.url)
+  console.log('[QB Callback] All params:', Object.fromEntries(searchParams.entries()))
+  console.log('[QB Callback] Parsed:', {
+    hasCode: !!code,
+    codeLength: code?.length ?? 0,
+    realmId,
+    hasState: !!state,
+    error
+  })
 
   // User denied access
   if (error) {
