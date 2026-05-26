@@ -111,10 +111,12 @@ export async function POST(req: Request) {
         console.log(`[WhatsApp] Message from ${senderName} (${from}): "${text.slice(0, 100)}"`)
         messageCount++
 
-        // Fire and forget — we already returned 200
-        handleMessage({ text: text.trim(), from, senderName }).catch(err =>
+        // Process synchronously — Vercel kills async work after response is sent
+        try {
+          await handleMessage({ text: text.trim(), from, senderName })
+        } catch (err) {
           console.error('[WhatsApp] handleMessage error:', err)
-        )
+        }
       }
     }
   }
