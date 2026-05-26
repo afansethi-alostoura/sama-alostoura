@@ -7,8 +7,8 @@ import {
   UserPlus, Shield, Handshake, BarChart3, ArrowUpRight, ArrowDownRight,
   Plus, Activity,
 } from 'lucide-react'
+import { DEMO_PROJECTS } from '@/lib/demo-data'
 import { formatCurrency } from '@/lib/utils'
-import { useAllProjects } from '@/hooks/useAllProjects'
 
 const AGENTS = [
   { id: 'ceo-dashboard',         name: 'CEO Agent',          desc: 'Strategic portfolio insights',  icon: BarChart3,    color: 'blue'   },
@@ -60,9 +60,11 @@ export default function CEODashboard() {
   const [morningLoading, setMorningLoading] = useState(true)
   const [mounted, setMounted] = useState(false)
 
-  // Single source of truth — reads from /api/projects (Supabase + file data merged)
-  const { activeProjects, totalContract, totalReceived, totalOutstanding: outstanding, loading: projectsLoading } = useAllProjects()
-  const collectionRate = totalContract > 0 ? (totalReceived / totalContract) * 100 : 0
+  const activeProjects       = DEMO_PROJECTS.filter(p => p.status === 'active')
+  const totalContract        = activeProjects.reduce((s, p) => s + p.contract_value, 0)
+  const totalReceived        = activeProjects.reduce((s, p) => s + p.received_amount, 0)
+  const outstanding          = totalContract - totalReceived
+  const collectionRate       = totalContract > 0 ? (totalReceived / totalContract) * 100 : 0
 
   useEffect(() => {
     setMounted(true)
@@ -138,8 +140,8 @@ export default function CEODashboard() {
             color: 'orange', trend: null,
           },
           {
-            label: 'Active Projects', value: projectsLoading ? '…' : String(activeProjects.length),
-            sub: projectsLoading ? 'Loading…' : `${activeProjects.filter(p => p.progress_percent >= 70).length} on track`, icon: Activity,
+            label: 'Active Projects', value: String(activeProjects.length),
+            sub: `${activeProjects.filter(p => p.progress_percent >= 70).length} on track`, icon: Activity,
             color: 'violet', trend: null,
           },
         ].map(({ label, value, sub, icon: Icon, color, trend }) => (
@@ -205,45 +207,34 @@ export default function CEODashboard() {
               </Link>
             </div>
             <div className="divide-y divide-slate-50">
-              {projectsLoading
-                ? Array.from({ length: 3 }).map((_, i) => (
-                    <div key={i} className="flex items-center gap-4 px-5 py-3.5">
-                      <div className="skeleton w-8 h-8 rounded-lg flex-shrink-0" />
-                      <div className="flex-1 space-y-2">
-                        <div className="skeleton h-3 w-40 rounded" />
-                        <div className="skeleton h-1.5 w-full rounded-full" />
-                      </div>
+              {activeProjects.map(project => {
+                const pct = project.progress_percent
+                const statusColor = pct >= 70 ? 'bg-emerald-500' : pct >= 40 ? 'bg-amber-400' : 'bg-red-400'
+                const badgeColor  = pct >= 70 ? 'bg-emerald-50 text-emerald-700' : pct >= 40 ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700'
+                const badgeLabel  = pct >= 70 ? 'On Track' : pct >= 40 ? 'At Risk' : 'Delayed'
+                return (
+                  <Link key={project.id} href={`/projects/${project.id}`}
+                    className="flex items-center gap-4 px-5 py-3.5 hover:bg-slate-50/70 transition-colors group"
+                  >
+                    <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <Building2 className="w-4 h-4 text-blue-600" />
                     </div>
-                  ))
-                : activeProjects.map(project => {
-                    const pct = project.progress_percent
-                    const statusColor = pct >= 70 ? 'bg-emerald-500' : pct >= 40 ? 'bg-amber-400' : 'bg-red-400'
-                    const badgeColor  = pct >= 70 ? 'bg-emerald-50 text-emerald-700' : pct >= 40 ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700'
-                    const badgeLabel  = pct >= 70 ? 'On Track' : pct >= 40 ? 'At Risk' : 'Delayed'
-                    return (
-                      <Link key={project.id} href={`/projects/${project.id}`}
-                        className="flex items-center gap-4 px-5 py-3.5 hover:bg-slate-50/70 transition-colors group"
-                      >
-                        <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                          <Building2 className="w-4 h-4 text-blue-600" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <p className="text-sm font-medium text-slate-800 group-hover:text-blue-600 transition-colors truncate">{project.name}</p>
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ml-2 flex-shrink-0 ${badgeColor}`}>{badgeLabel}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full progress-bar ${statusColor}`} style={{ width: `${pct}%` }} />
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between mb-1.5">
-                            <p className="text-sm font-medium text-slate-800 group-hover:text-blue-600 transition-colors truncate">{project.name}</p>
-                            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ml-2 flex-shrink-0 ${badgeColor}`}>{badgeLabel}</span>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                              <div className={`h-full rounded-full progress-bar ${statusColor}`} style={{ width: `${pct}%` }} />
-                            </div>
-                            <span className="text-xs text-slate-500 w-8 text-right flex-shrink-0">{pct}%</span>
-                          </div>
-                          <p className="text-xs text-slate-400 mt-1 truncate">{project.current_stage}</p>
-                        </div>
-                      </Link>
-                    )
-                  })
-              }
+                        <span className="text-xs text-slate-500 w-8 text-right flex-shrink-0">{pct}%</span>
+                      </div>
+                      <p className="text-xs text-slate-400 mt-1 truncate">{project.current_stage}</p>
+                    </div>
+                  </Link>
+                )
+              })}
             </div>
           </div>
         </div>
