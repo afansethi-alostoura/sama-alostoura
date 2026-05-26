@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Download, Trash2, AlertCircle, FileText, ChevronDown } from 'lucide-react'
+import { Plus, Download, Trash2, AlertCircle, FileText } from 'lucide-react'
 import Link from 'next/link'
 
 interface BOQListItem {
@@ -15,24 +15,15 @@ interface BOQListItem {
   createdAt: string
 }
 
-interface ProjectOption {
-  id: string
-  name: string
-  client_name?: string
-}
-
 export default function EstimationPage() {
   const router = useRouter()
   const [boqs, setBoqs]           = useState<BOQListItem[]>([])
-  const [projects, setProjects]   = useState<ProjectOption[]>([])
-  const [selectedProject, setSelectedProject] = useState('')
   const [loading, setLoading]     = useState(true)
   const [error, setError]         = useState('')
   const [deleting, setDeleting]   = useState<string | null>(null)
 
   useEffect(() => {
     fetchBOQs()
-    fetchProjects()
   }, [])
 
   async function fetchBOQs() {
@@ -45,14 +36,6 @@ export default function EstimationPage() {
     } finally {
       setLoading(false)
     }
-  }
-
-  async function fetchProjects() {
-    try {
-      const res  = await fetch('/api/projects')
-      const data = await res.json()
-      if (Array.isArray(data)) setProjects(data)
-    } catch {}
   }
 
   async function handleDelete(boqId: string) {
@@ -84,11 +67,6 @@ export default function EstimationPage() {
     }
   }
 
-  function openBOQ(type: 'company' | 'mbhre') {
-    if (!selectedProject) { alert('Please select a project first'); return }
-    router.push(`/projects/${selectedProject}/boq/${type}`)
-  }
-
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 p-8 flex items-center justify-center">
@@ -112,49 +90,24 @@ export default function EstimationPage() {
 
         {/* ── BOQ Forms Section ─────────────────────────────── */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-8">
-          <h2 className="text-base font-semibold text-slate-800 mb-1">Project BOQ Forms</h2>
-          <p className="text-xs text-slate-500 mb-4">Select a project then open the BOQ template you want to fill in</p>
+          <h2 className="text-base font-semibold text-slate-800 mb-1">BOQ Forms</h2>
+          <p className="text-xs text-slate-500 mb-4">Open a BOQ template to fill in for a new project</p>
 
-          {/* Project selector */}
-          <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-end">
-            <div className="flex-1 max-w-sm">
-              <label className="block text-xs font-medium text-slate-500 mb-1">Select Project</label>
-              <div className="relative">
-                <select
-                  value={selectedProject}
-                  onChange={e => setSelectedProject(e.target.value)}
-                  className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5 pr-8 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-400"
-                >
-                  <option value="">— Choose a project —</option>
-                  {projects.map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}{p.client_name ? ` — ${p.client_name}` : ''}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              </div>
-            </div>
-
-            {/* BOQ Buttons */}
-            <div className="flex gap-2">
-              <button
-                onClick={() => openBOQ('company')}
-                disabled={!selectedProject}
-                className="inline-flex items-center gap-2 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition-colors"
-              >
-                <FileText className="w-4 h-4" />
-                Company BOQ
-              </button>
-              <button
-                onClick={() => openBOQ('mbhre')}
-                disabled={!selectedProject}
-                className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold rounded-lg transition-colors"
-              >
-                <FileText className="w-4 h-4" />
-                MBHRE BOQ
-              </button>
-            </div>
+          <div className="flex gap-3">
+            <Link
+              href="/estimation/boq/company"
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-white text-sm font-semibold rounded-lg transition-colors"
+            >
+              <FileText className="w-4 h-4" />
+              Company BOQ
+            </Link>
+            <Link
+              href="/estimation/boq/mbhre"
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg transition-colors"
+            >
+              <FileText className="w-4 h-4" />
+              MBHRE BOQ
+            </Link>
           </div>
         </div>
 

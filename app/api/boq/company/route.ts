@@ -1,18 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin, isSupabaseConfigured } from '@/lib/supabase'
 
-export async function GET(req: NextRequest) {
-  const projectId = req.nextUrl.searchParams.get('project_id')
-  if (!projectId) return NextResponse.json({ error: 'project_id required' }, { status: 400 })
+const db = () => supabaseAdmin
 
-  if (!isSupabaseConfigured() || !supabaseAdmin) {
+// GET /api/boq/company?id=uuid  — fetch one BOQ by its own ID
+export async function GET(req: NextRequest) {
+  if (!isSupabaseConfigured() || !db()) {
     return NextResponse.json({ error: 'Supabase not configured' }, { status: 500 })
   }
 
-  const { data, error } = await supabaseAdmin
+  const id = req.nextUrl.searchParams.get('id')
+  if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
+
+  const { data, error } = await db()!
     .from('company_boq')
     .select('*')
-    .eq('project_id', projectId)
+    .eq('id', id)
     .single()
 
   if (error && error.code !== 'PGRST116') {
@@ -22,25 +25,57 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(data ?? null)
 }
 
+// POST /api/boq/company  — create new BOQ (returns the new row with its id)
 export async function POST(req: NextRequest) {
-  if (!isSupabaseConfigured() || !supabaseAdmin) {
+  if (!isSupabaseConfigured() || !db()) {
     return NextResponse.json({ error: 'Supabase not configured' }, { status: 500 })
   }
 
   const body = await req.json()
-  const { project_id, project_number, project_name, area, owner, contractor, items } = body
+  const { project_number, project_name, area, owner, contractor, items } = body
 
-  if (!project_id) return NextResponse.json({ error: 'project_id required' }, { status: 400 })
-
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await db()!
     .from('company_boq')
-    .upsert(
-      { project_id, project_number, project_name, area, owner, contractor, items, updated_at: new Date().toISOString() },
-      { onConflict: 'project_id' }
-    )
+    .insert({ project_number, project_name, area, owner, contractor, items })
     .select()
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json(data)
+}
+
+// PUT /api/boq/company  — update existing BOQ by id
+export async function PUT(req: NextRequest) {
+  if (!isSupabaseConfigured() || !db()) {
+    return NextResponse.json({ error: 'Supabase not configured' }, { status: 500 })
+  }
+
+  const body = await req.json()
+  const { id, project_number, project_name, area, owner, contractor, items } = body
+
+  if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
+
+  const { data, error } = await db()!
+    .from('company_boq')
+    .update({ project_number, project_name, area, owner, contractor, items, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single()
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json(data)
+}
+
+// DELETE /api/boq/company?id=uuid
+export async function DELETE(req: NextRequest) {
+  if (!isSupabaseConfigured() || !db()) {
+    return NextResponse.json({ error: 'Supabase not configured' }, { status: 500 })
+  }
+
+  const id = req.nextUrl.searchParams.get('id')
+  if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
+
+  const { error } = await db()!.from('company_boq').delete().eq('id', id)
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json({ success: true })
 }
