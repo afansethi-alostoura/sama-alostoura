@@ -6,7 +6,7 @@ import { AccountantBriefing }  from '@/components/accounting/accountant-briefing
 import { InvoiceTable }        from '@/components/accounting/invoice-table'
 import type { QBSnapshot }     from '@/lib/quickbooks/types'
 import type { QBStatus }       from '@/lib/quickbooks/client'
-import { DEMO_PROJECTS }       from '@/lib/demo-data'
+import { useAllProjects }      from '@/hooks/useAllProjects'
 
 function StatCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color: string }) {
   return (
@@ -50,9 +50,11 @@ export default function AccountingPage() {
     } finally { setSyncing(false) }
   }
 
-  // Financial stats — prefer QB data, fall back to project db
-  const projects = DEMO_PROJECTS.filter(p => p.status === 'active')
+  // Single source of truth — reads from /api/projects (Supabase + file data merged)
+  const { projects: allProjects, loading: projectsLoading } = useAllProjects()
+  const projects = allProjects  // all statuses shown in financials
 
+  // Financial stats — prefer QB data, fall back to project db
   const totalBilled      = snapshot?.invoices.reduce((s, i) => s + i.TotalAmt, 0)
     ?? projects.reduce((s, p) => s + p.contract_value, 0)
   const totalOutstanding = snapshot?.invoices.reduce((s, i) => s + i.Balance, 0)
@@ -123,6 +125,7 @@ export default function AccountingPage() {
             <thead>
               <tr className="bg-slate-50 text-xs text-slate-500">
                 <th className="text-left px-5 py-3 font-medium">Project</th>
+                <th className="text-left px-5 py-3 font-medium">Client</th>
                 <th className="text-left px-5 py-3 font-medium">Type</th>
                 <th className="text-right px-5 py-3 font-medium">Contract</th>
                 <th className="text-right px-5 py-3 font-medium">Received</th>
@@ -132,28 +135,42 @@ export default function AccountingPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {DEMO_PROJECTS.map(p => {
-                const out = p.contract_value - p.received_amount
-                const ret = p.received_amount * 0.1
-                return (
-                  <tr key={p.id} className="hover:bg-slate-50">
-                    <td className="px-5 py-3.5 font-medium text-slate-800">{p.name}</td>
-                    <td className="px-5 py-3.5 text-slate-500 capitalize">{p.type}</td>
-                    <td className="px-5 py-3.5 text-right text-slate-800 font-medium">AED {p.contract_value.toLocaleString()}</td>
-                    <td className="px-5 py-3.5 text-right text-emerald-700 font-medium">AED {p.received_amount.toLocaleString()}</td>
-                    <td className="px-5 py-3.5 text-right text-amber-700 font-medium">AED {out.toLocaleString()}</td>
-                    <td className="px-5 py-3.5 text-right text-slate-500">AED {ret.toLocaleString()}</td>
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-2">
-                        <div className="h-1.5 w-24 bg-slate-100 rounded-full overflow-hidden">
-                          <div className="h-full bg-brand-500 rounded-full" style={{ width: `${p.progress_percent}%` }} />
-                        </div>
-                        <span className="text-xs text-slate-500">{p.progress_percent}%</span>
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
+              {projectsLoading
+                ? Array.from({ length: 4 }).map((_, i) => (
+                    <tr key={i}>
+                      {Array.from({ length: 8 }).map((_, j) => (
+                        <td key={j} className="px-5 py-4">
+                          <div className="skeleton h-4 rounded" style={{ width: `${60 + (j * 7) % 40}%` }} />
+                        </td>
+                      ))}
+                    </tr>
+                  ))
+                : projects.map(p => {
+                    const out = p.contract_value - p.received_amount
+                    const ret = p.received_amount * 0.1
+                    const pct = p.progress_percent
+                    const barC = pct >= 70 ? 'bg-emerald-500' : pct >= 40 ? 'bg-amber-400' : 'bg-blue-500'
+                    return (
+                      <tr key={p.id} className="hover:bg-slate-50">
+                        <td className="px-5 py-3.5 font-medium text-slate-800">{p.name}</td>
+                        <td className="px-5 py-3.5 text-slate-500 text-xs">{p.client_name}</td>
+                        <td className="px-5 py-3.5 text-slate-500 capitalize">{p.type}</td>
+                        <td className="px-5 py-3.5 text-right text-slate-800 font-medium">AED {p.contract_value.toLocaleString()}</td>
+                        <td className="px-5 py-3.5 text-right text-emerald-700 font-medium">AED {p.received_amount.toLocaleString()}</td>
+                        <td className="px-5 py-3.5 text-right text-amber-700 font-medium">AED {out.toLocaleString()}</td>
+                        <td className="px-5 py-3.5 text-right text-slate-500">AED {ret.toLocaleString()}</td>
+                        <td className="px-5 py-3.5">
+                          <div className="flex items-center gap-2">
+                            <div className="h-1.5 w-24 bg-slate-100 rounded-full overflow-hidden">
+                              <div className={`h-full rounded-full ${barC}`} style={{ width: `${pct}%` }} />
+                            </div>
+                            <span className="text-xs text-slate-500">{pct}%</span>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })
+              }
             </tbody>
           </table>
         </div>

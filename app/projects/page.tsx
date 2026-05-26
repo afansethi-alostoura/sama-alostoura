@@ -1,25 +1,9 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
-import { Building2, Plus, Loader2, Search, Filter, ArrowUpDown, ExternalLink } from 'lucide-react'
-import { DEMO_PROJECTS } from '@/lib/demo-data'
+import { Building2, Plus, Search, ExternalLink } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
-import type { Project } from '@/types'
-import type { StoredProject } from '@/lib/projects-store'
-
-function toProjectShape(s: StoredProject): Project {
-  return {
-    id: s.id, name: s.name, client_id: s.id,
-    type: s.type as any, location: s.location,
-    contract_value: s.contract_value, received_amount: s.received_amount,
-    progress_percent: s.progress_percent, current_stage: s.current_stage,
-    start_date: s.start_date, expected_completion: s.expected_completion,
-    status: (s.status.replace('-', '_')) as any,
-    notes: s.notes || null, created_at: s.created_at, updated_at: s.updated_at,
-    client: { id: s.id, name: s.client_name || 'Client', phone: null, email: null,
-      nationality: 'UAE', location: s.location, type: 'owner', created_at: s.created_at },
-  }
-}
+import { useAllProjects, type ProjectRow } from '@/hooks/useAllProjects'
 
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
@@ -40,34 +24,20 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function ProjectsPage() {
-  const [realProjects, setRealProjects] = useState<Project[]>([])
-  const [loading, setLoading] = useState(true)
+  const { projects: allProjects, loading, activeProjects, completedProjects, totalContract: totalValue } = useAllProjects()
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<string>('all')
-
-  useEffect(() => {
-    fetch('/api/projects')
-      .then(r => r.json())
-      .then((data: StoredProject[]) => setRealProjects(data.map(toProjectShape)))
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [])
-
-  const realNames = new Set(realProjects.map(p => p.name.toLowerCase()))
-  const demoFallbacks = DEMO_PROJECTS.filter(p => !realNames.has(p.name.toLowerCase()))
-  const allProjects = [...realProjects, ...demoFallbacks]
 
   const filtered = allProjects
     .filter(p => filter === 'all' || p.status === filter)
     .filter(p =>
       !search ||
       p.name.toLowerCase().includes(search.toLowerCase()) ||
-      (p.client?.name ?? '').toLowerCase().includes(search.toLowerCase())
+      p.client_name.toLowerCase().includes(search.toLowerCase())
     )
 
-  const activeCount    = allProjects.filter(p => p.status === 'active').length
-  const completedCount = allProjects.filter(p => p.status === 'completed').length
-  const totalValue     = allProjects.reduce((s, p) => s + p.contract_value, 0)
+  const activeCount    = activeProjects.length
+  const completedCount = completedProjects.length
 
   return (
     <div className="p-6 max-w-[1400px] mx-auto animate-fade-in">
@@ -178,7 +148,7 @@ export default function ProjectsPage() {
                       </div>
                     </td>
                     <td className="px-5 py-4">
-                      <span className="text-sm text-slate-600">{project.client?.name ?? '—'}</span>
+                      <span className="text-sm text-slate-600">{project.client_name || '—'}</span>
                     </td>
                     <td className="px-5 py-4">
                       <span className="text-sm font-semibold text-slate-900">{formatCurrency(project.contract_value)}</span>
