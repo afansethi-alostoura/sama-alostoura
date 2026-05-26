@@ -101,6 +101,18 @@ export default function ProjectPage() {
   const pctCollected = Math.round((project.received_amount / project.contract_value) * 100)
   const isMBHRE = project.mbhre_approved_amount !== undefined
 
+  // Derive work-status panels from boq_sections (single source of truth)
+  const hasBOQSections = Array.isArray(project.boq_sections) && project.boq_sections.length > 0
+  const completedSections = hasBOQSections
+    ? project.boq_sections!.filter(s => (s.progress ?? 0) === 100)
+    : []
+  const partialSections = hasBOQSections
+    ? project.boq_sections!.filter(s => (s.progress ?? 0) > 0 && (s.progress ?? 0) < 100)
+    : []
+  const pendingSections = hasBOQSections
+    ? project.boq_sections!.filter(s => (s.progress ?? 0) === 0)
+    : []
+
   return (
     <div className="p-8 max-w-6xl mx-auto">
       {/* Back */}
@@ -282,129 +294,118 @@ export default function ProjectPage() {
       {/* Work Stages */}
       <div className="space-y-6">
 
-        {/* BOQ Sections Progress (shown when sections exist) */}
-        {project.boq_sections && project.boq_sections.length > 0 && (() => {
-          // Derive all work status sections from boq_sections — single source of truth
-          const completedSections = project.boq_sections!.filter(s => (s.progress ?? 0) === 100)
-          const partialSections   = project.boq_sections!.filter(s => (s.progress ?? 0) > 0 && (s.progress ?? 0) < 100)
-          const pendingSections   = project.boq_sections!.filter(s => (s.progress ?? 0) === 0)
-
-          return (
-            <>
-              {/* BOQ Section Progress table */}
-              <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
-                <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-                  <h2 className="font-semibold text-slate-900">BOQ Section Progress</h2>
-                  <button
-                    onClick={() => setShowProgressModal(true)}
-                    className="flex items-center gap-1.5 text-blue-600 hover:text-blue-700 text-xs font-semibold transition-colors"
-                  >
-                    <TrendingUp className="w-3.5 h-3.5" /> Update
-                  </button>
-                </div>
-                <div className="divide-y divide-slate-50">
-                  {project.boq_sections!.map((s, i) => {
-                    const pct = s.progress ?? 0
-                    const barC = pct === 100 ? 'bg-emerald-500' : pct > 0 ? 'bg-amber-400' : 'bg-slate-200'
-                    return (
-                      <div key={i} className="flex items-center gap-4 px-6 py-3">
-                        <div className="w-5 flex-shrink-0">
-                          {pct === 100
-                            ? <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                            : pct > 0
-                              ? <Clock className="w-4 h-4 text-amber-500" />
-                              : <div className="w-4 h-4 rounded-full border-2 border-slate-300" />
-                          }
-                        </div>
-                        <span className="flex-1 text-sm text-slate-700 font-medium">{s.section}</span>
-                        <span className="text-xs text-slate-400 w-28 text-right">AED {s.amount.toLocaleString()}</span>
-                        <div className="flex items-center gap-2 w-40">
-                          <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                            <div className={`h-full rounded-full transition-all ${barC}`} style={{ width: `${pct}%` }} />
-                          </div>
-                          <span className={`text-xs font-semibold w-8 text-right ${pct === 100 ? 'text-emerald-600' : pct > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
-                            {pct}%
-                          </span>
-                        </div>
+        {/* BOQ Section Progress table — always shown when sections exist */}
+        {hasBOQSections && (
+          <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+              <h2 className="font-semibold text-slate-900">BOQ Section Progress</h2>
+              <button
+                onClick={() => setShowProgressModal(true)}
+                className="flex items-center gap-1.5 text-blue-600 hover:text-blue-700 text-xs font-semibold transition-colors"
+              >
+                <TrendingUp className="w-3.5 h-3.5" /> Update
+              </button>
+            </div>
+            <div className="divide-y divide-slate-50">
+              {project.boq_sections!.map((s, i) => {
+                const pct = s.progress ?? 0
+                const barC = pct === 100 ? 'bg-emerald-500' : pct > 0 ? 'bg-amber-400' : 'bg-slate-200'
+                return (
+                  <div key={i} className="flex items-center gap-4 px-6 py-3">
+                    <div className="w-5 flex-shrink-0">
+                      {pct === 100
+                        ? <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                        : pct > 0
+                          ? <Clock className="w-4 h-4 text-amber-500" />
+                          : <div className="w-4 h-4 rounded-full border-2 border-slate-300" />
+                      }
+                    </div>
+                    <span className="flex-1 text-sm text-slate-700 font-medium">{s.section}</span>
+                    <span className="text-xs text-slate-400 w-28 text-right">AED {s.amount.toLocaleString()}</span>
+                    <div className="flex items-center gap-2 w-40">
+                      <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full transition-all ${barC}`} style={{ width: `${pct}%` }} />
                       </div>
-                    )
-                  })}
-                </div>
-              </div>
-
-              {/* Completed Works — derived from boq_sections */}
-              {completedSections.length > 0 && (
-                <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
-                  <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3 bg-emerald-50">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                    <h2 className="font-semibold text-slate-900">Completed Works ({completedSections.length})</h2>
-                  </div>
-                  <div className="p-6">
-                    <div className="grid grid-cols-2 gap-3">
-                      {completedSections.map((s, i) => (
-                        <div key={i} className="flex items-start gap-3 p-3 bg-emerald-50 rounded-lg">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
-                          <span className="text-sm text-slate-700">{s.section}</span>
-                        </div>
-                      ))}
+                      <span className={`text-xs font-semibold w-8 text-right ${pct === 100 ? 'text-emerald-600' : pct > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
+                        {pct}%
+                      </span>
                     </div>
                   </div>
-                </div>
-              )}
+                )
+              })}
+            </div>
+          </div>
+        )}
 
-              {/* In Progress — derived from boq_sections */}
-              {partialSections.length > 0 && (
-                <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
-                  <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3 bg-amber-50">
-                    <Clock className="w-5 h-5 text-amber-600" />
-                    <h2 className="font-semibold text-slate-900">In Progress ({partialSections.length})</h2>
+        {/* Completed Works — derived from boq_sections (single source of truth) */}
+        {hasBOQSections && completedSections.length > 0 && (
+          <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3 bg-emerald-50">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+              <h2 className="font-semibold text-slate-900">Completed Works ({completedSections.length})</h2>
+            </div>
+            <div className="p-6">
+              <div className="grid grid-cols-2 gap-3">
+                {completedSections.map((s, i) => (
+                  <div key={i} className="flex items-start gap-3 p-3 bg-emerald-50 rounded-lg">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
+                    <span className="text-sm text-slate-700">{s.section}</span>
                   </div>
-                  <div className="p-6 space-y-4">
-                    {partialSections.map((s, i) => (
-                      <div key={i}>
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm font-medium text-slate-700">{s.section}</span>
-                          <span className="text-xs font-bold text-slate-600">{s.progress ?? 0}%</span>
-                        </div>
-                        <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full rounded-full transition-all ${progressBarColor(s.progress ?? 0)}`}
-                            style={{ width: `${s.progress ?? 0}%` }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
-              {/* Pending Works — derived from boq_sections */}
-              {pendingSections.length > 0 && (
-                <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
-                  <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3 bg-red-50">
-                    <AlertCircle className="w-5 h-5 text-red-600" />
-                    <h2 className="font-semibold text-slate-900">Pending Works ({pendingSections.length})</h2>
+        {/* In Progress — derived from boq_sections */}
+        {hasBOQSections && partialSections.length > 0 && (
+          <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3 bg-amber-50">
+              <Clock className="w-5 h-5 text-amber-600" />
+              <h2 className="font-semibold text-slate-900">In Progress ({partialSections.length})</h2>
+            </div>
+            <div className="p-6 space-y-4">
+              {partialSections.map((s, i) => (
+                <div key={i}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium text-slate-700">{s.section}</span>
+                    <span className="text-xs font-bold text-slate-600">{s.progress ?? 0}%</span>
                   </div>
-                  <div className="p-6">
-                    <ul className="space-y-2">
-                      {pendingSections.map((s, i) => (
-                        <li key={i} className="flex items-start gap-3 p-3 bg-red-50 rounded-lg">
-                          <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
-                          <span className="text-sm text-slate-700">{s.section}</span>
-                        </li>
-                      ))}
-                    </ul>
+                  <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${progressBarColor(s.progress ?? 0)}`}
+                      style={{ width: `${s.progress ?? 0}%` }}
+                    />
                   </div>
                 </div>
-              )}
-            </>
-          )
-        })()}
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Pending Works — derived from boq_sections (0% sections only) */}
+        {hasBOQSections && pendingSections.length > 0 && (
+          <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3 bg-red-50">
+              <AlertCircle className="w-5 h-5 text-red-600" />
+              <h2 className="font-semibold text-slate-900">Pending Works ({pendingSections.length})</h2>
+            </div>
+            <div className="p-6">
+              <ul className="space-y-2">
+                {pendingSections.map((s, i) => (
+                  <li key={i} className="flex items-start gap-3 p-3 bg-red-50 rounded-lg">
+                    <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
+                    <span className="text-sm text-slate-700">{s.section}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
 
         {/* Legacy work sections — only shown for projects WITHOUT boq_sections */}
-        {(!project.boq_sections || project.boq_sections.length === 0) && (
+        {!hasBOQSections && (
           <>
-            {/* Completed Works */}
             {project.completed_works && project.completed_works.length > 0 && (
               <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
                 <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3 bg-emerald-50">
@@ -424,7 +425,6 @@ export default function ProjectPage() {
               </div>
             )}
 
-            {/* Partial Works */}
             {project.partial_works && project.partial_works.length > 0 && (
               <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
                 <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3 bg-amber-50">
@@ -450,7 +450,6 @@ export default function ProjectPage() {
               </div>
             )}
 
-            {/* Pending Works */}
             {project.pending_works && project.pending_works.length > 0 && (
               <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
                 <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3 bg-red-50">
