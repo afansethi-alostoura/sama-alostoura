@@ -14,17 +14,20 @@ export async function GET() {
     const state   = crypto.randomBytes(16).toString('hex')
     const authUrl = getAuthUrl(state)
 
-    // Store state in secure cookie (10 minute expiry)
+    console.log('[QB Connect] Starting OAuth — state:', state.slice(0, 8) + '...')
+    console.log('[QB Connect] Auth URL:', authUrl)
+
+    // Set cookie directly on the redirect response (not via cookies() API)
     const response = NextResponse.redirect(authUrl)
-    const cookieStore = await cookies()
-    cookieStore.set('qb-oauth-state', state, {
+    response.cookies.set('qb-oauth-state', state, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure:   process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge: 600, // 10 minutes
-      path: '/',
+      maxAge:   600, // 10 minutes
+      path:     '/',
     })
 
+    console.log('[QB Connect] State cookie set, redirecting to Intuit...')
     return response
   } catch (error) {
     console.error('QB connect error:', error)

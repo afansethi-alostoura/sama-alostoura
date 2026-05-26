@@ -1,17 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { exchangeCode }              from '@/lib/quickbooks/client'
-import { cookies }                   from 'next/headers'
 
-async function validateState(state: string): Promise<boolean> {
+async function validateState(req: NextRequest, state: string): Promise<boolean> {
   try {
-    const cookieStore = await cookies()
-    const savedState = cookieStore.get('qb-oauth-state')?.value
-
-    // Delete the cookie (one-time use)
-    cookieStore.delete('qb-oauth-state')
-
+    const savedState = req.cookies.get('qb-oauth-state')?.value
+    console.log('[QB Callback] Cookie state:', savedState ? savedState.slice(0, 8) + '...' : 'MISSING')
+    console.log('[QB Callback] URL state:   ', state ? state.slice(0, 8) + '...' : 'MISSING')
+    console.log('[QB Callback] State match:', savedState === state)
     return savedState === state
-  } catch {
+  } catch (err) {
+    console.error('[QB Callback] validateState error:', err)
     return false
   }
 }
@@ -51,7 +49,8 @@ export async function GET(req: NextRequest) {
 
   // CSRF check
   console.log('[QB Callback] Validating state...')
-  const isValidState = await validateState(state)
+  console.log('[QB Callback] All cookies:', [...req.cookies.getAll().map(c => c.name)])
+  const isValidState = await validateState(req, state)
   if (!isValidState) {
     console.error('[QB Callback] Invalid state - possible CSRF attack')
     return NextResponse.redirect(new URL('/accounting?qb_error=invalid_state', req.url))
