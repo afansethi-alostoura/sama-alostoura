@@ -55,7 +55,8 @@ export async function GET(req: Request) {
   const token     = searchParams.get('hub.verify_token')
   const challenge = searchParams.get('hub.challenge')
 
-  if (mode === 'subscribe' && token === process.env.META_WEBHOOK_VERIFY_TOKEN) {
+  const verifyToken = process.env.META_WEBHOOK_VERIFY_TOKEN ?? 'sama_alostoura_verify_2024'
+  if (mode === 'subscribe' && token === verifyToken) {
     console.log('[WhatsApp] Webhook verified by Meta ✅')
     return new Response(challenge ?? '', { status: 200 })
   }
