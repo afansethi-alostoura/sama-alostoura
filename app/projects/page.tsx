@@ -43,32 +43,32 @@ export default function ProjectsPage() {
     <div className="p-4 sm:p-6 max-w-[1400px] mx-auto animate-fade-in">
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+      <div className="flex items-start justify-between gap-3 mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Projects</h1>
-          <p className="text-slate-500 text-sm mt-0.5">
+          <h1 className="text-xl sm:text-2xl font-bold text-slate-900">Projects</h1>
+          <p className="text-slate-500 text-xs sm:text-sm mt-0.5">
             {loading ? 'Loading...' : `${allProjects.length} projects · ${activeCount} active · ${completedCount} completed`}
           </p>
         </div>
         <Link
           href="/projects/add"
-          className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors shadow-sm self-start sm:self-auto"
+          className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-colors shadow-sm flex-shrink-0"
         >
-          <Plus className="w-4 h-4" />
-          New Project
+          <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+          <span className="hidden xs:inline">New </span>Project
         </Link>
       </div>
 
       {/* Stats row */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+      <div className="grid grid-cols-3 gap-3 mb-6">
         {[
           { label: 'Total Portfolio Value', value: formatCurrency(totalValue), color: 'text-blue-600' },
           { label: 'Active Projects',       value: String(activeCount),        color: 'text-emerald-600' },
           { label: 'Completed Projects',    value: String(completedCount),     color: 'text-slate-700' },
         ].map(({ label, value, color }) => (
-          <div key={label} className="bg-white rounded-xl border border-slate-100 px-5 py-4 shadow-card">
-            <p className="text-xs text-slate-500 font-medium">{label}</p>
-            <p className={`text-2xl font-bold mt-1 ${color}`}>{value}</p>
+          <div key={label} className="bg-white rounded-xl border border-slate-100 px-3 sm:px-5 py-3 sm:py-4 shadow-card min-w-0">
+            <p className="text-xs text-slate-500 font-medium leading-tight">{label}</p>
+            <p className={`text-base sm:text-2xl font-bold mt-1 truncate ${color}`}>{value}</p>
           </div>
         ))}
       </div>
