@@ -1,9 +1,24 @@
 import { NextResponse }       from 'next/server'
 import { getAllStoredProjects, addStoredProject } from '@/lib/projects-store'
+import { getAllProgress } from '@/lib/project-progress'
 
 export async function GET() {
-  const projects = getAllStoredProjects()
-  return NextResponse.json(projects)
+  const projects  = getAllStoredProjects()
+  const overrides = await getAllProgress()
+
+  // Merge Supabase progress updates onto file-based project data
+  const merged = projects.map(p => {
+    const prog = overrides[p.id]
+    if (!prog) return p
+    return {
+      ...p,
+      progress_percent: prog.progress_percent,
+      current_stage:    prog.current_stage ?? p.current_stage,
+      boq_sections:     prog.boq_sections  ?? (p as any).boq_sections,
+    }
+  })
+
+  return NextResponse.json(merged)
 }
 
 export async function POST(req: Request) {
