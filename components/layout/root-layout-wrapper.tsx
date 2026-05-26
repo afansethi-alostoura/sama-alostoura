@@ -3,7 +3,6 @@ import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import { Sidebar } from './sidebar'
 import { Bell, Search, ChevronDown } from 'lucide-react'
-import { ProjectsProvider } from '@/contexts/ProjectsContext'
 
 function TopHeader() {
   return (
@@ -53,7 +52,6 @@ export function RootLayoutWrapper({ children }: { children: React.ReactNode }) {
   const sidebarWidth = collapsed ? 68 : 256
 
   return (
-    <ProjectsProvider>
     <div className="flex min-h-screen bg-slate-50">
       <Sidebar collapsed={collapsed} onToggle={() => setCollapsed(c => !c)} />
 
@@ -97,6 +95,5 @@ export function RootLayoutWrapper({ children }: { children: React.ReactNode }) {
         {children}
       </main>
     </div>
-    </ProjectsProvider>
   )
 }

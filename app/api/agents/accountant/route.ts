@@ -1,9 +1,9 @@
 import { NextResponse }    from 'next/server'
 import { anthropic }       from '@/lib/anthropic'
-import { getLiveProjects } from '@/lib/get-live-projects'
 import type { QBInvoice, QBPayment, QBSnapshot } from '@/lib/quickbooks/types'
-import fs   from 'fs'
-import path from 'path'
+import { DEMO_PROJECTS }   from '@/lib/demo-data'
+import fs                  from 'fs'
+import path                from 'path'
 
 const SNAP_FILE = path.join(process.cwd(), '.qb-data.json')
 
@@ -29,20 +29,17 @@ function classifyInvoice(inv: QBInvoice): 'paid' | 'overdue' | 'unpaid' {
   if (inv.DueDate && new Date(inv.DueDate) < new Date()) return 'overdue'
   return 'unpaid'
 }
+
 function daysOverdue(dueDate: string): number {
   return Math.floor((Date.now() - new Date(dueDate).getTime()) / 86_400_000)
 }
 
 export async function POST() {
   if (!process.env.SAMA_AI_KEY) {
-    return NextResponse.json({ briefing: '⚠️ SAMA_AI_KEY not set in environment variables.' })
+    return NextResponse.json({ briefing: '⚠️ SAMA_AI_KEY not set in .env.local' })
   }
 
-  // Always fetch live projects from Supabase — never hardcoded
-  const projects = await getLiveProjects()
-  const active   = projects.filter(p => p.status === 'active')
-
-  // Load QuickBooks snapshot if available (file-based, may not exist)
+  // Load QuickBooks snapshot if available
   let snapshot: QBSnapshot | null = null
   try {
     if (fs.existsSync(SNAP_FILE)) {
@@ -50,6 +47,9 @@ export async function POST() {
     }
   } catch {}
 
+  const projects = DEMO_PROJECTS.filter(p => p.status === 'active')
+
+  // Build financial context
   let qbContext = ''
   if (snapshot) {
     const invoices  = snapshot.invoices
@@ -57,43 +57,63 @@ export async function POST() {
     const paid      = invoices.filter(i => classifyInvoice(i) === 'paid')
     const overdue   = invoices.filter(i => classifyInvoice(i) === 'overdue')
     const unpaid    = invoices.filter(i => classifyInvoice(i) === 'unpaid')
+    const totalBilled     = invoices.reduce((s, i) => s + i.TotalAmt, 0)
+    const totalOutstanding = invoices.reduce((s, i) => s + i.Balance, 0)
+    const totalPaid       = payments.reduce((s, p) => s + p.TotalAmt, 0)
+
     qbContext = `
 QUICKBOOKS DATA (synced: ${snapshot.synced_at}):
 Company: ${snapshot.company_name}
-Total invoiced: AED ${invoices.reduce((s, i) => s + i.TotalAmt, 0).toLocaleString()}
-Total outstanding: AED ${invoices.reduce((s, i) => s + i.Balance, 0).toLocaleString()}
-Total payments received: AED ${payments.reduce((s, p) => s + p.TotalAmt, 0).toLocaleString()}
-Paid: ${paid.length} | Overdue: ${overdue.length} | Unpaid: ${unpaid.length}
+
+INVOICE SUMMARY:
+Total invoiced: AED ${totalBilled.toLocaleString()}
+Total outstanding: AED ${totalOutstanding.toLocaleString()}
+Total payments received: AED ${totalPaid.toLocaleString()}
+Paid invoices: ${paid.length}
+Overdue invoices: ${overdue.length}
+Unpaid (not yet due): ${unpaid.length}
 
 OVERDUE INVOICES (${overdue.length}):
-${overdue.map(i => `  - Invoice #${i.DocNumber} | ${i.CustomerRef.name} | AED ${i.Balance.toLocaleString()} | ${daysOverdue(i.DueDate!)} days overdue`).join('\n') || '  None'}
+${overdue.map(i => `  - Invoice #${i.DocNumber} | ${i.CustomerRef.name} | AED ${i.Balance.toLocaleString()} | Due: ${i.DueDate} | ${daysOverdue(i.DueDate!)} days overdue`).join('\n') || '  None'}
 
-RECENT PAYMENTS:
+RECENT PAYMENTS (last 5):
 ${payments.slice(0, 5).map(p => `  - ${p.TxnDate} | ${p.CustomerRef.name} | AED ${p.TotalAmt.toLocaleString()}`).join('\n') || '  None'}
+
+UNPAID INVOICES:
+${unpaid.map(i => `  - Invoice #${i.DocNumber} | ${i.CustomerRef.name} | AED ${i.Balance.toLocaleString()} | Due: ${i.DueDate ?? 'No due date'}`).join('\n') || '  None'}
 `
   } else {
-    qbContext = `QUICKBOOKS: Not yet connected. Using project database only.\n`
+    qbContext = `
+QUICKBOOKS DATA: Not yet synced.
+Using project database only for financial analysis.
+`
   }
 
   const projectContext = `
-LIVE PROJECT FINANCIAL STATUS (from Supabase — ${new Date().toLocaleDateString('en-AE')}):
-${active.map(p => {
+PROJECT FINANCIAL STATUS (from project database):
+${projects.map(p => {
   const outstanding = p.contract_value - p.received_amount
-  const pctCollected = Math.round((p.received_amount / p.contract_value) * 100)
+  const retention   = p.received_amount * 0.1
   return `
-  • ${p.name} | ${p.type} | ${p.location}
-    Client: ${p.client_name}
-    Progress: ${p.progress_percent}% complete${p.mbhre_approved_progress != null ? ` | MBHRE approved: ${p.mbhre_approved_progress}%` : ''}
-    Contract: AED ${p.contract_value.toLocaleString()} | Received: AED ${p.received_amount.toLocaleString()} (${pctCollected}%) | Outstanding: AED ${outstanding.toLocaleString()}
-    Retention held: AED ${(p.received_amount * 0.1).toLocaleString()}
-    Current stage: ${p.current_stage || 'Not set'}`
+  Project: ${p.name} | ${p.type} | ${p.location}
+  Contract: AED ${p.contract_value.toLocaleString()}
+  Received: AED ${p.received_amount.toLocaleString()} (${Math.round((p.received_amount / p.contract_value) * 100)}%)
+  Outstanding: AED ${outstanding.toLocaleString()}
+  Retention held: AED ${retention.toLocaleString()}
+  Progress: ${p.progress_percent}%
+  Stage: ${p.current_stage}`
 }).join('\n')}
 
 TOTAL COMPANY POSITION:
-Total contract: AED ${active.reduce((s, p) => s + p.contract_value, 0).toLocaleString()}
-Total received: AED ${active.reduce((s, p) => s + p.received_amount, 0).toLocaleString()}
-Total outstanding: AED ${active.reduce((s, p) => s + (p.contract_value - p.received_amount), 0).toLocaleString()}
-Total retention: AED ${active.reduce((s, p) => s + p.received_amount * 0.1, 0).toLocaleString()}
+Total contract value: AED ${projects.reduce((s, p) => s + p.contract_value, 0).toLocaleString()}
+Total received: AED ${projects.reduce((s, p) => s + p.received_amount, 0).toLocaleString()}
+Total outstanding: AED ${projects.reduce((s, p) => s + (p.contract_value - p.received_amount), 0).toLocaleString()}
+Total retention held: AED ${projects.reduce((s, p) => s + p.received_amount * 0.1, 0).toLocaleString()}
+
+MBHRE PAYMENT NOTES:
+- Khalid project: Stage 4 (AED 200,000) applied to MBHRE — awaiting release
+- Khalid project: 3 further stages totalling AED 530,000 pending completion milestones
+- Al Qubaisi project: 92% complete — final stage payment should be applied imminently
 `
 
   try {
@@ -101,8 +121,12 @@ Total retention: AED ${active.reduce((s, p) => s + p.received_amount * 0.1, 0).t
       model:      'claude-sonnet-4-6',
       max_tokens: 900,
       system:     ACCOUNTANT_PROMPT,
-      messages:   [{ role: 'user', content: `Generate my financial briefing:\n${qbContext}\n${projectContext}` }],
+      messages: [{
+        role:    'user',
+        content: `Generate my financial briefing:\n${qbContext}\n${projectContext}`,
+      }],
     })
+
     const briefing = message.content[0].type === 'text' ? message.content[0].text : ''
     return NextResponse.json({ briefing, has_qb_data: !!snapshot })
   } catch (err) {

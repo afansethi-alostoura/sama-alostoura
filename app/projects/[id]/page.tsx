@@ -3,9 +3,10 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, MapPin, Calendar, Building2, CheckCircle2, Clock, AlertCircle, Loader2, Sparkles, TrendingUp } from 'lucide-react'
+import { getDemoProject } from '@/lib/demo-data'
 import { formatCurrency, formatDate, progressBarColor, statusBadge, statusLabel } from '@/lib/utils'
+import type { StoredProject } from '@/lib/projects-store'
 import { ProgressUpdateModal, type BOQSection } from '@/components/projects/progress-update-modal'
-import { useProjects } from '@/contexts/ProjectsContext'
 
 interface ProjectData {
   id: string
@@ -34,22 +35,33 @@ interface ProjectData {
 export default function ProjectPage() {
   const params = useParams()
   const id = params.id as string
-
-  // Use global context — same data as every other page
-  const { projects, loading, refresh } = useProjects()
   const [project, setProject] = useState<ProjectData | null>(null)
+  const [loading, setLoading] = useState(true)
   const [briefing, setBriefing] = useState<string>('')
   const [briefingLoading, setBriefingLoading] = useState(false)
   const [showProgressModal, setShowProgressModal] = useState(false)
 
-  // Find this project from the global context
   useEffect(() => {
-    if (loading) return
-    const found = projects.find(p => p.id === id)
-    if (found) {
-      setProject(found as unknown as ProjectData)
-    }
-  }, [projects, loading, id])
+    // Try stored projects first, fall back to demo
+    fetch('/api/projects')
+      .then(r => r.json())
+      .then((projects: StoredProject[]) => {
+        const stored = projects.find(p => p.id === id)
+        if (stored) {
+          setProject(stored as unknown as ProjectData)
+        } else {
+          const demo = getDemoProject(id)
+          if (demo) {
+            setProject(demo as unknown as ProjectData)
+          }
+        }
+      })
+      .catch(() => {
+        const demo = getDemoProject(id)
+        if (demo) setProject(demo as unknown as ProjectData)
+      })
+      .finally(() => setLoading(false))
+  }, [id])
 
   async function handleBriefMe() {
     if (!project) return
@@ -240,14 +252,10 @@ export default function ProjectPage() {
           initialStage={project.current_stage ?? ''}
           onClose={() => setShowProgressModal(false)}
           onSaved={(pct, stage, sections) => {
-            // Update local view immediately
             setProject(prev => prev
               ? { ...prev, progress_percent: pct, current_stage: stage, boq_sections: sections }
               : prev
             )
-            // Refresh global context → CEO dashboard, accounting, projects list
-            // all update automatically without any page reload
-            refresh()
           }}
         />
       )}
