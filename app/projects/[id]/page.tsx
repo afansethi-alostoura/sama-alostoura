@@ -5,7 +5,7 @@ import Link from 'next/link'
 import {
   ArrowLeft, MapPin, Calendar, Building2,
   CheckCircle2, Clock, AlertCircle, Loader2,
-  Sparkles, TrendingUp, FileText, Square, CheckSquare,
+  Sparkles, TrendingUp, Square, CheckSquare,
 } from 'lucide-react'
 import { getDemoProject } from '@/lib/demo-data'
 import { formatCurrency, formatDate, progressBarColor, statusBadge, statusLabel } from '@/lib/utils'
@@ -301,16 +301,7 @@ export default function ProjectPage() {
           <TrendingUp className="w-4 h-4" /> Update Progress
         </button>
 
-        {project.company_boq_id && (
-          <Link
-            href={`/estimation/boq/company?id=${project.company_boq_id}`}
-            className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors shadow-sm"
-          >
-            <FileText className="w-4 h-4" /> Company BOQ
-          </Link>
-        )}
-
-        <button
+<button
           onClick={handleBriefMe}
           disabled={briefingLoading}
           className="flex items-center gap-2 bg-gradient-to-r from-brand-500 to-brand-600 hover:from-brand-600 hover:to-brand-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-all disabled:opacity-60 shadow-sm"
