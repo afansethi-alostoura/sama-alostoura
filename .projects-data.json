@@ -1,5 +1,28 @@
 [
   {
+    "id": "f4a5b6c7-d8e9-4f0a-b1c2-d3e4f5a6b7c9",
+    "name": "Villa G+1 + Service Block + D.M + Compound Wall",
+    "client_name": "Fahad Rashed Essa Abdullatif Al Serkal",
+    "location": "Al Khawaneej First, Dubai",
+    "type": "villa",
+    "status": "active",
+    "contract_value": 1993450,
+    "received_amount": 0,
+    "progress_percent": 0,
+    "current_stage": "Mobilization / Pre-construction",
+    "notes": "Plot No: 2815139 | Villa G+1 + Service Block + D.M + Compound Wall | Consultant: Al Rouya Al Motakamela Architecture Consultants | Total BOQ: AED 1,993,450 | MBHRE Share: AED 750,000 | Owner Share: AED 1,243,450 | Retention: 10%",
+    "start_date": "2026-05-28",
+    "expected_completion": "2027-05-28",
+    "created_at": "2026-05-28T00:00:00Z",
+    "updated_at": "2026-05-28T00:00:00Z",
+    "company_boq_id": "fahad-rashed-boq-2815139",
+    "mbhre_approved_amount": 750000,
+    "plot_number": "2815139",
+    "consultant": "Al Rouya Al Motakamela Architecture Consultants",
+    "owner_share": 1243450,
+    "retention_percent": 10
+  },
+  {
     "id": "a1b2c3d4-e5f6-47g8-h9i0-j1k2l3m4n5o6",
     "name": "Villa Renovation – Al Mirdif",
     "client_name": "Mansoor Ahmad Abdulaziz Bin Shafia",

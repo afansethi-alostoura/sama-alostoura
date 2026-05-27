@@ -19,11 +19,19 @@ export async function GET(req: NextRequest) {
         .select('id, project_number, project_name, area, owner, contractor, created_at, updated_at')
         .order('created_at', { ascending: false })
       if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-      return NextResponse.json(data ?? [])
+      // Merge file-based records not in Supabase (pre-seeded BOQs)
+      const supabaseIds = new Set((data ?? []).map((r: any) => r.id))
+      const fileRecords = listCompanyBOQs().filter(r => !supabaseIds.has(r.id))
+      return NextResponse.json([...(data ?? []), ...fileRecords])
     }
     const { data, error } = await db()!.from('company_boq').select('*').eq('id', id).single()
     if (error && error.code !== 'PGRST116') return NextResponse.json({ error: error.message }, { status: 500 })
-    return NextResponse.json(data ?? null)
+    // Fall back to file store if not found in Supabase
+    if (!data) {
+      const record = getCompanyBOQ(id)
+      return NextResponse.json(record ?? null)
+    }
+    return NextResponse.json(data)
   }
 
   // ── File-based fallback ──
@@ -50,7 +58,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json(record)
 }
 
-// PUT — update existing
+// PUT — update existing (upsert so file-seeded records get created in Supabase on first save)
 export async function PUT(req: NextRequest) {
   const body = await req.json()
   const { id, project_number, project_name, area, owner, contractor, items } = body
@@ -59,8 +67,11 @@ export async function PUT(req: NextRequest) {
   if (isSupabaseConfigured() && db()) {
     const { data, error } = await db()!
       .from('company_boq')
-      .update({ project_number, project_name, area, owner, contractor, items, updated_at: new Date().toISOString() })
-      .eq('id', id).select().single()
+      .upsert(
+        { id, project_number, project_name, area, owner, contractor, items, updated_at: new Date().toISOString() },
+        { onConflict: 'id' }
+      )
+      .select().single()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json(data)
   }

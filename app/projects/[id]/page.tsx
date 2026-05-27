@@ -39,7 +39,7 @@ interface ProjectData {
 
 interface BOQItem {
   id?: string
-  itemNo: number
+  itemNo: string | number
   section: string
   description: string
   unit: string
