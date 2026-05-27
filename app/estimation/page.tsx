@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Download, Trash2, AlertCircle, FileText } from 'lucide-react'
+import { Plus, Download, Trash2, AlertCircle, FileText, ExternalLink } from 'lucide-react'
 import Link from 'next/link'
 
-interface BOQListItem {
+interface AIBOQItem {
   id: string
   projectId: string
   drawing_filename: string
@@ -15,64 +15,89 @@ interface BOQListItem {
   createdAt: string
 }
 
+interface SavedBOQ {
+  id: string
+  created_at: string
+  updated_at: string
+  // company fields
+  project_number?: string
+  project_name?: string
+  area?: string
+  owner?: string
+  contractor?: string
+  // mbhre fields
+  file_no?: string
+  owner_name?: string
+  consultant?: string
+  date_field?: string
+}
+
 export default function EstimationPage() {
   const router = useRouter()
-  const [boqs, setBoqs]           = useState<BOQListItem[]>([])
-  const [loading, setLoading]     = useState(true)
-  const [error, setError]         = useState('')
-  const [deleting, setDeleting]   = useState<string | null>(null)
+
+  const [aiBoqs, setAiBoqs]               = useState<AIBOQItem[]>([])
+  const [companyBoqs, setCompanyBoqs]     = useState<SavedBOQ[]>([])
+  const [mbhreBoqs, setMbhreBoqs]         = useState<SavedBOQ[]>([])
+  const [breakdownBoqs, setBreakdownBoqs] = useState<SavedBOQ[]>([])
+  const [loading, setLoading]             = useState(true)
+  const [deleting, setDeleting]           = useState<string | null>(null)
 
   useEffect(() => {
-    fetchBOQs()
+    Promise.all([
+      fetch('/api/boqs').then(r => r.json()).catch(() => ({ boqs: [] })),
+      fetch('/api/boq/company').then(r => r.json()).catch(() => []),
+      fetch('/api/boq/mbhre').then(r => r.json()).catch(() => []),
+      fetch('/api/boq/mbhre-breakdown').then(r => r.json()).catch(() => []),
+    ]).then(([ai, company, mbhre, breakdown]) => {
+      setAiBoqs(ai.boqs || [])
+      setCompanyBoqs(Array.isArray(company) ? company : [])
+      setMbhreBoqs(Array.isArray(mbhre) ? mbhre : [])
+      setBreakdownBoqs(Array.isArray(breakdown) ? breakdown : [])
+    }).finally(() => setLoading(false))
   }, [])
 
-  async function fetchBOQs() {
-    try {
-      const res  = await fetch('/api/boqs')
-      const data = await res.json()
-      setBoqs(data.boqs || [])
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load BOQs')
-    } finally {
-      setLoading(false)
-    }
+  async function deleteCompany(id: string) {
+    if (!confirm('Delete this BOQ?')) return
+    setDeleting(id)
+    const res = await fetch(`/api/boq/company?id=${id}`, { method: 'DELETE' })
+    if (res.ok) setCompanyBoqs(prev => prev.filter(b => b.id !== id))
+    setDeleting(null)
   }
 
-  async function handleDelete(boqId: string) {
-    if (!confirm('Delete this BOQ? This cannot be undone.')) return
+  async function deleteMbhre(id: string) {
+    if (!confirm('Delete this BOQ?')) return
+    setDeleting(id)
+    const res = await fetch(`/api/boq/mbhre?id=${id}`, { method: 'DELETE' })
+    if (res.ok) setMbhreBoqs(prev => prev.filter(b => b.id !== id))
+    setDeleting(null)
+  }
+
+  async function deleteBreakdown(id: string) {
+    if (!confirm('Delete this Breakdown?')) return
+    setDeleting(id)
+    const res = await fetch(`/api/boq/mbhre-breakdown?id=${id}`, { method: 'DELETE' })
+    if (res.ok) setBreakdownBoqs(prev => prev.filter(b => b.id !== id))
+    setDeleting(null)
+  }
+
+  async function handleAiDelete(boqId: string) {
+    if (!confirm('Delete this estimation?')) return
     setDeleting(boqId)
-    try {
-      const res = await fetch(`/api/boqs?id=${boqId}`, { method: 'DELETE' })
-      if (res.ok) setBoqs(boqs.filter(b => b.id !== boqId))
-      else alert('Failed to delete BOQ')
-    } catch (err) {
-      alert('Error deleting BOQ: ' + (err instanceof Error ? err.message : 'Unknown error'))
-    } finally {
-      setDeleting(null)
-    }
+    const res = await fetch(`/api/boqs?id=${boqId}`, { method: 'DELETE' })
+    if (res.ok) setAiBoqs(prev => prev.filter(b => b.id !== boqId))
+    setDeleting(null)
   }
 
-  async function handleExport(boqId: string) {
-    try {
-      const res = await fetch(`/api/boqs/export-pdf?id=${boqId}`)
-      if (res.ok) {
-        const html = await res.text()
-        const w = window.open('', '_blank')
-        if (w) { w.document.write(html); w.document.close(); w.print() }
-      } else {
-        alert('Failed to export BOQ')
-      }
-    } catch (err) {
-      alert('Error exporting: ' + (err instanceof Error ? err.message : 'Unknown error'))
-    }
+  function fmtDate(d: string) {
+    return new Date(d).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })
   }
 
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 p-8 flex items-center justify-center">
         <div className="text-center">
-          <div className="w-12 h-12 border-4 border-slate-200 border-t-brand-500 rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-slate-600">Loading estimations...</p>
+          <div className="w-12 h-12 border-4 border-slate-200 border-t-blue-500 rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-slate-600">Loading...</p>
         </div>
       </div>
     )
@@ -88,128 +113,177 @@ export default function EstimationPage() {
           <p className="text-slate-500 text-sm">Create and manage Bills of Quantities</p>
         </div>
 
-        {/* ── BOQ Forms Section ─────────────────────────────── */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-8">
-          <h2 className="text-base font-semibold text-slate-800 mb-1">BOQ Forms</h2>
-          <p className="text-xs text-slate-500 mb-4">Open a BOQ template to fill in for a new project</p>
-
-          <div className="flex gap-3">
-            <Link
-              href="/estimation/boq/company"
-              className="inline-flex items-center gap-2 px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-white text-sm font-semibold rounded-lg transition-colors"
-            >
-              <FileText className="w-4 h-4" />
-              Company BOQ
+        {/* ── New BOQ buttons ── */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-6">
+          <h2 className="text-sm font-semibold text-slate-700 mb-3">New BOQ</h2>
+          <div className="flex flex-wrap gap-3">
+            <Link href="/estimation/boq/company"
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-white text-sm font-semibold rounded-lg transition-colors">
+              <FileText className="w-4 h-4" /> Company BOQ
             </Link>
-            <Link
-              href="/estimation/boq/mbhre"
-              className="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg transition-colors"
-            >
-              <FileText className="w-4 h-4" />
-              MBHRE BOQ
+            <Link href="/estimation/boq/mbhre"
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold rounded-lg transition-colors">
+              <FileText className="w-4 h-4" /> MBHRE BOQ
             </Link>
-            <Link
-              href="/estimation/boq/mbhre-breakdown"
-              className="inline-flex items-center gap-2 px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold rounded-lg transition-colors"
-            >
-              <FileText className="w-4 h-4" />
-              MBHRE Breakdown
+            <Link href="/estimation/boq/mbhre-breakdown"
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold rounded-lg transition-colors">
+              <FileText className="w-4 h-4" /> MBHRE Breakdown
             </Link>
           </div>
         </div>
 
-        {/* ── AI Estimation Section ─────────────────────────── */}
-        <div className="mb-6 flex items-center justify-between">
+        {/* ── Saved Company BOQs ── */}
+        <section className="mb-6">
+          <h2 className="text-base font-semibold text-slate-800 mb-3 flex items-center gap-2">
+            <span className="w-3 h-3 rounded-full bg-slate-700 inline-block" />
+            Company BOQs
+            <span className="text-xs font-normal text-slate-400 ml-1">({companyBoqs.length})</span>
+          </h2>
+          {companyBoqs.length === 0 ? (
+            <div className="bg-white rounded-xl border border-slate-100 p-6 text-center text-slate-400 text-sm">No Company BOQs saved yet</div>
+          ) : (
+            <div className="grid gap-3">
+              {companyBoqs.map(boq => (
+                <div key={boq.id} className="bg-white rounded-xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
+                  <div className="p-5 flex items-center justify-between gap-4">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-900 truncate">{boq.owner || boq.project_name || 'Untitled'}</p>
+                      <p className="text-sm text-slate-500 truncate">{boq.project_name}{boq.area ? ` — ${boq.area}` : ''}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">Saved {fmtDate(boq.updated_at || boq.created_at)}</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Link href={`/estimation/boq/company?id=${boq.id}`}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm font-medium rounded-lg transition-colors">
+                        <ExternalLink className="w-3.5 h-3.5" /> Open
+                      </Link>
+                      <button onClick={() => deleteCompany(boq.id)} disabled={deleting === boq.id}
+                        className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-40">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* ── Saved MBHRE BOQs ── */}
+        <section className="mb-6">
+          <h2 className="text-base font-semibold text-slate-800 mb-3 flex items-center gap-2">
+            <span className="w-3 h-3 rounded-full bg-indigo-600 inline-block" />
+            MBHRE BOQs
+            <span className="text-xs font-normal text-slate-400 ml-1">({mbhreBoqs.length})</span>
+          </h2>
+          {mbhreBoqs.length === 0 ? (
+            <div className="bg-white rounded-xl border border-slate-100 p-6 text-center text-slate-400 text-sm">No MBHRE BOQs saved yet</div>
+          ) : (
+            <div className="grid gap-3">
+              {mbhreBoqs.map(boq => (
+                <div key={boq.id} className="bg-white rounded-xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
+                  <div className="p-5 flex items-center justify-between gap-4">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-900 truncate">{boq.owner_name || 'Untitled'}</p>
+                      <p className="text-sm text-slate-500 truncate">File: {boq.file_no || '—'}{boq.consultant ? ` · ${boq.consultant}` : ''}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">Saved {fmtDate(boq.updated_at || boq.created_at)}</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Link href={`/estimation/boq/mbhre?id=${boq.id}`}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-sm font-medium rounded-lg transition-colors">
+                        <ExternalLink className="w-3.5 h-3.5" /> Open
+                      </Link>
+                      <button onClick={() => deleteMbhre(boq.id)} disabled={deleting === boq.id}
+                        className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-40">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* ── Saved MBHRE Breakdowns ── */}
+        <section className="mb-8">
+          <h2 className="text-base font-semibold text-slate-800 mb-3 flex items-center gap-2">
+            <span className="w-3 h-3 rounded-full bg-purple-600 inline-block" />
+            MBHRE Breakdowns
+            <span className="text-xs font-normal text-slate-400 ml-1">({breakdownBoqs.length})</span>
+          </h2>
+          {breakdownBoqs.length === 0 ? (
+            <div className="bg-white rounded-xl border border-slate-100 p-6 text-center text-slate-400 text-sm">No Breakdowns saved yet</div>
+          ) : (
+            <div className="grid gap-3">
+              {breakdownBoqs.map(boq => (
+                <div key={boq.id} className="bg-white rounded-xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
+                  <div className="p-5 flex items-center justify-between gap-4">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-900 truncate">{boq.owner_name || 'Untitled'}</p>
+                      <p className="text-sm text-slate-500 truncate">File: {boq.file_no || '—'}{boq.consultant ? ` · ${boq.consultant}` : ''}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">Saved {fmtDate(boq.updated_at || boq.created_at)}</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Link href={`/estimation/boq/mbhre-breakdown?id=${boq.id}`}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 text-sm font-medium rounded-lg transition-colors">
+                        <ExternalLink className="w-3.5 h-3.5" /> Open
+                      </Link>
+                      <button onClick={() => deleteBreakdown(boq.id)} disabled={deleting === boq.id}
+                        className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-40">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* ── AI Estimations ── */}
+        <div className="mb-4 flex items-center justify-between">
           <h2 className="text-base font-semibold text-slate-800">AI Estimations</h2>
-          <Link
-            href="/estimation/create"
-            className="inline-flex items-center gap-2 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white text-sm font-medium rounded-lg transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            New Estimation
+          <Link href="/estimation/create"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white text-sm font-medium rounded-lg transition-colors">
+            <Plus className="w-4 h-4" /> New Estimation
           </Link>
         </div>
 
-        {error && (
-          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="text-red-900 font-medium">Error</p>
-              <p className="text-red-800 text-sm">{error}</p>
-            </div>
-          </div>
-        )}
-
-        {boqs.length === 0 ? (
-          <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-12 text-center">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-slate-100 rounded-full mb-4">
-              <AlertCircle className="w-8 h-8 text-slate-400" />
-            </div>
-            <h3 className="text-lg font-semibold text-slate-900 mb-2">No AI estimations yet</h3>
-            <p className="text-slate-500 text-sm mb-6">Upload an architectural drawing to generate a BOQ automatically</p>
-            <Link
-              href="/estimation/create"
-              className="inline-flex items-center gap-2 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white font-medium rounded-lg transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              Create First Estimation
-            </Link>
+        {aiBoqs.length === 0 ? (
+          <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-10 text-center">
+            <AlertCircle className="w-8 h-8 text-slate-300 mx-auto mb-3" />
+            <p className="text-slate-500 text-sm">No AI estimations yet</p>
           </div>
         ) : (
           <div className="grid gap-4">
-            {boqs.map((boq) => (
-              <div key={boq.id} className="bg-white rounded-xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
-                <div className="p-6">
-                  <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <h3 className="text-lg font-semibold text-slate-900">{boq.drawing_filename}</h3>
-                      <p className="text-sm text-slate-500">
-                        {boq.items.length} items · Project: {boq.projectId}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-2xl font-bold text-slate-900">
-                        AED {boq.total.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        Subtotal: AED {boq.subtotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </p>
-                    </div>
+            {aiBoqs.map((boq) => (
+              <div key={boq.id} className="bg-white rounded-xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow p-6">
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <h3 className="text-lg font-semibold text-slate-900">{boq.drawing_filename}</h3>
+                    <p className="text-sm text-slate-500">{boq.items?.length ?? 0} items</p>
                   </div>
-
-                  <p className="text-xs text-slate-400 mb-4">
-                    Created {new Date(boq.createdAt).toLocaleDateString('en-US', {
-                      month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
-                    })}
+                  <p className="text-xl font-bold text-slate-900">
+                    AED {boq.total?.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                   </p>
-
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => router.push(`/estimation/${boq.id}`)}
-                      className="flex-1 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-medium rounded-lg transition-colors text-sm"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleExport(boq.id)}
-                      className="px-4 py-2 bg-green-50 hover:bg-green-100 text-green-700 font-medium rounded-lg transition-colors flex items-center gap-2 text-sm"
-                    >
-                      <Download className="w-4 h-4" /> Export
-                    </button>
-                    <button
-                      onClick={() => handleDelete(boq.id)}
-                      disabled={deleting === boq.id}
-                      className="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-700 font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2 text-sm"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      {deleting === boq.id ? 'Deleting...' : 'Delete'}
-                    </button>
-                  </div>
+                </div>
+                <p className="text-xs text-slate-400 mb-4">{fmtDate(boq.createdAt)}</p>
+                <div className="flex gap-2">
+                  <button onClick={() => router.push(`/estimation/${boq.id}`)}
+                    className="flex-1 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-medium rounded-lg text-sm transition-colors">
+                    Edit
+                  </button>
+                  <button onClick={() => handleAiDelete(boq.id)} disabled={deleting === boq.id}
+                    className="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-700 font-medium rounded-lg flex items-center gap-2 text-sm transition-colors disabled:opacity-50">
+                    <Trash2 className="w-4 h-4" />
+                    {deleting === boq.id ? 'Deleting...' : 'Delete'}
+                  </button>
                 </div>
               </div>
             ))}
           </div>
         )}
+
       </div>
     </div>
   )

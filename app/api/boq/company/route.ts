@@ -3,14 +3,24 @@ import { supabaseAdmin, isSupabaseConfigured } from '@/lib/supabase'
 
 const db = () => supabaseAdmin
 
-// GET /api/boq/company?id=uuid  — fetch one BOQ by its own ID
+// GET /api/boq/company        — list all BOQs (summary, no items)
+// GET /api/boq/company?id=uuid — fetch one BOQ by its own ID
 export async function GET(req: NextRequest) {
   if (!isSupabaseConfigured() || !db()) {
     return NextResponse.json({ error: 'Supabase not configured' }, { status: 500 })
   }
 
   const id = req.nextUrl.searchParams.get('id')
-  if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
+
+  if (!id) {
+    // List all — exclude the heavy items column for speed
+    const { data, error } = await db()!
+      .from('company_boq')
+      .select('id, project_number, project_name, area, owner, contractor, created_at, updated_at')
+      .order('created_at', { ascending: false })
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json(data ?? [])
+  }
 
   const { data, error } = await db()!
     .from('company_boq')

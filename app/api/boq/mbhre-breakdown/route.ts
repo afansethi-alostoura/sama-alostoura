@@ -8,7 +8,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Supabase not configured' }, { status: 500 })
   }
   const id = req.nextUrl.searchParams.get('id')
-  if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
+
+  if (!id) {
+    const { data, error } = await db()!
+      .from('mbhre_breakdown_boq')
+      .select('id, file_no, owner_name, contractor, consultant, date_field, created_at, updated_at')
+      .order('created_at', { ascending: false })
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json(data ?? [])
+  }
 
   const { data, error } = await db()!
     .from('mbhre_breakdown_boq')
