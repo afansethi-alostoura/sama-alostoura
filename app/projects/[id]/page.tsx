@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, MapPin, Calendar, Building2, CheckCircle2, Clock, AlertCircle, Loader2, Sparkles, TrendingUp } from 'lucide-react'
+import { ArrowLeft, MapPin, Calendar, Building2, CheckCircle2, Clock, AlertCircle, Loader2, Sparkles, TrendingUp, FileText } from 'lucide-react'
 import { getDemoProject } from '@/lib/demo-data'
 import { formatCurrency, formatDate, progressBarColor, statusBadge, statusLabel } from '@/lib/utils'
 import type { StoredProject } from '@/lib/projects-store'
@@ -30,6 +30,7 @@ interface ProjectData {
   mbhre_approved_progress?: number
   plot_number?: string
   boq_sections?: BOQSection[]
+  company_boq_id?: string
 }
 
 export default function ProjectPage() {
@@ -241,6 +242,16 @@ export default function ProjectPage() {
         >
           <TrendingUp className="w-4 h-4" /> Update Progress
         </button>
+
+        {/* Company BOQ */}
+        {project.company_boq_id && (
+          <Link
+            href={`/estimation/boq/company?id=${project.company_boq_id}`}
+            className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors shadow-sm"
+          >
+            <FileText className="w-4 h-4" /> Company BOQ
+          </Link>
+        )}
 
         {/* Brief Me */}
         <button
