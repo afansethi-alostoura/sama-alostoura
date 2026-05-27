@@ -108,6 +108,13 @@ export default function EstimationPage() {
               <FileText className="w-4 h-4" />
               MBHRE BOQ
             </Link>
+            <Link
+              href="/estimation/boq/mbhre-breakdown"
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold rounded-lg transition-colors"
+            >
+              <FileText className="w-4 h-4" />
+              MBHRE Breakdown
+            </Link>
           </div>
         </div>
 
