@@ -1,16 +1,14 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import {
   ArrowLeft, MapPin, Calendar, Building2,
-  CheckCircle2, Clock, AlertCircle, Loader2,
-  Sparkles, TrendingUp, Square, CheckSquare,
+  CheckCircle2, Clock, AlertCircle, Loader2, Sparkles,
 } from 'lucide-react'
 import { getDemoProject } from '@/lib/demo-data'
 import { formatCurrency, formatDate, progressBarColor, statusBadge, statusLabel } from '@/lib/utils'
 import type { StoredProject } from '@/lib/projects-store'
-import { ProgressUpdateModal, type BOQSection } from '@/components/projects/progress-update-modal'
 
 interface ProjectData {
   id: string
@@ -33,12 +31,10 @@ interface ProjectData {
   mbhre_approved_amount?: number
   mbhre_approved_progress?: number
   plot_number?: string
-  boq_sections?: BOQSection[]
   company_boq_id?: string
 }
 
 interface BOQItem {
-  id?: string
   itemNo: string | number
   section: string
   description: string
@@ -46,6 +42,7 @@ interface BOQItem {
   quantity: number
   unitRate: number
   amount: number
+  progress?: number  // 0–100, how much of this item is complete
   done?: boolean
 }
 
@@ -56,22 +53,22 @@ export default function ProjectPage() {
   const [loading, setLoading] = useState(true)
   const [briefing, setBriefing] = useState<string>('')
   const [briefingLoading, setBriefingLoading] = useState(false)
-  const [showProgressModal, setShowProgressModal] = useState(false)
 
-  // BOQ tracker state
+  // BOQ state
   const [boqItems, setBoqItems] = useState<BOQItem[]>([])
   const [boqLoading, setBoqLoading] = useState(false)
   const [boqSaving, setBoqSaving] = useState(false)
   const [boqRecord, setBoqRecord] = useState<any>(null)
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Load project
   useEffect(() => {
     fetch('/api/projects')
       .then(r => r.json())
       .then((projects: StoredProject[]) => {
         const stored = projects.find(p => p.id === id)
-        if (stored) {
-          setProject(stored as unknown as ProjectData)
-        } else {
+        if (stored) setProject(stored as unknown as ProjectData)
+        else {
           const demo = getDemoProject(id)
           if (demo) setProject(demo as unknown as ProjectData)
         }
@@ -90,41 +87,77 @@ export default function ProjectPage() {
     fetch(`/api/boq/company?id=${project.company_boq_id}`)
       .then(r => r.json())
       .then(data => {
-        if (data && data.items) {
+        if (data?.items) {
           setBoqRecord(data)
-          setBoqItems(data.items)
+          // Migrate any old done:boolean items to progress:number
+          const migrated = data.items.map((item: BOQItem) => ({
+            ...item,
+            progress: item.progress ?? (item.done ? 100 : 0),
+          }))
+          setBoqItems(migrated)
         }
       })
       .catch(() => {})
       .finally(() => setBoqLoading(false))
   }, [project?.company_boq_id])
 
-  const toggleItem = useCallback(async (itemIdx: number) => {
-    if (!boqRecord || boqSaving) return
+  // Weighted overall completion from BOQ items
+  const totalBOQAmount = boqItems.reduce((s, i) => s + (i.amount || 0), 0)
+  const overallBOQPct = totalBOQAmount > 0
+    ? Math.round(boqItems.reduce((s, i) => s + (i.amount || 0) * ((i.progress || 0) / 100), 0) / totalBOQAmount * 100)
+    : 0
 
+  // Save BOQ items + PATCH project progress (debounced 800 ms)
+  const scheduleSave = useCallback((updatedItems: BOQItem[], record: any, proj: ProjectData) => {
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(async () => {
+      if (!record) return
+      setBoqSaving(true)
+      try {
+        const totalAmt = updatedItems.reduce((s, i) => s + (i.amount || 0), 0)
+        const newPct = totalAmt > 0
+          ? Math.round(updatedItems.reduce((s, i) => s + (i.amount || 0) * ((i.progress || 0) / 100), 0) / totalAmt * 100)
+          : 0
+
+        await Promise.all([
+          fetch('/api/boq/company', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              id: record.id,
+              project_number: record.project_number,
+              project_name: record.project_name,
+              area: record.area,
+              owner: record.owner,
+              contractor: record.contractor,
+              items: updatedItems,
+            }),
+          }),
+          fetch(`/api/projects/${proj.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              progress_percent: newPct,
+              current_stage: proj.current_stage ?? '',
+              boq_sections: [],
+            }),
+          }),
+        ])
+
+        setProject(prev => prev ? { ...prev, progress_percent: newPct } : prev)
+      } catch {}
+      finally { setBoqSaving(false) }
+    }, 800)
+  }, [])
+
+  function updateItemProgress(globalIdx: number, raw: string) {
+    const val = Math.max(0, Math.min(100, Number(raw) || 0))
     const updated = boqItems.map((item, i) =>
-      i === itemIdx ? { ...item, done: !item.done } : item
+      i === globalIdx ? { ...item, progress: val, done: val === 100 } : item
     )
     setBoqItems(updated)
-
-    setBoqSaving(true)
-    try {
-      await fetch('/api/boq/company', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: boqRecord.id,
-          project_number: boqRecord.project_number,
-          project_name: boqRecord.project_name,
-          area: boqRecord.area,
-          owner: boqRecord.owner,
-          contractor: boqRecord.contractor,
-          items: updated,
-        }),
-      })
-    } catch {}
-    finally { setBoqSaving(false) }
-  }, [boqItems, boqRecord, boqSaving])
+    if (project && boqRecord) scheduleSave(updated, boqRecord, project)
+  }
 
   async function handleBriefMe() {
     if (!project) return
@@ -159,20 +192,15 @@ export default function ProjectPage() {
   const pctCollected = Math.round((project.received_amount / project.contract_value) * 100)
   const isMBHRE = project.mbhre_approved_amount !== undefined
 
-  // BOQ tracker computed values
-  const doneItems = boqItems.filter(i => i.done)
-  const pendingItems = boqItems.filter(i => !i.done)
-  const doneAmount = doneItems.reduce((s, i) => s + (i.amount || 0), 0)
-  const pendingAmount = pendingItems.reduce((s, i) => s + (i.amount || 0), 0)
-  const boqCompletionPct = boqItems.length > 0
-    ? Math.round((doneItems.length / boqItems.length) * 100)
-    : 0
+  // Effective progress: BOQ-computed if available, otherwise stored value
+  const effectivePct = project.company_boq_id && boqItems.length > 0 ? overallBOQPct : project.progress_percent
 
   // Group items by section
-  const sections = boqItems.reduce<Record<string, BOQItem[]>>((acc, item) => {
+  const sections = boqItems.reduce<Record<string, { items: BOQItem[]; indices: number[] }>>((acc, item, idx) => {
     const sec = item.section || 'General'
-    if (!acc[sec]) acc[sec] = []
-    acc[sec].push(item)
+    if (!acc[sec]) acc[sec] = { items: [], indices: [] }
+    acc[sec].items.push(item)
+    acc[sec].indices.push(idx)
     return acc
   }, {})
 
@@ -224,16 +252,21 @@ export default function ProjectPage() {
         <div className="mb-5 space-y-4">
           <div>
             <div className="flex items-center justify-between text-sm mb-2">
-              <span className="text-slate-600"><strong>Actual Work Completion</strong></span>
-              <span className="font-bold text-slate-800">{project.progress_percent}%</span>
+              <span className="text-slate-600">
+                <strong>Overall Completion</strong>
+                {boqSaving && <span className="ml-2 text-xs text-slate-400 font-normal">saving…</span>}
+              </span>
+              <span className="font-bold text-slate-800 text-lg">{effectivePct}%</span>
             </div>
-            <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
+            <div className="h-4 bg-slate-100 rounded-full overflow-hidden">
               <div
-                className={`h-full rounded-full transition-all ${progressBarColor(project.progress_percent)}`}
-                style={{ width: `${project.progress_percent}%` }}
+                className={`h-full rounded-full transition-all duration-500 ${progressBarColor(effectivePct)}`}
+                style={{ width: `${effectivePct}%` }}
               />
             </div>
-            <p className="text-xs text-slate-500 mt-1">Based on completed &amp; in-progress work items</p>
+            {project.company_boq_id && boqItems.length > 0 && (
+              <p className="text-xs text-slate-500 mt-1">Weighted by AED value across {boqItems.length} BOQ items</p>
+            )}
           </div>
 
           {isMBHRE && project.mbhre_approved_progress !== undefined && (
@@ -243,18 +276,15 @@ export default function ProjectPage() {
                 <span className="font-bold text-indigo-800">{project.mbhre_approved_progress}%</span>
               </div>
               <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full rounded-full transition-all bg-indigo-500"
-                  style={{ width: `${project.mbhre_approved_progress}%` }}
-                />
+                <div className="h-full rounded-full transition-all bg-indigo-500" style={{ width: `${project.mbhre_approved_progress}%` }} />
               </div>
               <p className="text-xs text-slate-500 mt-1">What MBHRE has officially approved &amp; paid against</p>
             </div>
           )}
 
-          {isMBHRE && project.mbhre_approved_progress !== undefined && project.mbhre_approved_progress < project.progress_percent && (
+          {isMBHRE && project.mbhre_approved_progress !== undefined && project.mbhre_approved_progress < effectivePct && (
             <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
-              💡 <strong>{project.progress_percent - project.mbhre_approved_progress}% ahead of MBHRE approval</strong> — Ready to submit stage report for next payment
+              💡 <strong>{effectivePct - project.mbhre_approved_progress}% ahead of MBHRE approval</strong> — Ready to submit stage report for next payment
             </div>
           )}
         </div>
@@ -292,47 +322,21 @@ export default function ProjectPage() {
         </div>
       </div>
 
-      {/* Action Buttons */}
-      <div className="mb-6 flex flex-wrap items-center gap-3">
+      {/* Brief Me button */}
+      <div className="mb-6">
         <button
-          onClick={() => setShowProgressModal(true)}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors shadow-sm"
-        >
-          <TrendingUp className="w-4 h-4" /> Update Progress
-        </button>
-
-<button
           onClick={handleBriefMe}
           disabled={briefingLoading}
           className="flex items-center gap-2 bg-gradient-to-r from-brand-500 to-brand-600 hover:from-brand-600 hover:to-brand-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-all disabled:opacity-60 shadow-sm"
         >
-          {briefingLoading ? (
-            <><Loader2 className="w-4 h-4 animate-spin" /> Briefing…</>
-          ) : (
-            <><Sparkles className="w-4 h-4" /> Brief Me</>
-          )}
+          {briefingLoading
+            ? <><Loader2 className="w-4 h-4 animate-spin" /> Briefing…</>
+            : <><Sparkles className="w-4 h-4" /> Brief Me</>
+          }
         </button>
       </div>
 
-      {/* Progress Update Modal */}
-      {showProgressModal && project && (
-        <ProgressUpdateModal
-          projectId={project.id}
-          projectName={project.name}
-          contractValue={project.contract_value}
-          initialSections={project.boq_sections ?? []}
-          initialStage={project.current_stage ?? ''}
-          onClose={() => setShowProgressModal(false)}
-          onSaved={(pct, stage, sections) => {
-            setProject(prev => prev
-              ? { ...prev, progress_percent: pct, current_stage: stage, boq_sections: sections }
-              : prev
-            )
-          }}
-        />
-      )}
-
-      {/* AI Briefing Response */}
+      {/* AI Briefing */}
       {briefing && (
         <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-6 mb-6">
           <h2 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
@@ -350,229 +354,205 @@ export default function ProjectPage() {
         </div>
       )}
 
-      {/* Work Sections */}
-      <div className="space-y-6">
+      {/* ── BOQ Progress Editor (projects with company_boq_id) ── */}
+      {project.company_boq_id && (
+        <div className="space-y-4">
+          {boqLoading ? (
+            <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-10 flex items-center justify-center gap-3 text-slate-500">
+              <Loader2 className="w-5 h-5 animate-spin" /> Loading BOQ…
+            </div>
+          ) : boqItems.length > 0 ? (
+            <>
+              {/* Section cards */}
+              {Object.entries(sections).map(([sectionName, { items, indices }]) => {
+                const secTotalAmt = items.reduce((s, i) => s + (i.amount || 0), 0)
+                const secPct = secTotalAmt > 0
+                  ? Math.round(items.reduce((s, i) => s + (i.amount || 0) * ((i.progress || 0) / 100), 0) / secTotalAmt * 100)
+                  : 0
+                const allDone = secPct === 100
+                const anyStarted = secPct > 0
 
-        {/* ── BOQ Item Tracker (projects with company_boq_id) ── */}
-        {project.company_boq_id && (
-          <>
-            {boqLoading ? (
-              <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-8 flex items-center justify-center gap-3 text-slate-500">
-                <Loader2 className="w-5 h-5 animate-spin" /> Loading BOQ items…
-              </div>
-            ) : boqItems.length > 0 ? (
-              <>
-                {/* Summary bar */}
-                <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
-                    <div>
-                      <h2 className="font-semibold text-slate-900 text-lg">BOQ Work Tracker</h2>
-                      <p className="text-xs text-slate-500 mt-0.5">Tick each item when the work is done</p>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-slate-500">
-                      {boqSaving && <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…</>}
-                    </div>
-                  </div>
-
-                  {/* Completion bar */}
-                  <div className="mb-4">
-                    <div className="flex items-center justify-between text-sm mb-2">
-                      <span className="text-slate-600">Items completed</span>
-                      <span className="font-bold text-slate-800">{doneItems.length} / {boqItems.length} ({boqCompletionPct}%)</span>
-                    </div>
-                    <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all ${progressBarColor(boqCompletionPct)}`}
-                        style={{ width: `${boqCompletionPct}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Done / Remaining amounts */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-emerald-50 rounded-lg px-4 py-3">
-                      <p className="text-xs text-slate-600">Done</p>
-                      <p className="font-bold text-emerald-700 mt-0.5">{formatCurrency(doneAmount)}</p>
-                      <p className="text-xs text-slate-500 mt-0.5">{doneItems.length} items</p>
-                    </div>
-                    <div className="bg-amber-50 rounded-lg px-4 py-3">
-                      <p className="text-xs text-slate-600">Remaining</p>
-                      <p className="font-bold text-amber-700 mt-0.5">{formatCurrency(pendingAmount)}</p>
-                      <p className="text-xs text-slate-500 mt-0.5">{pendingItems.length} items</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Items by section */}
-                {Object.entries(sections).map(([sectionName, items]) => {
-                  const secDone = items.filter(i => i.done).length
-                  const secTotal = items.length
-                  const secDoneAmt = items.filter(i => i.done).reduce((s, i) => s + (i.amount || 0), 0)
-                  const secTotalAmt = items.reduce((s, i) => s + (i.amount || 0), 0)
-                  const secPct = secTotal > 0 ? Math.round((secDone / secTotal) * 100) : 0
-
-                  return (
-                    <div key={sectionName} className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
-                      {/* Section header */}
-                      <div className={`px-5 py-3 border-b border-slate-100 flex items-center justify-between ${secDone === secTotal ? 'bg-emerald-50' : secDone > 0 ? 'bg-amber-50' : 'bg-slate-50'}`}>
+                return (
+                  <div key={sectionName} className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+                    {/* Section header */}
+                    <div className={`px-5 py-3 border-b border-slate-100 ${allDone ? 'bg-emerald-50' : anyStarted ? 'bg-amber-50' : 'bg-slate-50'}`}>
+                      <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
-                          {secDone === secTotal
+                          {allDone
                             ? <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                            : secDone > 0
+                            : anyStarted
                               ? <Clock className="w-4 h-4 text-amber-600 flex-shrink-0" />
                               : <AlertCircle className="w-4 h-4 text-slate-400 flex-shrink-0" />
                           }
-                          <h3 className="font-semibold text-slate-800 text-sm">{sectionName}</h3>
-                          <span className="text-xs text-slate-500">{secDone}/{secTotal} done</span>
+                          <span className="font-semibold text-slate-800 text-sm">{sectionName}</span>
+                          <span className="text-xs text-slate-500">{items.length} items · {formatCurrency(secTotalAmt)}</span>
                         </div>
                         <div className="flex items-center gap-3">
-                          <span className="text-xs text-slate-500">{formatCurrency(secDoneAmt)} / {formatCurrency(secTotalAmt)}</span>
-                          <span className={`text-xs font-bold ${secPct === 100 ? 'text-emerald-600' : secPct > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
+                          {/* Section mini progress bar */}
+                          <div className="w-24 h-1.5 bg-slate-200 rounded-full overflow-hidden hidden sm:block">
+                            <div
+                              className={`h-full rounded-full transition-all duration-300 ${allDone ? 'bg-emerald-500' : anyStarted ? 'bg-amber-400' : 'bg-slate-300'}`}
+                              style={{ width: `${secPct}%` }}
+                            />
+                          </div>
+                          <span className={`text-sm font-bold w-10 text-right ${allDone ? 'text-emerald-600' : anyStarted ? 'text-amber-600' : 'text-slate-400'}`}>
                             {secPct}%
                           </span>
                         </div>
                       </div>
-
-                      {/* Items table */}
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-xs">
-                          <thead>
-                            <tr className="border-b border-slate-100 bg-slate-50/50">
-                              <th className="text-left px-4 py-2 text-slate-500 font-medium w-8">✓</th>
-                              <th className="text-left px-4 py-2 text-slate-500 font-medium w-10">No.</th>
-                              <th className="text-left px-4 py-2 text-slate-500 font-medium">Description</th>
-                              <th className="text-right px-4 py-2 text-slate-500 font-medium w-14">Unit</th>
-                              <th className="text-right px-4 py-2 text-slate-500 font-medium w-16">Qty</th>
-                              <th className="text-right px-4 py-2 text-slate-500 font-medium w-24">Rate</th>
-                              <th className="text-right px-4 py-2 text-slate-500 font-medium w-28">Amount</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-50">
-                            {items.map((item, itemIdx) => {
-                              const globalIdx = boqItems.findIndex(
-                                bi => bi.section === item.section && bi.itemNo === item.itemNo && bi.description === item.description
-                              )
-                              return (
-                                <tr
-                                  key={itemIdx}
-                                  onClick={() => toggleItem(globalIdx)}
-                                  className={`cursor-pointer transition-colors hover:bg-slate-50 ${item.done ? 'bg-emerald-50/40' : ''}`}
-                                >
-                                  <td className="px-4 py-2.5">
-                                    {item.done
-                                      ? <CheckSquare className="w-4 h-4 text-emerald-600" />
-                                      : <Square className="w-4 h-4 text-slate-300" />
-                                    }
-                                  </td>
-                                  <td className="px-4 py-2.5 text-slate-400 font-mono">{item.itemNo}</td>
-                                  <td className={`px-4 py-2.5 ${item.done ? 'text-slate-400 line-through' : 'text-slate-700'}`}>
-                                    {item.description}
-                                  </td>
-                                  <td className="px-4 py-2.5 text-right text-slate-500">{item.unit}</td>
-                                  <td className="px-4 py-2.5 text-right text-slate-600">{item.quantity?.toLocaleString()}</td>
-                                  <td className="px-4 py-2.5 text-right text-slate-600">{item.unitRate?.toLocaleString()}</td>
-                                  <td className={`px-4 py-2.5 text-right font-semibold ${item.done ? 'text-emerald-600' : 'text-slate-800'}`}>
-                                    {item.amount?.toLocaleString()}
-                                  </td>
-                                </tr>
-                              )
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
                     </div>
-                  )
-                })}
-              </>
-            ) : null}
-          </>
-        )}
 
-        {/* ── Legacy work lists (for projects without company_boq_id) ── */}
-        {!project.company_boq_id && (
-          <>
-            {project.completed_works && project.completed_works.length > 0 && (
-              <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
-                <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3 bg-emerald-50">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                  <h2 className="font-semibold text-slate-900">Completed Works ({project.completed_works.length})</h2>
-                </div>
-                <div className="p-6">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {project.completed_works.map((work, i) => (
-                      <div key={i} className="flex items-start gap-3 p-3 bg-emerald-50 rounded-lg">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
-                        <span className="text-sm text-slate-700">{work}</span>
-                      </div>
-                    ))}
+                    {/* Items */}
+                    <div className="divide-y divide-slate-50">
+                      {items.map((item, localIdx) => {
+                        const globalIdx = indices[localIdx]
+                        const pct = item.progress || 0
+                        const isDone = pct === 100
+                        const isStarted = pct > 0
+
+                        return (
+                          <div key={localIdx} className={`px-5 py-3 transition-colors ${isDone ? 'bg-emerald-50/30' : ''}`}>
+                            <div className="flex items-center gap-3">
+                              {/* Item No */}
+                              <span className="text-xs text-slate-400 font-mono w-10 flex-shrink-0">{item.itemNo}</span>
+
+                              {/* Description */}
+                              <div className="flex-1 min-w-0">
+                                <p className={`text-sm ${isDone ? 'text-slate-400 line-through' : 'text-slate-700'} truncate`}>
+                                  {item.description}
+                                </p>
+                                <p className="text-xs text-slate-400 mt-0.5">
+                                  {item.unit} · Qty {item.quantity?.toLocaleString()} · Rate {item.unitRate?.toLocaleString()} · <strong>AED {item.amount?.toLocaleString()}</strong>
+                                </p>
+                              </div>
+
+                              {/* Progress input + bar */}
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                {/* Mini bar */}
+                                <div className="w-16 h-1.5 bg-slate-200 rounded-full overflow-hidden hidden sm:block">
+                                  <div
+                                    className={`h-full rounded-full transition-all duration-300 ${isDone ? 'bg-emerald-500' : isStarted ? 'bg-amber-400' : 'bg-slate-300'}`}
+                                    style={{ width: `${pct}%` }}
+                                  />
+                                </div>
+                                {/* Percentage input */}
+                                <div className="relative flex items-center">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    value={pct}
+                                    onChange={e => updateItemProgress(globalIdx, e.target.value)}
+                                    onFocus={e => e.target.select()}
+                                    className={`w-16 text-right pr-5 pl-2 py-1 text-sm font-semibold rounded-md border transition-colors outline-none focus:ring-2 focus:ring-brand-400
+                                      ${isDone
+                                        ? 'bg-emerald-100 border-emerald-300 text-emerald-700'
+                                        : isStarted
+                                          ? 'bg-amber-50 border-amber-300 text-amber-700'
+                                          : 'bg-slate-100 border-slate-300 text-slate-500'
+                                      }`}
+                                  />
+                                  <span className={`absolute right-1.5 text-xs font-medium pointer-events-none
+                                    ${isDone ? 'text-emerald-600' : isStarted ? 'text-amber-600' : 'text-slate-400'}`}>
+                                    %
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
-                </div>
-              </div>
-            )}
+                )
+              })}
+            </>
+          ) : null}
+        </div>
+      )}
 
-            {project.partial_works && project.partial_works.length > 0 && (
-              <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
-                <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3 bg-amber-50">
-                  <Clock className="w-5 h-5 text-amber-600" />
-                  <h2 className="font-semibold text-slate-900">In Progress</h2>
-                </div>
-                <div className="p-6 space-y-4">
-                  {project.partial_works.map((work, i) => (
-                    <div key={i}>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium text-slate-700">{work.name}</span>
-                        <span className="text-xs font-bold text-slate-600">{work.progress}%</span>
-                      </div>
-                      <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all ${progressBarColor(work.progress)}`}
-                          style={{ width: `${work.progress}%` }}
-                        />
-                      </div>
+      {/* ── Legacy work lists (projects without company_boq_id) ── */}
+      {!project.company_boq_id && (
+        <div className="space-y-6">
+          {project.completed_works && project.completed_works.length > 0 && (
+            <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3 bg-emerald-50">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                <h2 className="font-semibold text-slate-900">Completed Works ({project.completed_works.length})</h2>
+              </div>
+              <div className="p-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {project.completed_works.map((work, i) => (
+                    <div key={i} className="flex items-start gap-3 p-3 bg-emerald-50 rounded-lg">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
+                      <span className="text-sm text-slate-700">{work}</span>
                     </div>
                   ))}
                 </div>
               </div>
-            )}
-
-            {project.pending_works && project.pending_works.length > 0 && (
-              <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
-                <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3 bg-red-50">
-                  <AlertCircle className="w-5 h-5 text-red-600" />
-                  <h2 className="font-semibold text-slate-900">Pending Works ({project.pending_works.length})</h2>
-                </div>
-                <div className="p-6">
-                  <ul className="space-y-2">
-                    {project.pending_works.map((work, i) => (
-                      <li key={i} className="flex items-start gap-3 p-3 bg-red-50 rounded-lg">
-                        <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
-                        <span className="text-sm text-slate-700">{work}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-            )}
-          </>
-        )}
-
-        {/* Scope Changes */}
-        {project.scope_changes && (
-          <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-6">
-            <h2 className="font-semibold text-slate-900 mb-3">Scope Changes</h2>
-            <div className="bg-slate-50 rounded-lg px-4 py-3 text-sm text-slate-700">
-              {project.scope_changes}
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Notes */}
-        {project.notes && (
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-            <p className="text-sm text-blue-800">{project.notes}</p>
-          </div>
-        )}
-      </div>
+          {project.partial_works && project.partial_works.length > 0 && (
+            <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3 bg-amber-50">
+                <Clock className="w-5 h-5 text-amber-600" />
+                <h2 className="font-semibold text-slate-900">In Progress</h2>
+              </div>
+              <div className="p-6 space-y-4">
+                {project.partial_works.map((work, i) => (
+                  <div key={i}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium text-slate-700">{work.name}</span>
+                      <span className="text-xs font-bold text-slate-600">{work.progress}%</span>
+                    </div>
+                    <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${progressBarColor(work.progress)}`}
+                        style={{ width: `${work.progress}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {project.pending_works && project.pending_works.length > 0 && (
+            <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+              <div className="px-6 py-4 border-b border-slate-100 flex items-center gap-3 bg-red-50">
+                <AlertCircle className="w-5 h-5 text-red-600" />
+                <h2 className="font-semibold text-slate-900">Pending Works ({project.pending_works.length})</h2>
+              </div>
+              <div className="p-6">
+                <ul className="space-y-2">
+                  {project.pending_works.map((work, i) => (
+                    <li key={i} className="flex items-start gap-3 p-3 bg-red-50 rounded-lg">
+                      <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
+                      <span className="text-sm text-slate-700">{work}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Scope Changes */}
+      {project.scope_changes && (
+        <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-6 mt-6">
+          <h2 className="font-semibold text-slate-900 mb-3">Scope Changes</h2>
+          <div className="bg-slate-50 rounded-lg px-4 py-3 text-sm text-slate-700">{project.scope_changes}</div>
+        </div>
+      )}
+
+      {/* Notes */}
+      {project.notes && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mt-6">
+          <p className="text-sm text-blue-800">{project.notes}</p>
+        </div>
+      )}
     </div>
   )
 }
