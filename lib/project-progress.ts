@@ -61,7 +61,7 @@ export async function getProgress(projectId: string): Promise<ProgressRecord | n
   }
 }
 
-/** Upsert progress for one project */
+/** Upsert progress for one project — never throws, logs errors silently */
 export async function saveProgress(
   projectId: string,
   progressPercent: number,
@@ -69,26 +69,27 @@ export async function saveProgress(
   boqSections: BOQSection[],
 ): Promise<void> {
   if (!isSupabaseConfigured() || !supabaseAdmin) {
-    throw new Error(
-      'Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and ' +
-      'NEXT_PUBLIC_SUPABASE_ANON_KEY (or SUPABASE_SERVICE_ROLE_KEY) to ' +
-      'your Vercel environment variables.'
-    )
+    console.warn('saveProgress: Supabase not configured — skipping')
+    return
   }
-  const { error } = await supabaseAdmin
-    .from('project_progress')
-    .upsert(
-      {
-        project_id:       projectId,
-        progress_percent: progressPercent,
-        current_stage:    currentStage,
-        boq_sections:     boqSections,
-        updated_at:       new Date().toISOString(),
-      },
-      { onConflict: 'project_id' }
-    )
-  if (error) {
-    console.error('saveProgress error:', error.message, error.details)
-    throw new Error(`Supabase save failed: ${error.message}`)
+  try {
+    const { error } = await supabaseAdmin
+      .from('project_progress')
+      .upsert(
+        {
+          project_id:       projectId,
+          progress_percent: progressPercent,
+          current_stage:    currentStage,
+          boq_sections:     boqSections,
+          updated_at:       new Date().toISOString(),
+        },
+        { onConflict: 'project_id' }
+      )
+    if (error) {
+      console.error('saveProgress error:', error.message, error.details)
+      // Don't throw — progress save failure should not crash the request
+    }
+  } catch (err) {
+    console.error('saveProgress unexpected error:', err)
   }
 }
