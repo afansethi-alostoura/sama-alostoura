@@ -14,19 +14,17 @@ export async function GET(req: NextRequest) {
 
   if (isSupabaseConfigured() && db()) {
     if (!id) {
-      const { data, error } = await db()!
+      const { data } = await db()!
         .from('company_boq')
         .select('id, project_number, project_name, area, owner, contractor, created_at, updated_at')
         .order('created_at', { ascending: false })
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-      // Merge file-based records not in Supabase (pre-seeded BOQs)
+      // Merge Supabase results with file-based records (handles table-not-found gracefully)
       const supabaseIds = new Set((data ?? []).map((r: any) => r.id))
       const fileRecords = listCompanyBOQs().filter(r => !supabaseIds.has(r.id))
       return NextResponse.json([...(data ?? []), ...fileRecords])
     }
-    const { data, error } = await db()!.from('company_boq').select('*').eq('id', id).single()
-    if (error && error.code !== 'PGRST116') return NextResponse.json({ error: error.message }, { status: 500 })
-    // Fall back to file store if not found in Supabase
+    const { data } = await db()!.from('company_boq').select('*').eq('id', id).single()
+    // Fall back to file store if not found in Supabase (any error: no rows, table missing, etc.)
     if (!data) {
       const record = getCompanyBOQ(id)
       return NextResponse.json(record ?? null)
@@ -65,19 +63,23 @@ export async function PUT(req: NextRequest) {
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
 
   if (isSupabaseConfigured() && db()) {
-    const { data, error } = await db()!
+    const { data } = await db()!
       .from('company_boq')
       .upsert(
         { id, project_number, project_name, area, owner, contractor, items, updated_at: new Date().toISOString() },
         { onConflict: 'id' }
       )
       .select().single()
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    return NextResponse.json(data)
+    // If Supabase succeeded, return that; otherwise fall back to file store
+    if (data) return NextResponse.json(data)
   }
 
   const record = updateCompanyBOQ(id, { project_number, project_name, area, owner, contractor, items })
-  if (!record) return NextResponse.json({ error: 'not found' }, { status: 404 })
+  if (!record) {
+    // Record not in file store either — create it
+    const created = createCompanyBOQ({ project_number, project_name, area, owner, contractor, items })
+    return NextResponse.json(created)
+  }
   return NextResponse.json(record)
 }
 

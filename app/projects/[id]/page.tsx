@@ -424,7 +424,12 @@ export default function ProjectPage() {
             <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-10 flex items-center justify-center gap-3 text-slate-500">
               <Loader2 className="w-5 h-5 animate-spin" /> Loading BOQ…
             </div>
-          ) : boqItems.length > 0 ? (
+          ) : boqItems.length === 0 ? (
+            <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-10 flex flex-col items-center justify-center gap-3 text-slate-400">
+              <AlertCircle className="w-8 h-8 opacity-40" />
+              <p className="text-sm">BOQ items could not be loaded. Check API connection.</p>
+            </div>
+          ) : (
             Object.entries(boqSections).map(([sectionName, { items, indices }]) => {
               const secAmt = items.reduce((s, i) => s + (i.amount || 0), 0)
               const secPct = secAmt > 0
@@ -491,7 +496,7 @@ export default function ProjectPage() {
                 </div>
               )
             })
-          ) : null}
+          )}
         </div>
       )}
 
