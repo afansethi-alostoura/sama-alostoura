@@ -438,7 +438,36 @@ export default function ProjectPage() {
             </div>
           ) : (
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-              {/* Table header */}
+
+              {/* ── Sticky Save Bar ───────────────────────────────────────────── */}
+              <div className="sticky top-0 z-20 bg-slate-800 text-white px-5 py-3 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="font-bold text-sm tracking-wide uppercase">BOQ Progress Tracker</span>
+                  <span className="text-slate-400 text-xs">{boqItems.length} items</span>
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="text-right hidden sm:block">
+                    <p className="text-xs text-slate-400">Overall Progress</p>
+                    <p className="text-base font-bold">{overallBOQPct}%</p>
+                  </div>
+                  <button
+                    onClick={() => { if (project && boqRecord) doSave(boqItems, boqRecord, project) }}
+                    disabled={boqSaving}
+                    className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-all disabled:opacity-60
+                      ${boqSaved ? 'bg-emerald-500 text-white' : 'bg-blue-500 hover:bg-blue-400 text-white'}`}
+                  >
+                    {boqSaving ? (
+                      <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>
+                    ) : boqSaved ? (
+                      <><CheckCircle className="w-4 h-4" /> Saved</>
+                    ) : (
+                      <><Save className="w-4 h-4" /> Save Progress</>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Table */}
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[900px] text-sm border-collapse">
                   <thead>
