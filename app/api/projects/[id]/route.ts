@@ -4,21 +4,26 @@ import { getProgress, saveProgress } from '@/lib/project-progress'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const all  = getAllStoredProjects()
-  const base = all.find(p => p.id === id)
-  if (!base) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  try {
+    const all  = getAllStoredProjects()
+    const base = all.find(p => p.id === id)
+    if (!base) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  // Overlay Supabase progress if it exists
-  const prog = await getProgress(id)
-  if (prog) {
-    return NextResponse.json({
-      ...base,
-      progress_percent: prog.progress_percent,
-      current_stage:    prog.current_stage ?? base.current_stage,
-      boq_sections:     prog.boq_sections  ?? (base as any).boq_sections,
-    })
+    // Overlay Supabase progress if it exists
+    const prog = await getProgress(id)
+    if (prog) {
+      return NextResponse.json({
+        ...base,
+        progress_percent: prog.progress_percent,
+        current_stage:    prog.current_stage ?? base.current_stage,
+        boq_sections:     prog.boq_sections  ?? (base as any).boq_sections,
+      })
+    }
+    return NextResponse.json(base)
+  } catch (err) {
+    console.error('GET /api/projects/[id] error:', err)
+    return NextResponse.json({ error: String(err) }, { status: 500 })
   }
-  return NextResponse.json(base)
 }
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
