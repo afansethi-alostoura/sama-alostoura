@@ -49,55 +49,7 @@ interface BOQItem {
   done?: boolean
 }
 
-type FolderKey = 'drawings' | 'survey-reports' | 'lab-reports' | 'contracts-approvals'
-
-interface DocRecord {
-  id: string
-  project_id: string
-  folder: FolderKey
-  original_name: string
-  file_size: number
-  mime_type: string
-  public_url: string
-  created_at: string
-}
-
 // ── Constants ─────────────────────────────────────────────────────────────────
-
-const FOLDERS: { key: FolderKey; label: string; Icon: React.ElementType; color: string }[] = [
-  { key: 'drawings',             label: 'Drawings',              Icon: FileText,    color: 'blue'   },
-  { key: 'survey-reports',       label: 'Survey Reports',        Icon: BarChart2,   color: 'green'  },
-  { key: 'lab-reports',          label: 'Laboratory Reports',    Icon: FlaskConical,color: 'purple' },
-  { key: 'contracts-approvals',  label: 'Contracts & Approvals', Icon: ShieldCheck, color: 'amber'  },
-]
-
-const FOLDER_COLORS: Record<string, string> = {
-  blue:   'bg-blue-50 border-blue-200 text-blue-700',
-  green:  'bg-green-50 border-green-200 text-green-700',
-  purple: 'bg-purple-50 border-purple-200 text-purple-700',
-  amber:  'bg-amber-50 border-amber-200 text-amber-700',
-}
-
-const ACTIVE_COLORS: Record<string, string> = {
-  blue:   'bg-blue-600 text-white border-blue-600',
-  green:  'bg-green-600 text-white border-green-600',
-  purple: 'bg-purple-600 text-white border-purple-600',
-  amber:  'bg-amber-500 text-white border-amber-500',
-}
-
-function formatBytes(b: number) {
-  if (b < 1024) return `${b} B`
-  if (b < 1048576) return `${(b / 1024).toFixed(1)} KB`
-  return `${(b / 1048576).toFixed(1)} MB`
-}
-
-function fileEmoji(mime: string) {
-  if (mime.includes('pdf'))   return '📄'
-  if (mime.includes('image')) return '🖼️'
-  if (mime.includes('sheet') || mime.includes('excel') || mime.includes('csv')) return '📊'
-  if (mime.includes('word'))  return '📝'
-  return '📎'
-}
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
@@ -119,7 +71,7 @@ export default function ProjectPage() {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Documents — only count loaded here; full UI is on /documents sub-pages
-  const [documents, setDocuments] = useState<DocRecord[]>([])
+  const [documents, setDocuments] = useState<{ id: string }[]>([])
 
   // ── Load project ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -211,30 +163,6 @@ export default function ProjectPage() {
     const updated = boqItems.map((item, i) => i === globalIdx ? { ...item, progress: val, done: val === 100 } : item)
     setBoqItems(updated)
     if (project && boqRecord) scheduleSave(updated, boqRecord, project)
-  }
-
-  // ── Documents: upload ───────────────────────────────────────────────────────
-  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file || !project) return
-    setUploading(true)
-    try {
-      const fd = new FormData()
-      fd.append('file', file)
-      fd.append('folder', activeFolder)
-      const res = await fetch(`/api/projects/${project.id}/documents`, { method: 'POST', body: fd })
-      if (res.ok) {
-        const doc = await res.json()
-        setDocuments(prev => [doc, ...prev])
-      }
-    } catch {}
-    finally { setUploading(false); if (fileInputRef.current) fileInputRef.current.value = '' }
-  }
-
-  async function handleDelete(docId: string) {
-    if (!project) return
-    await fetch(`/api/projects/${project.id}/documents?docId=${docId}`, { method: 'DELETE' })
-    setDocuments(prev => prev.filter(d => d.id !== docId))
   }
 
   // ── Brief Me ────────────────────────────────────────────────────────────────
