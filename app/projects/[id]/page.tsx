@@ -4,7 +4,7 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import {
   ArrowLeft, MapPin, Calendar, Building2,
-  CheckCircle2, Clock, AlertCircle, Loader2, Sparkles,
+  CheckCircle2, CheckCircle, Clock, AlertCircle, Loader2, Sparkles, Save,
   FolderOpen, Upload, Trash2, ExternalLink, FileText,
   BarChart2, FlaskConical, ShieldCheck,
 } from 'lucide-react'
@@ -115,6 +115,7 @@ export default function ProjectPage() {
   const [boqItems,  setBoqItems]  = useState<BOQItem[]>([])
   const [boqLoad,   setBoqLoad]   = useState(false)
   const [boqSaving, setBoqSaving] = useState(false)
+  const [boqSaved,  setBoqSaved]  = useState(false)
   const [boqRecord, setBoqRecord] = useState<any>(null)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -181,34 +182,40 @@ export default function ProjectPage() {
     ? Math.round(boqItems.reduce((s, i) => s + (i.amount || 0) * ((i.progress || 0) / 100), 0) / totalBOQAmt * 100)
     : 0
 
-  // ── BOQ: debounced save ─────────────────────────────────────────────────────
+  // ── BOQ: core save function ─────────────────────────────────────────────────
+  const doSave = useCallback(async (updated: BOQItem[], record: any, proj: ProjectData) => {
+    if (!record) return
+    setBoqSaving(true)
+    setBoqSaved(false)
+    try {
+      const totalAmt = updated.reduce((s, i) => s + (i.amount || 0), 0)
+      const newPct   = totalAmt > 0
+        ? Math.round(updated.reduce((s, i) => s + (i.amount || 0) * ((i.progress || 0) / 100), 0) / totalAmt * 100)
+        : 0
+      await Promise.all([
+        fetch('/api/boq/company', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: record.id, project_number: record.project_number, project_name: record.project_name, area: record.area, owner: record.owner, contractor: record.contractor, items: updated }),
+        }),
+        fetch(`/api/projects/${proj.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ progress_percent: newPct, current_stage: proj.current_stage ?? '', boq_sections: [] }),
+        }),
+      ])
+      setProject(prev => prev ? { ...prev, progress_percent: newPct } : prev)
+      setBoqSaved(true)
+      setTimeout(() => setBoqSaved(false), 3000)
+    } catch {}
+    finally { setBoqSaving(false) }
+  }, [])
+
+  // ── BOQ: debounced auto-save on input change ─────────────────────────────────
   const scheduleSave = useCallback((updated: BOQItem[], record: any, proj: ProjectData) => {
     if (saveTimer.current) clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(async () => {
-      if (!record) return
-      setBoqSaving(true)
-      try {
-        const totalAmt = updated.reduce((s, i) => s + (i.amount || 0), 0)
-        const newPct   = totalAmt > 0
-          ? Math.round(updated.reduce((s, i) => s + (i.amount || 0) * ((i.progress || 0) / 100), 0) / totalAmt * 100)
-          : 0
-        await Promise.all([
-          fetch('/api/boq/company', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: record.id, project_number: record.project_number, project_name: record.project_name, area: record.area, owner: record.owner, contractor: record.contractor, items: updated }),
-          }),
-          fetch(`/api/projects/${proj.id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ progress_percent: newPct, current_stage: proj.current_stage ?? '', boq_sections: [] }),
-          }),
-        ])
-        setProject(prev => prev ? { ...prev, progress_percent: newPct } : prev)
-      } catch {}
-      finally { setBoqSaving(false) }
-    }, 800)
-  }, [])
+    saveTimer.current = setTimeout(() => doSave(updated, record, proj), 800)
+  }, [doSave])
 
   function updateItemProgress(globalIdx: number, raw: string) {
     const val     = Math.max(0, Math.min(100, Number(raw) || 0))
@@ -539,9 +546,22 @@ export default function ProjectPage() {
 
               {/* Grand Total bar */}
               <div className="border-t-2 border-slate-800 bg-slate-800 text-white px-5 py-3 flex justify-between items-center">
-                <div className="flex items-center gap-6">
+                <div className="flex items-center gap-4">
                   <span className="font-bold text-sm tracking-wide">GRAND TOTAL</span>
-                  {boqSaving && <span className="text-xs text-slate-400">saving…</span>}
+                  <button
+                    onClick={() => { if (project && boqRecord) doSave(boqItems, boqRecord, project) }}
+                    disabled={boqSaving}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-60
+                      ${boqSaved ? 'bg-emerald-500 text-white' : 'bg-white/10 hover:bg-white/20 text-white border border-white/20'}`}
+                  >
+                    {boqSaving ? (
+                      <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…</>
+                    ) : boqSaved ? (
+                      <><CheckCircle className="w-3.5 h-3.5" /> Saved</>
+                    ) : (
+                      <><Save className="w-3.5 h-3.5" /> Save Progress</>
+                    )}
+                  </button>
                 </div>
                 <div className="flex items-center gap-8">
                   <div className="text-right">
