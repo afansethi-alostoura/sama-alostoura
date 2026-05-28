@@ -198,16 +198,14 @@ Step 3: Calculate quantities for all ${BOQ_TEMPLATE.length} BOQ items using the 
 Step 4: Return the JSON with quantities for every single item.`
 
     // ── Build message content ──────────────────────────────────────────────────
-    type ContentBlock =
-      | { type: 'image'; source: { type: 'base64'; media_type: ImageMediaType; data: string } }
-      | { type: 'document'; source: { type: 'base64'; media_type: 'application/pdf'; data: string } }
-      | { type: 'text'; text: string }
-
-    const content: ContentBlock[] = []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const content: any[] = []
 
     if (isPDF) {
+      // PDF document — supported at runtime; cast to any because older SDK types
+      // don't include the document content block yet.
       content.push({
-        type: 'document',
+        type:   'document',
         source: { type: 'base64', media_type: 'application/pdf', data: base64 },
       })
     } else {
@@ -215,7 +213,7 @@ Step 4: Return the JSON with quantities for every single item.`
         ext === 'png'  ? 'image/png'  :
         ext === 'webp' ? 'image/webp' : 'image/jpeg'
       content.push({
-        type: 'image',
+        type:   'image',
         source: { type: 'base64', media_type: mediaType, data: base64 },
       })
     }
@@ -227,7 +225,8 @@ Step 4: Return the JSON with quantities for every single item.`
       model:      'claude-opus-4-5',
       max_tokens: 8000,
       system:     SYSTEM_PROMPT,
-      messages:   [{ role: 'user', content }],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      messages:   [{ role: 'user', content }] as any,
     })
 
     const rawText = response.content[0].type === 'text' ? response.content[0].text : ''
@@ -262,10 +261,10 @@ Step 4: Return the JSON with quantities for every single item.`
     return NextResponse.json({
       success:   true,
       analysis:  parsed.analysis  ?? 'Drawing analyzed successfully.',
-      plot_area: parsed.plot_area ?? Number(plotSize) || 0,
-      floors:    parsed.floors    ?? Number(floors)   || 0,
-      bedrooms:  parsed.bedrooms  ?? Number(bedrooms) || 0,
-      bathrooms: parsed.bathrooms ?? Number(bathrooms)|| 0,
+      plot_area: (parsed.plot_area ?? Number(plotSize))  || 0,
+      floors:    (parsed.floors    ?? Number(floors))    || 0,
+      bedrooms:  (parsed.bedrooms  ?? Number(bedrooms))  || 0,
+      bathrooms: (parsed.bathrooms ?? Number(bathrooms)) || 0,
       items,
     })
   } catch (err) {
