@@ -8,6 +8,9 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 
+// Prevent Vercel from serving a stale cached HTML snapshot of this page
+export const dynamic = 'force-dynamic'
+
 type CategoryKey = 'architectural' | 'structural' | 'mep' | 'site'
 type Stage = 'idle' | 'uploading' | 'analyzing' | 'saving' | 'done' | 'error'
 
