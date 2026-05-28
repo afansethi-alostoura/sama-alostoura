@@ -162,17 +162,21 @@ ${projects.map(p =>
   `• ID: ${p.id} | Name: ${p.name} | Client: ${p.client_name} | Location: ${p.location} | Progress: ${p.progress_percent}% | Stage: ${p.current_stage}`
 ).join('\n')}
 
+DOCUMENT FOLDERS available per project: drawings, survey-reports, lab-reports, contracts-approvals
+
 Return ONLY valid JSON — no markdown, no explanation:
 {
   "project_id":   "<matched project ID or null>",
   "project_name": "<matched project name or null>",
-  "action_type":  "<progress_update | payment_received | material_request | issue_report | note>",
+  "action_type":  "<progress_update | payment_received | material_request | issue_report | document_request | note>",
   "parsed_data": {
     "progress_percent":   <number 0-100 or null — only if clearly stated or implied>,
     "current_stage":      "<updated stage description or null>",
     "payment_amount":     <AED number or null>,
     "materials":          "<description or null>",
     "issue_description":  "<description or null>",
+    "document_folder":    "<drawings | survey-reports | lab-reports | contracts-approvals | null — map: drawing/مخططات→drawings, survey→survey-reports, lab/laboratory→lab-reports, contract/عقد→contracts-approvals>",
+    "document_keywords":  "<search keywords to match filename, or null>",
     "note":               "<any other info>"
   },
   "ai_summary":    "<one clear sentence for the CEO morning briefing>",
@@ -184,6 +188,7 @@ Matching rules:
 - Match project by client name, project name, location or any identifier
 - Extract % if stated ("40% done", "foundation complete" ≈ 15%)
 - Extract AED payment amounts
+- Use action_type=document_request when user asks for a file, drawing, report, or contract
 - confidence=high only when project match is certain AND data is explicit`
 
   interface ParsedMsg {
@@ -196,6 +201,8 @@ Matching rules:
       payment_amount:    number | null
       materials:         string | null
       issue_description: string | null
+      document_folder:   string | null
+      document_keywords: string | null
       note:              string | null
     }
     ai_summary:    string
@@ -273,12 +280,100 @@ Matching rules:
     }
   }
 
-  // 5. Send WhatsApp reply via Meta Cloud API
+  // 5. Handle document request — find and send files from project_documents
+  if (
+    parsed?.action_type === 'document_request' &&
+    parsed.project_id &&
+    isSupabaseConfigured() &&
+    supabaseAdmin
+  ) {
+    try {
+      let query = supabaseAdmin
+        .from('project_documents')
+        .select('*')
+        .eq('project_id', parsed.project_id)
+        .order('created_at', { ascending: false })
+
+      if (parsed.parsed_data.document_folder) {
+        query = query.eq('folder', parsed.parsed_data.document_folder)
+      }
+
+      const { data: docs } = await query
+
+      if (docs && docs.length > 0) {
+        // Filter by keywords if provided
+        const keywords = parsed.parsed_data.document_keywords?.toLowerCase().split(/\s+/).filter(Boolean) ?? []
+        const matched = keywords.length > 0
+          ? docs.filter((d: any) => keywords.some(kw => d.original_name.toLowerCase().includes(kw)))
+          : docs
+
+        const toSend = matched.length > 0 ? matched : docs.slice(0, 3)
+
+        // Send each file as a document
+        for (const doc of toSend.slice(0, 5)) {
+          await sendWhatsAppDocument(from, doc.public_url, doc.original_name)
+          await new Promise(r => setTimeout(r, 400)) // small delay between messages
+        }
+
+        const count   = toSend.length
+        const extra   = count > 5 ? ` (showing first 5 of ${count})` : ''
+        const summary = `📎 Sent ${Math.min(count, 5)} file(s) from ${parsed.project_name ?? 'the project'}${extra}.`
+        await sendWhatsAppReply(from, summary)
+        return
+      } else {
+        // No docs found
+        const folder = parsed.parsed_data.document_folder ?? 'documents'
+        await sendWhatsAppReply(from, `❌ No files found in ${folder} for ${parsed.project_name ?? 'that project'}.`)
+        return
+      }
+    } catch (err) {
+      console.error('[Meta WhatsApp] Document request error:', err)
+    }
+  }
+
+  // 6. Send WhatsApp reply via Meta Cloud API
   const replyText =
     (parsed?.reply_message ?? '✅ Message received and logged.') +
     (autoApplied ? '\n\n📊 Progress updated in the dashboard automatically.' : '')
 
   await sendWhatsAppReply(from, replyText)
+}
+
+// ── Send document via Meta Cloud API ─────────────────────────────────────────
+
+async function sendWhatsAppDocument(to: string, url: string, filename: string): Promise<void> {
+  const token   = process.env.META_WHATSAPP_TOKEN   ?? ''
+  const phoneId = process.env.META_WHATSAPP_PHONE_ID ?? ''
+
+  if (!token || !phoneId) return
+
+  try {
+    const res = await fetch(
+      `https://graph.facebook.com/v20.0/${phoneId}/messages`,
+      {
+        method:  'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type':  'application/json',
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp',
+          to,
+          type: 'document',
+          document: {
+            link:     url,
+            filename: filename,
+          },
+        }),
+      }
+    )
+    if (!res.ok) {
+      const err = await res.text()
+      console.error('[Meta WhatsApp] Send document failed:', err)
+    }
+  } catch (err) {
+    console.error('[Meta WhatsApp] Send document error:', err)
+  }
 }
 
 // ── Send reply via Meta Cloud API ─────────────────────────────────────────────
