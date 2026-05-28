@@ -3,10 +3,9 @@ import React, { useEffect, useState, useRef, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import {
-  ArrowLeft, MapPin, Calendar, Building2, X,
+  ArrowLeft, MapPin, Calendar, Building2,
   CheckCircle2, CheckCircle, Clock, AlertCircle, Loader2, Sparkles, Save,
-  FolderOpen, Upload, Trash2, ExternalLink, FileText,
-  BarChart2, FlaskConical, ShieldCheck,
+  FolderOpen,
 } from 'lucide-react'
 import { getDemoProject } from '@/lib/demo-data'
 import { formatCurrency, formatDate, progressBarColor, statusBadge, statusLabel } from '@/lib/utils'
@@ -119,14 +118,8 @@ export default function ProjectPage() {
   const [boqRecord, setBoqRecord] = useState<any>(null)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Documents
-  const [documents,    setDocuments]    = useState<DocRecord[]>([])
-  const [docsLoad,     setDocsLoad]     = useState(false)
-  const [showDocsModal,setShowDocsModal]= useState(false)
-  const [activeFolder, setActiveFolder] = useState<FolderKey | null>(null)
-  const [uploading,    setUploading]    = useState(false)
-  const [supabaseOk,   setSupabaseOk]   = useState(true)
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  // Documents — only count loaded here; full UI is on /documents sub-pages
+  const [documents, setDocuments] = useState<DocRecord[]>([])
 
   // ── Load project ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -163,18 +156,13 @@ export default function ProjectPage() {
       .finally(() => setBoqLoad(false))
   }, [project?.company_boq_id])
 
-  // ── Load Documents ──────────────────────────────────────────────────────────
+  // ── Load Documents count (for badge on button) ─────────────────────────────
   useEffect(() => {
     if (!project?.id) return
-    setDocsLoad(true)
     fetch(`/api/projects/${project.id}/documents`)
-      .then(r => {
-        if (r.status === 503) { setSupabaseOk(false); return [] }
-        return r.json()
-      })
+      .then(r => r.ok ? r.json() : [])
       .then(data => setDocuments(Array.isArray(data) ? data : []))
       .catch(() => {})
-      .finally(() => setDocsLoad(false))
   }, [project?.id])
 
   // ── BOQ: weighted overall completion ────────────────────────────────────────
@@ -284,10 +272,6 @@ export default function ProjectPage() {
     acc[s].indices.push(idx)
     return acc
   }, {})
-
-  // Docs for active folder
-  const folderDocs = activeFolder ? documents.filter(d => d.folder === activeFolder) : []
-  const folderMeta = FOLDERS.find(f => f.key === activeFolder) ?? FOLDERS[0]
 
   return (
     <div className="p-4 sm:p-8 max-w-6xl mx-auto">
