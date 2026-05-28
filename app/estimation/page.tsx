@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Download, Trash2, AlertCircle, FileText, ExternalLink } from 'lucide-react'
+import { Plus, Trash2, AlertCircle, FileText, ExternalLink, HardHat, Calculator } from 'lucide-react'
 import Link from 'next/link'
 
 interface AIBOQItem {
@@ -240,12 +240,55 @@ export default function EstimationPage() {
           )}
         </section>
 
+        {/* ── New Estimation tools ── */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-6">
+          <h2 className="text-sm font-semibold text-slate-700 mb-1">Generate BOQ from Project</h2>
+          <p className="text-xs text-slate-400 mb-4">Choose how to create a new Bill of Quantities</p>
+          <div className="grid sm:grid-cols-2 gap-3">
+
+            {/* Formula calculator */}
+            <Link href="/estimation/create"
+              className="flex items-start gap-4 p-4 rounded-xl border-2 border-slate-200 hover:border-brand-400 hover:bg-brand-50 transition-all group">
+              <div className="w-10 h-10 bg-slate-100 group-hover:bg-brand-100 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors">
+                <Calculator className="w-5 h-5 text-slate-600 group-hover:text-brand-600" />
+              </div>
+              <div>
+                <p className="font-bold text-slate-800 text-sm">Formula Calculator</p>
+                <p className="text-xs text-slate-500 mt-0.5 leading-snug">
+                  Enter plot size, floors, bedrooms, bathrooms → instant BOQ with standard rates
+                </p>
+                <span className="inline-block mt-2 text-xs font-semibold text-brand-600">
+                  Instant · Uses standard rates
+                </span>
+              </div>
+            </Link>
+
+            {/* Civil engineer drawing analysis */}
+            <Link href="/estimation/create-from-drawings"
+              className="flex items-start gap-4 p-4 rounded-xl border-2 border-amber-200 hover:border-amber-500 hover:bg-amber-50 transition-all group">
+              <div className="w-10 h-10 bg-amber-100 group-hover:bg-amber-200 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors">
+                <HardHat className="w-5 h-5 text-amber-600" />
+              </div>
+              <div>
+                <p className="font-bold text-slate-800 text-sm">Civil Engineer AI</p>
+                <p className="text-xs text-slate-500 mt-0.5 leading-snug">
+                  Upload drawings (PDF/JPG) → AI reads dimensions → BOQ with quantities from actual drawings
+                </p>
+                <span className="inline-block mt-2 text-xs font-semibold text-amber-600">
+                  Reads drawings · Rates blank for you to fill
+                </span>
+              </div>
+            </Link>
+
+          </div>
+        </div>
+
         {/* ── AI Estimations ── */}
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-base font-semibold text-slate-800">AI Estimations</h2>
-          <Link href="/estimation/create"
-            className="inline-flex items-center gap-2 px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white text-sm font-medium rounded-lg transition-colors">
-            <Plus className="w-4 h-4" /> New Estimation
+          <Link href="/estimation/create-from-drawings"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition-colors">
+            <Plus className="w-4 h-4" /> Drawing Analysis
           </Link>
         </div>
 
