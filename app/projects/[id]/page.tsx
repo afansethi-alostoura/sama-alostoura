@@ -3,7 +3,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import {
-  ArrowLeft, MapPin, Calendar, Building2,
+  ArrowLeft, MapPin, Calendar, Building2, X,
   CheckCircle2, CheckCircle, Clock, AlertCircle, Loader2, Sparkles, Save,
   FolderOpen, Upload, Trash2, ExternalLink, FileText,
   BarChart2, FlaskConical, ShieldCheck,
@@ -122,7 +122,8 @@ export default function ProjectPage() {
   // Documents
   const [documents,    setDocuments]    = useState<DocRecord[]>([])
   const [docsLoad,     setDocsLoad]     = useState(false)
-  const [activeFolder, setActiveFolder] = useState<FolderKey>('drawings')
+  const [showDocsModal,setShowDocsModal]= useState(false)
+  const [activeFolder, setActiveFolder] = useState<FolderKey | null>(null)
   const [uploading,    setUploading]    = useState(false)
   const [supabaseOk,   setSupabaseOk]   = useState(true)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -285,8 +286,8 @@ export default function ProjectPage() {
   }, {})
 
   // Docs for active folder
-  const folderDocs = documents.filter(d => d.folder === activeFolder)
-  const folderMeta = FOLDERS.find(f => f.key === activeFolder)!
+  const folderDocs = activeFolder ? documents.filter(d => d.folder === activeFolder) : []
+  const folderMeta = FOLDERS.find(f => f.key === activeFolder) ?? FOLDERS[0]
 
   return (
     <div className="p-4 sm:p-8 max-w-6xl mx-auto">
@@ -725,120 +726,163 @@ export default function ProjectPage() {
         </div>
       )}
 
-      {/* ── Documents Section ─────────────────────────────────────────────────── */}
-      <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden mb-6">
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
-          <div className="flex items-center gap-3">
-            <FolderOpen className="w-5 h-5 text-slate-600" />
-            <h2 className="font-semibold text-slate-900">Project Documents</h2>
-            <span className="text-xs text-slate-500">{documents.length} file{documents.length !== 1 ? 's' : ''}</span>
-          </div>
-          {!supabaseOk && (
-            <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1">
-              Supabase Storage required
-            </span>
+      {/* ── Documents Button ──────────────────────────────────────────────────── */}
+      <div className="mb-6">
+        <button
+          onClick={() => { setShowDocsModal(true); setActiveFolder(null) }}
+          className="flex items-center gap-2.5 bg-white border border-slate-200 hover:border-blue-400 hover:bg-blue-50 text-slate-700 hover:text-blue-700 px-5 py-3 rounded-xl shadow-sm text-sm font-semibold transition-all"
+        >
+          <FolderOpen className="w-5 h-5" />
+          Documents
+          {documents.length > 0 && (
+            <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded-full">{documents.length}</span>
           )}
-        </div>
+        </button>
+      </div>
 
-        {/* Folder tabs */}
-        <div className="flex gap-2 p-4 border-b border-slate-100 overflow-x-auto">
-          {FOLDERS.map(({ key, label, Icon, color }) => {
-            const count    = documents.filter(d => d.folder === key).length
-            const isActive = activeFolder === key
-            return (
-              <button
-                key={key}
-                onClick={() => setActiveFolder(key)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg border text-sm font-medium whitespace-nowrap transition-all ${
-                  isActive ? ACTIVE_COLORS[color] : `border-slate-200 text-slate-600 hover:${FOLDER_COLORS[color]}`
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-                {label}
-                <span className={`text-xs rounded-full px-1.5 py-0.5 font-semibold ${isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>
-                  {count}
-                </span>
-              </button>
-            )
-          })}
-        </div>
+      {/* ── Documents Modal ───────────────────────────────────────────────────── */}
+      {showDocsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => { setShowDocsModal(false); setActiveFolder(null) }} />
 
-        {/* File list for active folder */}
-        <div className="p-4">
-          {docsLoad ? (
-            <div className="flex items-center gap-2 text-slate-400 py-6 justify-center">
-              <Loader2 className="w-4 h-4 animate-spin" /> Loading…
-            </div>
-          ) : !supabaseOk ? (
-            <div className="text-center py-8 text-slate-400">
-              <FolderOpen className="w-10 h-10 mx-auto mb-3 opacity-40" />
-              <p className="text-sm">Configure Supabase Storage to enable file uploads.</p>
-              <p className="text-xs mt-1">Run <code className="bg-slate-100 px-1 rounded">supabase/project-documents-schema.sql</code> in your Supabase SQL Editor.</p>
-            </div>
-          ) : folderDocs.length === 0 ? (
-            <div className="text-center py-8 text-slate-400">
-              <folderMeta.Icon className="w-10 h-10 mx-auto mb-3 opacity-30" />
-              <p className="text-sm">No files in {folderMeta.label} yet.</p>
-              <p className="text-xs mt-1">Upload PDFs, images or Excel files below.</p>
-            </div>
-          ) : (
-            <div className="space-y-2 mb-4">
-              {folderDocs.map(doc => (
-                <div key={doc.id} className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors group">
-                  <span className="text-xl flex-shrink-0">{fileEmoji(doc.mime_type)}</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-800 truncate">{doc.original_name}</p>
-                    <p className="text-xs text-slate-400">{formatBytes(doc.file_size)} · {new Date(doc.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</p>
+          {/* Modal window */}
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
+
+            {/* ── Level 1: Folder Grid ─────────────────────────────────────── */}
+            {!activeFolder && (
+              <>
+                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+                  <div className="flex items-center gap-3">
+                    <FolderOpen className="w-5 h-5 text-blue-600" />
+                    <h2 className="text-lg font-bold text-slate-900">Project Documents</h2>
+                    <span className="text-xs text-slate-400">{documents.length} file{documents.length !== 1 ? 's' : ''}</span>
                   </div>
-                  <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <a
-                      href={doc.public_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
-                      title="Open"
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                    </a>
+                  <button onClick={() => setShowDocsModal(false)} className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="p-6 grid grid-cols-2 gap-4">
+                  {FOLDERS.map(({ key, label, Icon, color }) => {
+                    const count = documents.filter(d => d.folder === key).length
+                    const colorMap: Record<string, string> = {
+                      blue:   'bg-blue-50 border-blue-200 hover:bg-blue-100 text-blue-700',
+                      green:  'bg-green-50 border-green-200 hover:bg-green-100 text-green-700',
+                      purple: 'bg-purple-50 border-purple-200 hover:bg-purple-100 text-purple-700',
+                      amber:  'bg-amber-50 border-amber-200 hover:bg-amber-100 text-amber-700',
+                    }
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => setActiveFolder(key)}
+                        className={`flex flex-col items-center gap-3 p-6 rounded-xl border-2 transition-all cursor-pointer ${colorMap[color]}`}
+                      >
+                        <Icon className="w-10 h-10" />
+                        <div className="text-center">
+                          <p className="font-semibold text-sm">{label}</p>
+                          <p className="text-xs opacity-70 mt-0.5">{count} file{count !== 1 ? 's' : ''}</p>
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              </>
+            )}
+
+            {/* ── Level 2: Folder View ─────────────────────────────────────── */}
+            {activeFolder && (
+              <>
+                {/* Header with back button + upload in corner */}
+                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+                  <div className="flex items-center gap-3">
                     <button
-                      onClick={() => handleDelete(doc.id)}
-                      className="p-1.5 text-red-500 hover:bg-red-50 rounded-md transition-colors"
-                      title="Delete"
+                      onClick={() => setActiveFolder(null)}
+                      className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <ArrowLeft className="w-4 h-4" />
+                    </button>
+                    <folderMeta.Icon className="w-5 h-5 text-slate-600" />
+                    <h2 className="text-base font-bold text-slate-900">{folderMeta.label}</h2>
+                    <span className="text-xs text-slate-400">{folderDocs.length} file{folderDocs.length !== 1 ? 's' : ''}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {/* Upload button — top right corner */}
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.xlsx,.xls,.csv,.doc,.docx"
+                      onChange={handleUpload}
+                      className="hidden"
+                    />
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploading}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg transition-all disabled:opacity-60"
+                    >
+                      {uploading
+                        ? <><Loader2 className="w-4 h-4 animate-spin" /> Uploading…</>
+                        : <><Upload className="w-4 h-4" /> Upload</>
+                      }
+                    </button>
+                    <button onClick={() => setShowDocsModal(false)} className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors">
+                      <X className="w-5 h-5" />
                     </button>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
 
-          {/* Upload button */}
-          {supabaseOk && (
-            <div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.xlsx,.xls,.csv,.doc,.docx"
-                onChange={handleUpload}
-                className="hidden"
-              />
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-                className="flex items-center gap-2 px-4 py-2 border-2 border-dashed border-slate-300 hover:border-brand-400 text-slate-500 hover:text-brand-600 rounded-lg text-sm font-medium transition-all disabled:opacity-50 w-full justify-center"
-              >
-                {uploading
-                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Uploading…</>
-                  : <><Upload className="w-4 h-4" /> Upload to {folderMeta.label}</>
-                }
-              </button>
-              <p className="text-xs text-slate-400 text-center mt-2">PDF, images, Excel — max 50 MB</p>
-            </div>
-          )}
+                {/* File list */}
+                <div className="flex-1 overflow-y-auto p-4">
+                  {docsLoad ? (
+                    <div className="flex items-center gap-2 text-slate-400 py-12 justify-center">
+                      <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+                    </div>
+                  ) : folderDocs.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-16 text-slate-400">
+                      <folderMeta.Icon className="w-14 h-14 mb-4 opacity-20" />
+                      <p className="text-sm font-medium">No files yet</p>
+                      <p className="text-xs mt-1">Click Upload to add your first file</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {folderDocs.map(doc => (
+                        <div key={doc.id} className="flex items-center gap-3 p-3 bg-slate-50 hover:bg-slate-100 rounded-xl transition-colors group">
+                          <span className="text-2xl flex-shrink-0">{fileEmoji(doc.mime_type)}</span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-slate-800 truncate">{doc.original_name}</p>
+                            <p className="text-xs text-slate-400 mt-0.5">
+                              {formatBytes(doc.file_size)} · {new Date(doc.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <a
+                              href={doc.public_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="p-2 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
+                              title="Open"
+                            >
+                              <ExternalLink className="w-4 h-4" />
+                            </a>
+                            <button
+                              onClick={() => handleDelete(doc.id)}
+                              className="p-2 text-red-500 hover:bg-red-100 rounded-lg transition-colors"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <p className="text-center text-xs text-slate-400 py-3 border-t border-slate-100">PDF, images, Excel — max 50 MB</p>
+              </>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Scope Changes */}
       {project.scope_changes && (
