@@ -1,32 +1,34 @@
 -- ============================================================
--- Run this in Supabase SQL Editor: supabase.com > SQL Editor
--- Then create the Storage bucket (see instructions below)
+-- project_documents table
+-- Run this in: Supabase Dashboard → SQL Editor → New query
 -- ============================================================
 
--- 1. Project documents metadata table
 CREATE TABLE IF NOT EXISTS project_documents (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  project_id    TEXT NOT NULL,
-  folder        TEXT NOT NULL,
-  filename      TEXT NOT NULL,
-  original_name TEXT NOT NULL,
-  file_size     BIGINT  DEFAULT 0,
-  mime_type     TEXT    DEFAULT '',
-  storage_path  TEXT    NOT NULL,
-  public_url    TEXT    NOT NULL,
-  created_at    TIMESTAMPTZ DEFAULT NOW()
+  id            UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id    TEXT        NOT NULL,
+  folder        TEXT        NOT NULL,
+  filename      TEXT        NOT NULL,
+  original_name TEXT        NOT NULL,
+  file_size     BIGINT      NOT NULL DEFAULT 0,
+  mime_type     TEXT        NOT NULL DEFAULT '',
+  storage_path  TEXT        NOT NULL,
+  public_url    TEXT        NOT NULL,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_proj_docs_project ON project_documents(project_id);
-CREATE INDEX IF NOT EXISTS idx_proj_docs_folder  ON project_documents(project_id, folder);
+-- Indexes for fast lookups by project and folder
+CREATE INDEX IF NOT EXISTS idx_project_documents_project_id
+  ON project_documents(project_id);
 
--- 2. Disable RLS so the service-role key can read/write freely
-ALTER TABLE project_documents DISABLE ROW LEVEL SECURITY;
+CREATE INDEX IF NOT EXISTS idx_project_documents_folder
+  ON project_documents(folder);
 
--- ============================================================
--- STORAGE BUCKET — do this in Supabase Dashboard UI:
---   Storage > New Bucket
---   Name: project-documents
---   Public: YES (toggle on)
---   Click Create
--- ============================================================
+-- Row-level security (allow all — server uses service role key anyway)
+ALTER TABLE project_documents ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow all" ON project_documents;
+CREATE POLICY "Allow all"
+  ON project_documents
+  FOR ALL
+  USING (true)
+  WITH CHECK (true);

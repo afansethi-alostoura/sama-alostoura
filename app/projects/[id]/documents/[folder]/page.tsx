@@ -47,6 +47,7 @@ export default function FolderPage() {
   const [docs,      setDocs]      = useState<DocRecord[]>([])
   const [loading,   setLoading]   = useState(true)
   const [uploading, setUploading] = useState(false)
+  const [uploadErr, setUploadErr] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -61,17 +62,21 @@ export default function FolderPage() {
     const file = e.target.files?.[0]
     if (!file) return
     setUploading(true)
+    setUploadErr('')
     try {
       const fd = new FormData()
       fd.append('file', file)
       fd.append('folder', folder)
-      const res = await fetch(`/api/projects/${id}/documents`, { method: 'POST', body: fd })
+      const res  = await fetch(`/api/projects/${id}/documents`, { method: 'POST', body: fd })
+      const body = await res.json()
       if (res.ok) {
-        const doc = await res.json()
-        setDocs(prev => [doc, ...prev])
+        setDocs(prev => [body, ...prev])
+      } else {
+        setUploadErr(body?.error ?? 'Upload failed — please try again')
       }
-    } catch {}
-    finally {
+    } catch (err) {
+      setUploadErr('Network error — please try again')
+    } finally {
       setUploading(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
@@ -124,6 +129,14 @@ export default function FolderPage() {
           </button>
         </div>
       </div>
+
+      {/* Error banner */}
+      {uploadErr && (
+        <div className="bg-red-50 border-b border-red-200 px-4 sm:px-8 py-3 flex items-center justify-between text-sm text-red-700">
+          <span>⚠ {uploadErr}</span>
+          <button onClick={() => setUploadErr('')} className="ml-4 text-red-400 hover:text-red-600 font-bold">✕</button>
+        </div>
+      )}
 
       {/* Content */}
       <div className="max-w-3xl mx-auto px-4 sm:px-8 py-8">

@@ -64,6 +64,7 @@ export default function GlobalFolderPage() {
   const [showModal,          setShowModal]          = useState(false)
   const [selectedProjectId,  setSelectedProjectId]  = useState('')
   const [uploading,          setUploading]          = useState(false)
+  const [uploadErr,          setUploadErr]          = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -85,24 +86,28 @@ export default function GlobalFolderPage() {
     const file = e.target.files?.[0]
     if (!file || !selectedProjectId) return
     setUploading(true)
+    setUploadErr('')
     try {
       const fd = new FormData()
       fd.append('file', file)
       fd.append('folder', folder)
-      const res = await fetch(`/api/projects/${selectedProjectId}/documents`, {
+      const res  = await fetch(`/api/projects/${selectedProjectId}/documents`, {
         method: 'POST',
         body: fd,
       })
+      const body = await res.json()
       if (res.ok) {
-        const doc = await res.json()
         const proj = projects.find(p => p.id === selectedProjectId)
-        setDocs(prev => [{ ...doc, project_name: proj?.name ?? 'Unknown Project' }, ...prev])
+        setDocs(prev => [{ ...body, project_name: proj?.name ?? 'Unknown Project' }, ...prev])
+        setShowModal(false)
+        setSelectedProjectId('')
+      } else {
+        setUploadErr(body?.error ?? 'Upload failed — please try again')
       }
-    } catch {}
-    finally {
+    } catch {
+      setUploadErr('Network error — please try again')
+    } finally {
       setUploading(false)
-      setShowModal(false)
-      setSelectedProjectId('')
       if (fileInputRef.current) fileInputRef.current.value = ''
     }
   }
@@ -202,6 +207,14 @@ export default function GlobalFolderPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Error banner */}
+      {uploadErr && (
+        <div className="bg-red-50 border-b border-red-200 px-4 sm:px-8 py-3 flex items-center justify-between text-sm text-red-700">
+          <span>⚠ {uploadErr}</span>
+          <button onClick={() => setUploadErr('')} className="ml-4 text-red-400 hover:text-red-600 font-bold">✕</button>
         </div>
       )}
 
