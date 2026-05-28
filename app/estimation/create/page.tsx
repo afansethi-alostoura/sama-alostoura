@@ -6,43 +6,10 @@ import {
   ArrowLeft, Upload, FileText, Loader2, CheckCircle2,
   AlertCircle, Sparkles, Building2, X, Zap, Wrench, Map,
 } from 'lucide-react'
-
-// ── Image compression ──────────────────────────────────────────────────────
-const MAX_DIM = 1200    // px — longest edge
-const JPEG_Q  = 0.82   // quality
-
-async function compressImage(file: File): Promise<File> {
-  const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
-  if (!['jpg', 'jpeg', 'png', 'webp'].includes(ext)) return file  // PDFs pass through
-
-  return new Promise(resolve => {
-    const img = new Image()
-    const url = URL.createObjectURL(file)
-    img.onload = () => {
-      URL.revokeObjectURL(url)
-      let { width, height } = img
-      if (width <= MAX_DIM && height <= MAX_DIM) { resolve(file); return }
-      if (width > height) { height = Math.round(height * MAX_DIM / width);  width = MAX_DIM }
-      else                { width  = Math.round(width  * MAX_DIM / height); height = MAX_DIM }
-
-      const canvas = document.createElement('canvas')
-      canvas.width  = width
-      canvas.height = height
-      canvas.getContext('2d')!.drawImage(img, 0, 0, width, height)
-      canvas.toBlob(blob => {
-        if (!blob) { resolve(file); return }
-        resolve(new File([blob], file.name, { type: 'image/jpeg', lastModified: Date.now() }))
-      }, 'image/jpeg', JPEG_Q)
-    }
-    img.onerror = () => { URL.revokeObjectURL(url); resolve(file) }
-    img.src = url
-  })
-}
-
-const PAYLOAD_CAP = 3.5 * 1024 * 1024   // 3.5 MB total — stay under Vercel's 4.5 MB
+import { supabase } from '@/lib/supabase'
 
 type CategoryKey = 'architectural' | 'structural' | 'mep' | 'site'
-type Stage = 'idle' | 'analyzing' | 'saving' | 'done' | 'error'
+type Stage = 'idle' | 'uploading' | 'analyzing' | 'saving' | 'done' | 'error'
 
 interface UploadedFile {
   id:   string
@@ -118,14 +85,23 @@ const CATEGORIES: {
 
 const STAGE_LABEL: Record<Stage, string> = {
   idle:      '',
+  uploading: 'Uploading drawings to secure storage…',
   analyzing: 'AI is analyzing all drawings and calculating quantities…',
   saving:    'Saving BOQ…',
   done:      'BOQ generated! Opening editor…',
   error:     '',
 }
 
+const MAX_FILE_BYTES  = 50  * 1024 * 1024   // 50 MB per file
+const MAX_TOTAL_BYTES = 200 * 1024 * 1024   // 200 MB total
+
 function fileId() {
   return Math.random().toString(36).slice(2)
+}
+
+function fmtBytes(bytes: number) {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
 export default function CreateEstimationPage() {
@@ -150,25 +126,32 @@ export default function CreateEstimationPage() {
   const [notes,       setNotes]       = useState('')
 
   // Processing
-  const [stage,    setStage]    = useState<Stage>('idle')
-  const [errorMsg, setErrorMsg] = useState('')
-  const [analysis, setAnalysis] = useState('')
+  const [stage,         setStage]         = useState<Stage>('idle')
+  const [errorMsg,      setErrorMsg]      = useState('')
+  const [analysis,      setAnalysis]      = useState('')
+  const [uploadedCount, setUploadedCount] = useState(0)
 
   const busy       = stage !== 'idle' && stage !== 'error'
   const totalFiles = Object.values(uploads).reduce((s, a) => s + a.length, 0)
+  const totalBytes = Object.values(uploads).reduce((s, a) => s + a.reduce((x, u) => x + u.file.size, 0), 0)
 
   // ── File helpers ────────────────────────────────────────────────────────────
   function addFiles(cat: CategoryKey, newFiles: FileList | null) {
     if (!newFiles) return
+    const tooLarge: string[] = []
     const valid = Array.from(newFiles).filter(f => {
       const ext = f.name.split('.').pop()?.toLowerCase()
-      return ['pdf','jpg','jpeg','png','webp'].includes(ext ?? '') && f.size <= 10 * 1024 * 1024
+      if (!['pdf','jpg','jpeg','png','webp'].includes(ext ?? '')) return false
+      if (f.size > MAX_FILE_BYTES) { tooLarge.push(`${f.name} (${fmtBytes(f.size)})`) ; return false }
+      return true
     })
+    if (tooLarge.length) {
+      setErrorMsg(`File${tooLarge.length > 1 ? 's' : ''} exceed 50 MB limit: ${tooLarge.join(', ')}`)
+    }
     setUploads(prev => ({
       ...prev,
-      [cat]: [...prev[cat], ...valid.map(f => ({ id: fileId(), file: f }))].slice(0, 5),
+      [cat]: [...prev[cat], ...valid.map(f => ({ id: fileId(), file: f }))].slice(0, 10),
     }))
-    // Reset input so same file can be re-added after removal
     const inp = inputRefs.current[cat]
     if (inp) inp.value = ''
   }
@@ -186,70 +169,86 @@ export default function CreateEstimationPage() {
   // ── Submit ──────────────────────────────────────────────────────────────────
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (totalFiles === 0)        { setErrorMsg('Upload at least one drawing file.'); return }
-    if (!projectName.trim())     { setErrorMsg('Enter a project name.'); return }
+    if (totalFiles === 0)    { setErrorMsg('Upload at least one drawing file.'); return }
+    if (!projectName.trim()) { setErrorMsg('Enter a project name.'); return }
+    if (totalBytes > MAX_TOTAL_BYTES) {
+      setErrorMsg(`Total size ${fmtBytes(totalBytes)} exceeds 200 MB limit. Please remove some files.`)
+      return
+    }
 
     setErrorMsg('')
     setAnalysis('')
+    setUploadedCount(0)
+
+    const allEntries = (Object.entries(uploads) as [CategoryKey, UploadedFile[]][])
+      .flatMap(([cat, list]) => list.map(u => ({ cat, u })))
 
     try {
+      // ── Phase 1: Upload files to Supabase Storage via signed URLs ────────────
+      setStage('uploading')
+
+      const uploadedFiles: Array<{ path: string; name: string; category: string }> = []
+
+      for (const { cat, u } of allEntries) {
+        // 1a. Ask server for a signed upload URL
+        const urlRes = await fetch('/api/estimations/signed-upload-url', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ filename: u.file.name }),
+        })
+
+        if (!urlRes.ok) {
+          const err = await urlRes.json().catch(() => ({}))
+          throw new Error((err as { error?: string }).error ?? `Failed to get upload URL for ${u.file.name}`)
+        }
+
+        const { signedUrl, token, path } = await urlRes.json()
+
+        // 1b. Upload file directly to Supabase using signed URL
+        if (supabase) {
+          const { error: uploadErr } = await supabase.storage
+            .from('estimation-drawings')
+            .uploadToSignedUrl(path, token, u.file, {
+              contentType: u.file.type || 'application/octet-stream',
+            })
+          if (uploadErr) throw new Error(`Upload failed for ${u.file.name}: ${uploadErr.message}`)
+        } else {
+          // Fallback: PUT directly to signed URL (works without Supabase client)
+          const putRes = await fetch(signedUrl, {
+            method:  'PUT',
+            headers: { 'Content-Type': u.file.type || 'application/octet-stream' },
+            body:    u.file,
+          })
+          if (!putRes.ok) throw new Error(`Upload failed for ${u.file.name} (${putRes.status})`)
+        }
+
+        uploadedFiles.push({ path, name: u.file.name, category: cat })
+        setUploadedCount(prev => prev + 1)
+      }
+
+      // ── Phase 2: Send file paths to AI agent ─────────────────────────────────
       setStage('analyzing')
 
-      // ── Compress images client-side before sending ─────────────────────────
-      const allEntries = (Object.entries(uploads) as [CategoryKey, UploadedFile[]][])
-        .flatMap(([cat, list]) => list.map(u => ({ cat, u })))
-
-      const compressed: Array<{ cat: CategoryKey; file: File }> = await Promise.all(
-        allEntries.map(async ({ cat, u }) => ({
-          cat,
-          file: await compressImage(u.file),
-        }))
-      )
-
-      // ── Payload size guard ─────────────────────────────────────────────────
-      const totalBytes = compressed.reduce((sum, { file }) => sum + file.size, 0)
-      if (totalBytes > PAYLOAD_CAP) {
-        const mb = (totalBytes / 1024 / 1024).toFixed(1)
-        throw new Error(
-          `Files too large — total ${mb} MB exceeds the 3.5 MB limit. ` +
-          `Please reduce file count or use smaller / lower-resolution drawings.`
-        )
-      }
-
-      const fd = new FormData()
-      fd.append('projectName', projectName)
-      fd.append('ownerName',   ownerName)
-      fd.append('plotSize',    plotSize)
-      fd.append('floors',      floors)
-      fd.append('bedrooms',    bedrooms)
-      fd.append('bathrooms',   bathrooms)
-      fd.append('notes',       notes)
-
-      for (const { cat, file } of compressed) {
-        fd.append('files',      file)
-        fd.append('categories', cat)
-      }
-
-      const aiRes = await fetch('/api/agents/estimation-engineer', { method: 'POST', body: fd })
-
-      // Handle Vercel 413 (plain-text response — not valid JSON)
-      if (aiRes.status === 413) {
-        throw new Error(
-          'Files too large for the server (413). Total must be under 3.5 MB. ' +
-          'Please use fewer files or smaller drawings.'
-        )
-      }
+      const aiRes = await fetch('/api/agents/estimation-engineer', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          files:       uploadedFiles,
+          projectName,
+          ownerName,
+          plotSize,
+          floors,
+          bedrooms,
+          bathrooms,
+          notes,
+        }),
+      })
 
       let aiData: Record<string, unknown>
       try {
         aiData = await aiRes.json()
       } catch {
-        const text = await aiRes.text().catch(() => '')
-        throw new Error(
-          aiRes.ok
-            ? 'AI returned an unexpected response. Please try again.'
-            : `Server error (${aiRes.status}): ${text.slice(0, 200)}`
-        )
+        throw new Error(`Server error (${aiRes.status}) — please try again.`)
       }
 
       if (!aiRes.ok || !aiData.success) {
@@ -258,7 +257,7 @@ export default function CreateEstimationPage() {
 
       setAnalysis((aiData.analysis as string) ?? '')
 
-      // Save as company BOQ
+      // ── Phase 3: Save BOQ ─────────────────────────────────────────────────────
       setStage('saving')
       const areaLabel = [plotNo, plotSize ? `${plotSize} M2` : ''].filter(Boolean).join(' — ')
 
@@ -277,7 +276,7 @@ export default function CreateEstimationPage() {
 
       if (!saveRes.ok) {
         const err = await saveRes.json().catch(() => ({}))
-        throw new Error((err as any).error || 'Failed to save BOQ')
+        throw new Error((err as { error?: string }).error || 'Failed to save BOQ')
       }
 
       const saved = await saveRes.json()
@@ -303,7 +302,7 @@ export default function CreateEstimationPage() {
         <h1 className="text-lg font-bold text-slate-900">AI Estimation Engineer</h1>
         {totalFiles > 0 && (
           <span className="ml-auto text-xs font-semibold px-2.5 py-1 bg-brand-100 text-brand-700 rounded-full">
-            {totalFiles} file{totalFiles !== 1 ? 's' : ''} ready
+            {totalFiles} file{totalFiles !== 1 ? 's' : ''} · {fmtBytes(totalBytes)}
           </span>
         )}
       </div>
@@ -323,7 +322,9 @@ export default function CreateEstimationPage() {
                 The AI cross-references all of them to calculate the most accurate quantities
                 across all 24 BOQ sections.
               </p>
-              <p className="text-slate-400 text-xs mt-2">PDF, JPG, PNG · Images auto-compressed · Total payload max 3.5 MB · Up to 5 files per category</p>
+              <p className="text-slate-400 text-xs mt-2">
+                PDF, JPG, PNG · Up to 50 MB per file · Up to 200 MB total · Up to 10 files per category
+              </p>
             </div>
           </div>
         </div>
@@ -343,7 +344,7 @@ export default function CreateEstimationPage() {
 
                     {/* Card header */}
                     <div className="px-4 pt-4 pb-2 flex items-center gap-3">
-                      <div className={`w-8 h-8 rounded-lg bg-white flex items-center justify-center flex-shrink-0`}>
+                      <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center flex-shrink-0">
                         <Icon className={`w-4 h-4 ${iconColor}`} />
                       </div>
                       <div className="min-w-0">
@@ -393,7 +394,7 @@ export default function CreateEstimationPage() {
                             <FileText className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
                             <span className="text-xs text-slate-700 truncate flex-1">{file.name}</span>
                             <span className="text-xs text-slate-400 flex-shrink-0">
-                              {(file.size / 1024).toFixed(0)} KB
+                              {fmtBytes(file.size)}
                             </span>
                             <button
                               type="button"
@@ -411,6 +412,21 @@ export default function CreateEstimationPage() {
                 )
               })}
             </div>
+
+            {/* Total size indicator */}
+            {totalFiles > 0 && (
+              <div className="mt-2 flex items-center justify-end gap-2">
+                <span className="text-xs text-slate-400">
+                  Total: {fmtBytes(totalBytes)} / 200 MB
+                </span>
+                <div className="h-1.5 w-24 bg-slate-200 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${totalBytes > MAX_TOTAL_BYTES * 0.9 ? 'bg-red-400' : 'bg-brand-400'}`}
+                    style={{ width: `${Math.min(100, (totalBytes / MAX_TOTAL_BYTES) * 100)}%` }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* ── Project details ────────────────────────────────────────────────── */}
@@ -486,6 +502,21 @@ export default function CreateEstimationPage() {
                 <p className="text-sm font-semibold text-slate-800">{STAGE_LABEL[stage]}</p>
               </div>
 
+              {stage === 'uploading' && (
+                <div className="pl-8 space-y-2">
+                  <div className="flex items-center justify-between text-xs text-slate-500">
+                    <span>{uploadedCount} of {totalFiles} files uploaded</span>
+                    <span>{Math.round((uploadedCount / totalFiles) * 100)}%</span>
+                  </div>
+                  <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-brand-500 rounded-full transition-all duration-300"
+                      style={{ width: `${Math.round((uploadedCount / totalFiles) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
               {stage === 'analyzing' && (
                 <div className="space-y-1.5 pl-8">
                   {[
@@ -527,7 +558,7 @@ export default function CreateEstimationPage() {
           </button>
 
           <p className="text-center text-xs text-slate-400">
-            AI analyzes all drawings together · 24 BOQ sections · typically 30–60 seconds
+            Files upload directly to secure storage · AI analyzes all drawings · 24 BOQ sections · typically 30–90 seconds
           </p>
         </form>
       </div>

@@ -2,23 +2,26 @@
  * Estimation Engineer AI Agent
  * POST /api/agents/estimation-engineer
  *
- * Accepts multipart FormData:
- *   files[]       — one or more PDF/JPG/PNG drawing files
- *   categories[]  — matching category for each file:
- *                   'architectural' | 'structural' | 'mep' | 'site'
+ * Accepts JSON body:
+ *   files        — Array<{ path, name, category }>  (Supabase Storage paths)
  *   projectName, ownerName, plotSize, floors, bedrooms, bathrooms, notes
  *
- * Returns: { success, analysis, plot_area, floors, bedrooms, bathrooms, items }
+ * Files were uploaded directly from the browser to Supabase Storage using
+ * signed upload URLs — this route downloads them server-side, so there is
+ * no Vercel request body limit involved.
  *
- * Fully in-memory — no filesystem writes (Vercel-safe).
+ * Returns: { success, analysis, plot_area, floors, bedrooms, bathrooms, items }
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { anthropic } from '@/lib/anthropic'
+import { supabaseAdmin } from '@/lib/supabase'
 import { BOQ_TEMPLATE, applyQuantities } from '@/lib/boq-template'
 
-export const maxDuration = 60  // Vercel Pro/hobby extended timeout
+export const maxDuration = 60   // extended timeout (Vercel Pro / hobby)
 
-const ITEM_KEYS       = BOQ_TEMPLATE.map(i => i.itemNo).join(', ')
+const BUCKET = 'estimation-drawings'
+
+const ITEM_KEYS        = BOQ_TEMPLATE.map(i => i.itemNo).join(', ')
 const TEMPLATE_SUMMARY = BOQ_TEMPLATE.map(i =>
   `${i.itemNo} | ${i.section} | ${i.description} | ${i.unit} | Rate: ${i.unitRate > 0 ? `AED ${i.unitRate}` : 'N/A'}`
 ).join('\n')
@@ -174,51 +177,77 @@ CRITICAL RULES:
 
 type ImageMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
 
-const MAX_FILES       = 10
-const MAX_BYTES       = 4 * 1024 * 1024  // 4 MB per file (images already compressed client-side)
+interface FileEntry {
+  path:     string
+  name:     string
+  category: string
+}
+
+const CATEGORY_LABELS: Record<string, string> = {
+  architectural: '🏗 ARCHITECTURAL DRAWINGS',
+  structural:    '⚙ STRUCTURAL DRAWINGS',
+  mep:           '⚡ MEP DRAWINGS',
+  site:          '🗺 SITE PLAN',
+}
+
+// Download a file from Supabase Storage and return its ArrayBuffer
+async function downloadFromStorage(path: string): Promise<ArrayBuffer | null> {
+  if (!supabaseAdmin) return null
+  const { data, error } = await supabaseAdmin.storage.from(BUCKET).download(path)
+  if (error || !data) {
+    console.error(`Failed to download ${path}:`, error?.message)
+    return null
+  }
+  return data.arrayBuffer()
+}
+
+// Delete uploaded temp files from Supabase Storage after processing
+async function cleanupFiles(paths: string[]) {
+  if (!supabaseAdmin || !paths.length) return
+  await supabaseAdmin.storage.from(BUCKET).remove(paths)
+}
 
 export async function POST(req: NextRequest) {
-  try {
-    const form        = await req.formData()
-    const files       = form.getAll('files')      as File[]
-    const categories  = form.getAll('categories') as string[]
-    const projectName = (form.get('projectName')  as string) || 'Villa Project'
-    const ownerName   = (form.get('ownerName')    as string) || ''
-    const plotSize    = (form.get('plotSize')      as string) || 'Unknown'
-    const floors      = (form.get('floors')        as string) || 'Unknown'
-    const bedrooms    = (form.get('bedrooms')      as string) || 'Unknown'
-    const bathrooms   = (form.get('bathrooms')     as string) || 'Unknown'
-    const notes       = (form.get('notes')         as string) || ''
+  const uploadedPaths: string[] = []
 
-    if (!files.length) {
+  try {
+    const body = await req.json()
+    const {
+      files        = [] as FileEntry[],
+      projectName  = 'Villa Project',
+      ownerName    = '',
+      plotSize     = 'Unknown',
+      floors       = 'Unknown',
+      bedrooms     = 'Unknown',
+      bathrooms    = 'Unknown',
+      notes        = '',
+    } = body
+
+    if (!Array.isArray(files) || files.length === 0) {
       return NextResponse.json({ error: 'No drawing files provided.' }, { status: 400 })
     }
 
-    // Cap total files
-    const fileList = files.slice(0, MAX_FILES)
-    const catList  = categories.slice(0, MAX_FILES)
+    if (!supabaseAdmin) {
+      return NextResponse.json({ error: 'Storage not configured.' }, { status: 500 })
+    }
+
+    // Track all paths for cleanup
+    files.forEach((f: FileEntry) => uploadedPaths.push(f.path))
 
     // ── Group files by category ───────────────────────────────────────────────
-    const grouped: Record<string, Array<{ file: File; idx: number }>> = {
+    const grouped: Record<string, FileEntry[]> = {
       architectural: [], structural: [], mep: [], site: [],
     }
-    fileList.forEach((file, i) => {
-      const cat = catList[i] ?? 'architectural'
+    for (const f of files as FileEntry[]) {
+      const cat = f.category ?? 'architectural'
       if (!grouped[cat]) grouped[cat] = []
-      grouped[cat].push({ file, idx: i })
-    })
+      grouped[cat].push(f)
+    }
 
     // ── Build Claude message content ──────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const content: any[] = []
     const skipped: string[] = []
-
-    const CATEGORY_LABELS: Record<string, string> = {
-      architectural: '🏗 ARCHITECTURAL DRAWINGS',
-      structural:    '⚙ STRUCTURAL DRAWINGS',
-      mep:           '⚡ MEP DRAWINGS',
-      site:          '🗺 SITE PLAN',
-    }
 
     for (const [cat, entries] of Object.entries(grouped)) {
       if (!entries.length) continue
@@ -228,18 +257,18 @@ export async function POST(req: NextRequest) {
         text: `\n${'═'.repeat(60)}\n${CATEGORY_LABELS[cat] ?? cat.toUpperCase()} (${entries.length} file${entries.length > 1 ? 's' : ''})\n${'═'.repeat(60)}`,
       })
 
-      for (const { file } of entries) {
-        if (file.size > MAX_BYTES) {
-          skipped.push(file.name)
-          content.push({ type: 'text', text: `[File "${file.name}" skipped — too large (${(file.size / 1024 / 1024).toFixed(1)} MB > 8 MB limit)]` })
+      for (const f of entries) {
+        const ext = f.name.split('.').pop()?.toLowerCase() ?? ''
+        content.push({ type: 'text', text: `File: ${f.name}` })
+
+        const buffer = await downloadFromStorage(f.path)
+        if (!buffer) {
+          skipped.push(f.name)
+          content.push({ type: 'text', text: `[File "${f.name}" could not be downloaded — skipped]` })
           continue
         }
 
-        const ext    = file.name.split('.').pop()?.toLowerCase() ?? ''
-        const buffer = await file.arrayBuffer()
         const base64 = Buffer.from(buffer).toString('base64')
-
-        content.push({ type: 'text', text: `File: ${file.name}` })
 
         if (ext === 'pdf') {
           content.push({
@@ -261,7 +290,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Final user instruction ────────────────────────────────────────────────
-    const totalShown = fileList.length - skipped.length
+    const totalShown = files.length - skipped.length
     content.push({
       type: 'text',
       text: `
@@ -273,7 +302,7 @@ Owner:   ${ownerName || 'Not specified'}
 Plot size: ${plotSize} M2  |  Floors: ${floors}  |  Bedrooms: ${bedrooms}  |  Bathrooms: ${bathrooms}
 Notes: ${notes || 'None'}
 Drawings provided: ${totalShown} file(s) across ${Object.entries(grouped).filter(([, v]) => v.length).map(([k]) => k).join(', ')} categories
-${skipped.length ? `Skipped (too large): ${skipped.join(', ')}` : ''}
+${skipped.length ? `Skipped: ${skipped.join(', ')}` : ''}
 
 INSTRUCTIONS:
 1. Review ALL ${totalShown} drawing file(s) above carefully.
@@ -319,6 +348,9 @@ INSTRUCTIONS:
 
     const items = applyQuantities(parsed.quantities ?? {})
 
+    // ── Clean up uploaded files from Supabase ─────────────────────────────────
+    await cleanupFiles(uploadedPaths)
+
     return NextResponse.json({
       success:   true,
       analysis:  parsed.analysis  ?? `Analyzed ${totalShown} drawing(s) successfully.`,
@@ -330,6 +362,8 @@ INSTRUCTIONS:
       skipped,
     })
   } catch (err) {
+    // Attempt cleanup even on error
+    await cleanupFiles(uploadedPaths).catch(() => {})
     console.error('Estimation engineer error:', err)
     return NextResponse.json(
       { error: 'Failed to analyze drawings: ' + (err instanceof Error ? err.message : String(err)) },
