@@ -7,6 +7,40 @@ import {
   AlertCircle, Sparkles, Building2, X, Zap, Wrench, Map,
 } from 'lucide-react'
 
+// ── Image compression ──────────────────────────────────────────────────────
+const MAX_DIM = 1200    // px — longest edge
+const JPEG_Q  = 0.82   // quality
+
+async function compressImage(file: File): Promise<File> {
+  const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
+  if (!['jpg', 'jpeg', 'png', 'webp'].includes(ext)) return file  // PDFs pass through
+
+  return new Promise(resolve => {
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      let { width, height } = img
+      if (width <= MAX_DIM && height <= MAX_DIM) { resolve(file); return }
+      if (width > height) { height = Math.round(height * MAX_DIM / width);  width = MAX_DIM }
+      else                { width  = Math.round(width  * MAX_DIM / height); height = MAX_DIM }
+
+      const canvas = document.createElement('canvas')
+      canvas.width  = width
+      canvas.height = height
+      canvas.getContext('2d')!.drawImage(img, 0, 0, width, height)
+      canvas.toBlob(blob => {
+        if (!blob) { resolve(file); return }
+        resolve(new File([blob], file.name, { type: 'image/jpeg', lastModified: Date.now() }))
+      }, 'image/jpeg', JPEG_Q)
+    }
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file) }
+    img.src = url
+  })
+}
+
+const PAYLOAD_CAP = 3.5 * 1024 * 1024   // 3.5 MB total — stay under Vercel's 4.5 MB
+
 type CategoryKey = 'architectural' | 'structural' | 'mep' | 'site'
 type Stage = 'idle' | 'analyzing' | 'saving' | 'done' | 'error'
 
@@ -128,7 +162,7 @@ export default function CreateEstimationPage() {
     if (!newFiles) return
     const valid = Array.from(newFiles).filter(f => {
       const ext = f.name.split('.').pop()?.toLowerCase()
-      return ['pdf','jpg','jpeg','png','webp'].includes(ext ?? '') && f.size <= 8 * 1024 * 1024
+      return ['pdf','jpg','jpeg','png','webp'].includes(ext ?? '') && f.size <= 10 * 1024 * 1024
     })
     setUploads(prev => ({
       ...prev,
@@ -161,6 +195,27 @@ export default function CreateEstimationPage() {
     try {
       setStage('analyzing')
 
+      // ── Compress images client-side before sending ─────────────────────────
+      const allEntries = (Object.entries(uploads) as [CategoryKey, UploadedFile[]][])
+        .flatMap(([cat, list]) => list.map(u => ({ cat, u })))
+
+      const compressed: Array<{ cat: CategoryKey; file: File }> = await Promise.all(
+        allEntries.map(async ({ cat, u }) => ({
+          cat,
+          file: await compressImage(u.file),
+        }))
+      )
+
+      // ── Payload size guard ─────────────────────────────────────────────────
+      const totalBytes = compressed.reduce((sum, { file }) => sum + file.size, 0)
+      if (totalBytes > PAYLOAD_CAP) {
+        const mb = (totalBytes / 1024 / 1024).toFixed(1)
+        throw new Error(
+          `Files too large — total ${mb} MB exceeds the 3.5 MB limit. ` +
+          `Please reduce file count or use smaller / lower-resolution drawings.`
+        )
+      }
+
       const fd = new FormData()
       fd.append('projectName', projectName)
       fd.append('ownerName',   ownerName)
@@ -170,22 +225,38 @@ export default function CreateEstimationPage() {
       fd.append('bathrooms',   bathrooms)
       fd.append('notes',       notes)
 
-      // Append each file with its category
-      for (const [cat, list] of Object.entries(uploads) as [CategoryKey, UploadedFile[]][]) {
-        for (const { file } of list) {
-          fd.append('files',      file)
-          fd.append('categories', cat)
-        }
+      for (const { cat, file } of compressed) {
+        fd.append('files',      file)
+        fd.append('categories', cat)
       }
 
-      const aiRes  = await fetch('/api/agents/estimation-engineer', { method: 'POST', body: fd })
-      const aiData = await aiRes.json()
+      const aiRes = await fetch('/api/agents/estimation-engineer', { method: 'POST', body: fd })
+
+      // Handle Vercel 413 (plain-text response — not valid JSON)
+      if (aiRes.status === 413) {
+        throw new Error(
+          'Files too large for the server (413). Total must be under 3.5 MB. ' +
+          'Please use fewer files or smaller drawings.'
+        )
+      }
+
+      let aiData: Record<string, unknown>
+      try {
+        aiData = await aiRes.json()
+      } catch {
+        const text = await aiRes.text().catch(() => '')
+        throw new Error(
+          aiRes.ok
+            ? 'AI returned an unexpected response. Please try again.'
+            : `Server error (${aiRes.status}): ${text.slice(0, 200)}`
+        )
+      }
 
       if (!aiRes.ok || !aiData.success) {
-        throw new Error(aiData.error || 'AI analysis failed')
+        throw new Error((aiData.error as string) || 'AI analysis failed')
       }
 
-      setAnalysis(aiData.analysis)
+      setAnalysis((aiData.analysis as string) ?? '')
 
       // Save as company BOQ
       setStage('saving')
@@ -252,7 +323,7 @@ export default function CreateEstimationPage() {
                 The AI cross-references all of them to calculate the most accurate quantities
                 across all 24 BOQ sections.
               </p>
-              <p className="text-slate-400 text-xs mt-2">PDF, JPG, PNG · Max 8 MB per file · Up to 5 files per category</p>
+              <p className="text-slate-400 text-xs mt-2">PDF, JPG, PNG · Images auto-compressed · Total payload max 3.5 MB · Up to 5 files per category</p>
             </div>
           </div>
         </div>

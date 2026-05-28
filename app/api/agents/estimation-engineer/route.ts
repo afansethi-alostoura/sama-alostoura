@@ -16,6 +16,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { anthropic } from '@/lib/anthropic'
 import { BOQ_TEMPLATE, applyQuantities } from '@/lib/boq-template'
 
+export const maxDuration = 60  // Vercel Pro/hobby extended timeout
+
 const ITEM_KEYS       = BOQ_TEMPLATE.map(i => i.itemNo).join(', ')
 const TEMPLATE_SUMMARY = BOQ_TEMPLATE.map(i =>
   `${i.itemNo} | ${i.section} | ${i.description} | ${i.unit} | Rate: ${i.unitRate > 0 ? `AED ${i.unitRate}` : 'N/A'}`
@@ -173,7 +175,7 @@ CRITICAL RULES:
 type ImageMediaType = 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp'
 
 const MAX_FILES       = 10
-const MAX_BYTES       = 8 * 1024 * 1024  // 8 MB per file
+const MAX_BYTES       = 4 * 1024 * 1024  // 4 MB per file (images already compressed client-side)
 
 export async function POST(req: NextRequest) {
   try {
@@ -283,7 +285,7 @@ INSTRUCTIONS:
 
     // ── Call Claude ───────────────────────────────────────────────────────────
     const response = await anthropic.messages.create({
-      model:      'claude-opus-4-5',
+      model:      'claude-sonnet-4-5',
       max_tokens: 8000,
       system:     SYSTEM_PROMPT,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
