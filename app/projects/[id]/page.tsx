@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useRef, useCallback } from 'react'
+import React, { useEffect, useState, useRef, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import {
@@ -456,9 +456,9 @@ export default function ProjectPage() {
                       const anyStarted = secPct > 0
 
                       return (
-                        <>
+                        <React.Fragment key={sectionName}>
                           {/* Section header row */}
-                          <tr key={`sec-${sectionName}`} className="bg-blue-50 border-t-2 border-blue-200">
+                          <tr className="bg-blue-50 border-t-2 border-blue-200">
                             <td className="px-3 py-2 font-bold text-blue-800 border border-blue-200 text-sm">{secIdx + 1}</td>
                             <td colSpan={5} className="px-3 py-2 font-bold text-blue-800 uppercase tracking-wide border border-blue-200 text-sm">{sectionName}</td>
                             <td className="px-3 py-2 text-right font-bold text-blue-800 border border-blue-200 text-sm">
@@ -486,7 +486,7 @@ export default function ProjectPage() {
                             const subTotal  = item.amount || 0
 
                             return (
-                              <tr key={`${sectionName}-${localIdx}`} className={`${isDone ? 'bg-emerald-50/40' : localIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} hover:bg-blue-50/20 transition-colors`}>
+                              <tr key={globalIdx} className={`${isDone ? 'bg-emerald-50/40' : localIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} hover:bg-blue-50/20 transition-colors`}>
                                 <td className="px-3 py-1.5 border border-slate-100 text-slate-400 text-xs" />
                                 <td className="px-3 py-1.5 border border-slate-100 font-mono text-xs text-slate-500">{item.itemNo}</td>
                                 <td className="px-3 py-1.5 border border-slate-100 text-slate-800">{item.description}</td>
@@ -521,7 +521,7 @@ export default function ProjectPage() {
                           })}
 
                           {/* Section subtotal row */}
-                          <tr key={`subtotal-${sectionName}`} className="bg-slate-100">
+                          <tr className="bg-slate-100">
                             <td colSpan={6} className="px-3 py-1.5 text-right text-xs font-semibold text-slate-600 border border-slate-200 uppercase tracking-wide">
                               {sectionName} — Section Total
                             </td>
@@ -530,7 +530,7 @@ export default function ProjectPage() {
                             </td>
                             <td className="px-3 py-1.5 border border-slate-200" />
                           </tr>
-                        </>
+                        </React.Fragment>
                       )
                     })}
                   </tbody>
