@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic'
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Trash2, AlertCircle, FileText, ExternalLink, HardHat, Calculator } from 'lucide-react'
+import { Plus, Trash2, AlertCircle, FileText, ExternalLink, HardHat, Calculator, MessageSquare } from 'lucide-react'
 import Link from 'next/link'
 
 interface AIBOQItem {
@@ -245,7 +245,7 @@ export default function EstimationPage() {
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-6">
           <h2 className="text-sm font-semibold text-slate-700 mb-1">Generate BOQ from Project</h2>
           <p className="text-xs text-slate-400 mb-4">Choose how to create a new Bill of Quantities</p>
-          <div className="grid sm:grid-cols-2 gap-3">
+          <div className="grid sm:grid-cols-3 gap-3">
 
             {/* Formula calculator */}
             <Link href="/estimation/create"
@@ -273,10 +273,27 @@ export default function EstimationPage() {
               <div>
                 <p className="font-bold text-slate-800 text-sm">Civil Engineer AI</p>
                 <p className="text-xs text-slate-500 mt-0.5 leading-snug">
-                  Upload drawings (PDF/JPG) → AI reads dimensions → BOQ with quantities from actual drawings
+                  Upload drawings → AI reads dimensions → BOQ quantities auto-filled, rates blank
                 </p>
                 <span className="inline-block mt-2 text-xs font-semibold text-amber-600">
-                  Reads drawings · Rates blank for you to fill
+                  Reads drawings · Rates blank
+                </span>
+              </div>
+            </Link>
+
+            {/* Drawing chat */}
+            <Link href="/estimation/drawing-chat"
+              className="flex items-start gap-4 p-4 rounded-xl border-2 border-emerald-200 hover:border-emerald-500 hover:bg-emerald-50 transition-all group">
+              <div className="w-10 h-10 bg-emerald-100 group-hover:bg-emerald-200 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors">
+                <MessageSquare className="w-5 h-5 text-emerald-600" />
+              </div>
+              <div>
+                <p className="font-bold text-slate-800 text-sm">Drawing Chat</p>
+                <p className="text-xs text-slate-500 mt-0.5 leading-snug">
+                  Upload drawings → chat with AI → ask quantity questions → fill BOQ manually
+                </p>
+                <span className="inline-block mt-2 text-xs font-semibold text-emerald-600">
+                  Q&amp;A · You control the BOQ
                 </span>
               </div>
             </Link>
@@ -285,12 +302,18 @@ export default function EstimationPage() {
         </div>
 
         {/* ── AI Estimations ── */}
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-4 flex items-center justify-between gap-2 flex-wrap">
           <h2 className="text-base font-semibold text-slate-800">AI Estimations</h2>
-          <Link href="/estimation/create-from-drawings"
-            className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition-colors">
-            <Plus className="w-4 h-4" /> Drawing Analysis
-          </Link>
+          <div className="flex gap-2">
+            <Link href="/estimation/drawing-chat"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-700 hover:bg-emerald-600 text-white text-sm font-medium rounded-lg transition-colors">
+              <MessageSquare className="w-4 h-4" /> Drawing Chat
+            </Link>
+            <Link href="/estimation/create-from-drawings"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg transition-colors">
+              <Plus className="w-4 h-4" /> Auto Analysis
+            </Link>
+          </div>
         </div>
 
         {aiBoqs.length === 0 ? (
