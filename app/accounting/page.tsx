@@ -6,8 +6,12 @@ import {
   TrendingDown, ChevronDown, ChevronRight,
   BrainCircuit, TriangleAlert, Info, CircleX,
   CalendarRange, Receipt, CreditCard, FileText,
-  Building2, Bug, CheckCircle2, Clock,
+  Building2, Bug, CheckCircle2, Clock, BarChart2,
 } from 'lucide-react'
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, Cell,
+} from 'recharts'
 import { AccountantBriefing } from '@/components/accounting/accountant-briefing'
 import { InvoiceTable }       from '@/components/accounting/invoice-table'
 import type {
@@ -621,6 +625,108 @@ function ClassExpensesSection({
   )
 }
 
+// ── Category Spend Chart ──────────────────────────────────────────────────────
+function CategoryChart({
+  transactions,
+  category,
+}: {
+  transactions: import('@/lib/quickbooks/types').QBTransactionLine[]
+  category:     string
+}) {
+  // Aggregate the selected category's transactions by date
+  const byDate: Record<string, number> = {}
+  for (const tx of transactions) {
+    if (tx.accountName !== category) continue
+    byDate[tx.txnDate] = (byDate[tx.txnDate] ?? 0) + tx.amount
+  }
+
+  const data = Object.entries(byDate)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, amount]) => ({
+      label:  fmtDate(date),   // DD/MM/YYYY for display
+      date,
+      amount: Math.round(amount),
+    }))
+
+  const total = data.reduce((s, d) => s + d.amount, 0)
+  const peak  = Math.max(...data.map(d => d.amount))
+
+  // Custom tooltip
+  function ChartTooltip({ active, payload, label }: any) {
+    if (!active || !payload?.length) return null
+    return (
+      <div className="bg-white border border-slate-200 rounded-lg shadow-lg px-3 py-2 text-xs">
+        <p className="font-semibold text-slate-700 mb-1">{label}</p>
+        <p className="text-indigo-700 font-bold">AED {payload[0].value.toLocaleString()}</p>
+        <p className="text-slate-400 mt-0.5">{Math.round((payload[0].value / total) * 100)}% of period total</p>
+      </div>
+    )
+  }
+
+  if (data.length === 0) {
+    return (
+      <div className="px-14 py-4 text-xs text-slate-400 italic">
+        No transactions in selected date range for this category.
+      </div>
+    )
+  }
+
+  return (
+    <div className="px-6 pt-3 pb-4 bg-white border-b border-slate-100">
+      {/* Chart header */}
+      <div className="flex items-center justify-between mb-3 pl-8">
+        <div className="flex items-center gap-2">
+          <BarChart2 className="w-3.5 h-3.5 text-indigo-500" />
+          <span className="text-xs font-semibold text-slate-700">{category}</span>
+          <span className="text-[10px] text-slate-400">— spend over time</span>
+        </div>
+        <div className="text-right">
+          <span className="text-xs font-bold text-indigo-900">AED {total.toLocaleString()}</span>
+          <span className="text-[10px] text-slate-400 ml-1">total · {data.length} date{data.length !== 1 ? 's' : ''}</span>
+        </div>
+      </div>
+
+      {/* Bar chart */}
+      <ResponsiveContainer width="100%" height={160}>
+        <BarChart data={data} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+          <XAxis
+            dataKey="label"
+            tick={{ fontSize: 10, fill: '#94a3b8' }}
+            tickLine={false}
+            axisLine={false}
+            interval={data.length > 12 ? Math.floor(data.length / 8) : 0}
+          />
+          <YAxis
+            tick={{ fontSize: 10, fill: '#94a3b8' }}
+            tickLine={false}
+            axisLine={false}
+            tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(0)}K` : `${v}`}
+            width={44}
+          />
+          <Tooltip content={<ChartTooltip />} cursor={{ fill: '#e0e7ff', radius: 4 }} />
+          <Bar dataKey="amount" radius={[3, 3, 0, 0]} maxBarSize={48}>
+            {data.map((entry, i) => (
+              <Cell
+                key={i}
+                fill={entry.amount === peak ? '#4f46e5' : '#a5b4fc'}
+              />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+
+      <p className="text-[10px] text-slate-400 pl-8 mt-1">
+        Highest: <span className="font-semibold text-slate-600">
+          AED {peak.toLocaleString()}
+        </span> on{' '}
+        {data.find(d => d.amount === peak)?.label ?? '—'}
+        {' · '}Click the same tag again to close
+      </p>
+    </div>
+  )
+}
+
 // ── Expandable class row (controlled by forceOpen) ────────────────────────────
 function ExpandableClassRow({
   group,
@@ -633,8 +739,21 @@ function ExpandableClassRow({
   linkedContractValue?: number
   forceOpen:            boolean
 }) {
-  const [open, setOpen] = useState(false)
+  const [open,             setOpen]             = useState(false)
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
   const isOpen = forceOpen || open
+
+  // Close chart when row collapses
+  function handleToggle() {
+    setOpen(o => {
+      if (o) setSelectedCategory(null)
+      return !o
+    })
+  }
+
+  function handleTagClick(acc: string) {
+    setSelectedCategory(prev => prev === acc ? null : acc)
+  }
 
   const pct = linkedContractValue && linkedContractValue > 0
     ? Math.round((group.total / linkedContractValue) * 100)
@@ -651,7 +770,7 @@ function ExpandableClassRow({
 
       {/* Class header — click to expand */}
       <button
-        onClick={() => setOpen(o => !o)}
+        onClick={handleToggle}
         className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-slate-50 transition-colors text-left group"
       >
         <span className="flex-shrink-0 w-5 flex justify-center text-slate-400 group-hover:text-slate-600">
@@ -690,17 +809,39 @@ function ExpandableClassRow({
       {isOpen && (
         <div className="border-t border-slate-100">
 
-          {/* Account breakdown chips */}
+          {/* Account breakdown chips — clickable to show chart */}
           {acctRows.length > 0 && (
             <div className="px-14 py-2.5 flex flex-wrap gap-2 bg-indigo-50 border-b border-indigo-100">
               <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wide self-center">Breakdown:</span>
-              {acctRows.map(([acc, amt]) => (
-                <span key={acc} className="inline-flex items-center gap-1.5 text-[11px] bg-white border border-indigo-100 text-slate-700 rounded-full px-2.5 py-1">
-                  <span className="text-slate-500">{acc}</span>
-                  <span className="font-bold text-indigo-900">{aed(amt, true)}</span>
-                </span>
-              ))}
+              {acctRows.map(([acc, amt]) => {
+                const active = selectedCategory === acc
+                return (
+                  <button
+                    key={acc}
+                    onClick={() => handleTagClick(acc)}
+                    title={active ? 'Click to hide chart' : 'Click to see spending over time'}
+                    className={`inline-flex items-center gap-1.5 text-[11px] rounded-full px-2.5 py-1 border transition-all ${
+                      active
+                        ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm scale-105'
+                        : 'bg-white border-indigo-100 text-slate-700 hover:border-indigo-300 hover:bg-indigo-50'
+                    }`}
+                  >
+                    {active && <BarChart2 className="w-3 h-3" />}
+                    <span className={active ? 'text-indigo-100' : 'text-slate-500'}>{acc}</span>
+                    <span className={`font-bold ${active ? 'text-white' : 'text-indigo-900'}`}>{aed(amt, true)}</span>
+                  </button>
+                )
+              })}
+              <span className="text-[10px] text-indigo-300 self-center ml-1">↑ click any tag to chart</span>
             </div>
+          )}
+
+          {/* Category chart — shown when a tag is selected */}
+          {selectedCategory && (
+            <CategoryChart
+              transactions={group.transactions}
+              category={selectedCategory}
+            />
           )}
 
           {/* Transaction table */}
