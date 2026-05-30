@@ -6,7 +6,7 @@ import {
   loadTokens, loadTokensAsync, saveTokens, clearTokens,
   isAccessTokenFresh, isRefreshTokenValid,
 } from './tokens'
-import type { QBTokens, QBInvoice, QBPayment, QBCustomer, QBCompanyInfo, QBQueryResponse, QBClass, QBPurchase, QBBill } from './types'
+import type { QBTokens, QBInvoice, QBPayment, QBCustomer, QBCompanyInfo, QBQueryResponse, QBClass, QBPurchase, QBBill, QBAccount, QBAlostouraTransaction, QBAlostouraMonthSummary } from './types'
 
 // ── Config ──────────────────────────────────────────────────
 const CLIENT_ID     = process.env.QUICKBOOKS_CLIENT_ID     ?? ''
@@ -251,6 +251,119 @@ export async function fetchBillsInRange(
     `SELECT * FROM Bill${where} ORDERBY TxnDate DESC MAXRESULTS ${maxResults}`,
     'Bill'
   )
+}
+
+/**
+ * Fetch all Chart of Accounts entries.
+ */
+export async function fetchAccounts(maxResults = 300): Promise<QBAccount[]> {
+  return qbQuery<QBAccount>(
+    `SELECT * FROM Account WHERE Active = true MAXRESULTS ${maxResults}`,
+    'Account'
+  )
+}
+
+/**
+ * Fetch the General Ledger report for a specific account.
+ * Returns the raw QB report JSON — parse with parseGLReport().
+ * QB path: reports/GeneralLedger?account={id}&start_date={from}&end_date={to}
+ */
+export async function fetchGLReport(
+  accountId: string,
+  from:      string,
+  to:        string,
+): Promise<unknown> {
+  const path = `reports/GeneralLedger?account=${encodeURIComponent(accountId)}&start_date=${from}&end_date=${to}`
+  const res  = await qbFetch(path)
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`GeneralLedger report failed (${res.status}): ${err}`)
+  }
+  return res.json()
+}
+
+/**
+ * Parse a raw QB GeneralLedger report into an array of QBAlostouraTransaction.
+ * Handles QB's nested Section→Data row structure and dynamic column ordering.
+ */
+export function parseGLReport(report: unknown): QBAlostouraTransaction[] {
+  const r = report as any
+
+  // Discover column positions from the Columns block
+  const rawCols: any[] = r?.Columns?.Column ?? []
+  const colIdx: Record<string, number> = {}
+  rawCols.forEach((c: any, i: number) => { colIdx[c.ColType] = i })
+
+  const dateIdx  = colIdx['tx_date']         ?? 0
+  const typeIdx  = colIdx['txn_type']        ?? 1
+  const memoIdx  = colIdx['memo']            ?? 4
+  const splitIdx = colIdx['split_acc']       ?? 5
+  const amtIdx   = colIdx['subt_net_amount'] ?? 6
+  const balIdx   = colIdx['rbal_nat_amount'] ?? 7
+  // entity_name is col 3 in most minorversions
+  const nameIdx  = colIdx['entity_name']     ?? 3
+
+  const txns: QBAlostouraTransaction[] = []
+
+  const outerRows: any[] = r?.Rows?.Row ?? []
+  for (const section of outerRows) {
+    // Top-level Section represents the account; inner Rows are transactions
+    const innerRows: any[] = section?.Rows?.Row ?? []
+    for (const row of innerRows) {
+      if (row.type !== 'Data') continue
+      const cols: any[] = row.ColData ?? []
+      const date = cols[dateIdx]?.value ?? ''
+      if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) continue   // skip totals/blank rows
+
+      const amount  = parseFloat(cols[amtIdx]?.value ?? '0') || 0
+      const balance = parseFloat(cols[balIdx]?.value ?? '0') || 0
+
+      txns.push({
+        txnDate: date,
+        txnType: cols[typeIdx]?.value ?? '',
+        txnId:   cols[dateIdx]?.id    ?? '',
+        name:    cols[nameIdx]?.value ?? '',
+        memo:    cols[memoIdx]?.value ?? '',
+        split:   cols[splitIdx]?.value ?? '',
+        amount,
+        balance,
+      })
+    }
+  }
+
+  return txns.sort((a, b) => a.txnDate.localeCompare(b.txnDate))
+}
+
+/**
+ * Aggregate transactions into per-month summaries with running balance.
+ */
+export function buildMonthSummaries(
+  txns: QBAlostouraTransaction[],
+): QBAlostouraMonthSummary[] {
+  const map: Record<string, { credits: number; debits: number; balance: number }> = {}
+
+  for (const tx of txns) {
+    const m = tx.txnDate.slice(0, 7)
+    if (!map[m]) map[m] = { credits: 0, debits: 0, balance: 0 }
+    if (tx.amount >= 0) map[m].credits += tx.amount
+    else                map[m].debits  += Math.abs(tx.amount)
+    map[m].balance = tx.balance   // last transaction in month = closing balance
+  }
+
+  return Object.entries(map)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([month, d]) => {
+      const [y, mo] = month.split('-').map(Number)
+      const label = new Date(y, mo - 1, 1).toLocaleString('en-AE', { month: 'short', year: 'numeric' })
+      return {
+        month,
+        label,
+        credits:   Math.round(d.credits   * 100) / 100,
+        debits:    Math.round(d.debits    * 100) / 100,
+        netChange: Math.round((d.credits - d.debits) * 100) / 100,
+        balance:   Math.round(d.balance   * 100) / 100,
+      }
+    })
 }
 
 // ── Status check ─────────────────────────────────────────────

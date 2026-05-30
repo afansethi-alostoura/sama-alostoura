@@ -10,12 +10,13 @@ import {
 } from 'lucide-react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Cell,
+  ResponsiveContainer, Cell, Legend,
 } from 'recharts'
 import { AccountantBriefing } from '@/components/accounting/accountant-briefing'
 import { InvoiceTable }       from '@/components/accounting/invoice-table'
 import type {
   QBSnapshot, QBClassExpenseRow, QBClass, QBClassGroup, QBDebugInfo,
+  QBAlostouraTransaction, QBAlostouraMonthSummary,
 } from '@/lib/quickbooks/types'
 import type { QBStatus }  from '@/lib/quickbooks/client'
 import { useAllProjects } from '@/hooks/useAllProjects'
@@ -905,6 +906,299 @@ function ExpandableClassRow({
   )
 }
 
+// ── Alostoura Account Section ─────────────────────────────────────────────────
+function AlostouraSection({
+  loading,
+  found,
+  message,
+  source,
+  fetchedAt,
+  account,
+  transactions,
+  monthly,
+  summary,
+  dateRange,
+  onDateChange,
+}: {
+  loading:      boolean
+  found:        boolean
+  message?:     string
+  source?:      'live' | 'snapshot'
+  fetchedAt?:   string
+  account?:     { id: string; name: string; type: string; subType?: string; balance?: number }
+  transactions: QBAlostouraTransaction[]
+  monthly:      QBAlostouraMonthSummary[]
+  summary?:     { totalCredits: number; totalDebits: number; netChange: number; closingBalance?: number; txnCount: number }
+  dateRange:    { from: string; to: string }
+  onDateChange: (r: { from: string; to: string }) => void
+}) {
+  const [expanded,     setExpanded]     = useState(true)
+  const [showTxns,     setShowTxns]     = useState(false)
+  const [txnPage,      setTxnPage]      = useState(0)
+  const PAGE = 50
+
+  const pagedTxns = transactions.slice(txnPage * PAGE, (txnPage + 1) * PAGE)
+  const totalPages = Math.ceil(transactions.length / PAGE)
+
+  // Grouped bar chart tooltip
+  function MonthTooltip({ active, payload, label }: any) {
+    if (!active || !payload?.length) return null
+    const credits = payload.find((p: any) => p.dataKey === 'credits')?.value ?? 0
+    const debits  = payload.find((p: any) => p.dataKey === 'debits')?.value ?? 0
+    return (
+      <div className="bg-white border border-slate-200 rounded-lg shadow-lg px-3 py-2 text-xs min-w-[160px]">
+        <p className="font-semibold text-slate-700 mb-1.5">{label}</p>
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-emerald-600 font-medium">In</span>
+          <span className="font-bold text-emerald-700">AED {credits.toLocaleString()}</span>
+        </div>
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-red-500 font-medium">Out</span>
+          <span className="font-bold text-red-600">AED {debits.toLocaleString()}</span>
+        </div>
+        <div className="border-t border-slate-100 mt-1.5 pt-1.5 flex items-center justify-between gap-4">
+          <span className="text-slate-500 font-medium">Net</span>
+          <span className={`font-bold ${credits - debits >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+            AED {(credits - debits).toLocaleString()}
+          </span>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden mb-8">
+      {/* Header */}
+      <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-3 flex-wrap bg-gradient-to-r from-slate-800 to-slate-700">
+        <button onClick={() => setExpanded(e => !e)} className="text-slate-400 hover:text-white transition-colors">
+          {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+        </button>
+        <div className="w-8 h-8 rounded-lg bg-slate-600 flex items-center justify-center flex-shrink-0">
+          <Building2 className="w-4 h-4 text-slate-200" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <h3 className="font-semibold text-white">Alostoura Account</h3>
+            {source && (
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                source === 'live' ? 'bg-emerald-500 text-white' : 'bg-amber-500 text-white'
+              }`}>
+                {source === 'live' ? '● Live QB' : '● Snapshot'}
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-slate-400 mt-0.5">
+            {account ? `${account.type}${account.subType ? ' · ' + account.subType : ''}` : 'Chart of Accounts'}
+            {fetchedAt && <> · <Clock className="w-3 h-3 inline mx-0.5" />{new Date(fetchedAt).toLocaleString('en-AE')}</>}
+          </p>
+        </div>
+
+        {/* Date range + current balance */}
+        <div className="flex items-center gap-3 flex-wrap">
+          {summary?.closingBalance !== undefined && (
+            <div className="text-right">
+              <p className="text-[10px] text-slate-400">Current Balance</p>
+              <p className={`text-sm font-bold ${summary.closingBalance >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                AED {summary.closingBalance.toLocaleString()}
+              </p>
+            </div>
+          )}
+          <div className="flex items-center gap-1.5 bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5">
+            <CalendarRange className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+            <input type="date" value={dateRange.from}
+              onChange={e => onDateChange({ ...dateRange, from: e.target.value })}
+              className="text-xs bg-transparent border-0 outline-none text-slate-300 w-28" />
+            <span className="text-xs text-slate-500">→</span>
+            <input type="date" value={dateRange.to}
+              onChange={e => onDateChange({ ...dateRange, to: e.target.value })}
+              className="text-xs bg-transparent border-0 outline-none text-slate-300 w-28" />
+          </div>
+        </div>
+      </div>
+
+      {/* Body */}
+      {!expanded ? null : loading ? (
+        <div className="flex items-center justify-center gap-2 py-10 text-slate-400 text-sm">
+          <Loader2 className="w-4 h-4 animate-spin" /> Loading Alostoura account data…
+        </div>
+      ) : !found ? (
+        <div className="px-5 py-10 text-center">
+          <AlertCircle className="w-8 h-8 text-slate-300 mx-auto mb-3" />
+          <p className="text-sm text-slate-500 font-medium">{message ?? 'Account not found'}</p>
+        </div>
+      ) : (
+        <div>
+          {/* ── Period summary cards ── */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-0 divide-x divide-y sm:divide-y-0 divide-slate-100 border-b border-slate-100">
+            {[
+              { label: 'Money In',  value: summary?.totalCredits ?? 0, color: 'text-emerald-600', sub: `${transactions.filter(t => t.amount >= 0).length} credits` },
+              { label: 'Money Out', value: summary?.totalDebits  ?? 0, color: 'text-red-600',     sub: `${transactions.filter(t => t.amount <  0).length} debits`  },
+              { label: 'Net Change', value: summary?.netChange   ?? 0, color: (summary?.netChange ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-600', sub: 'credits − debits' },
+              { label: 'Transactions', value: summary?.txnCount  ?? 0, color: 'text-slate-800',   sub: `${monthly.length} months`, isCount: true },
+            ].map(({ label, value, color, sub, isCount }) => (
+              <div key={label} className="px-5 py-4">
+                <p className="text-xs text-slate-500 font-medium">{label}</p>
+                <p className={`text-xl font-bold mt-1 ${color}`}>
+                  {isCount ? value.toLocaleString() : aed(value)}
+                </p>
+                <p className="text-[10px] text-slate-400 mt-0.5">{sub}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* ── Monthly bar chart ── */}
+          {monthly.length > 0 && (
+            <div className="px-5 pt-5 pb-4 border-b border-slate-100">
+              <p className="text-xs font-semibold text-slate-700 mb-3 flex items-center gap-1.5">
+                <BarChart2 className="w-3.5 h-3.5 text-slate-400" />
+                Monthly Income vs Expenses
+              </p>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart
+                  data={monthly.map(m => ({ label: m.label, credits: m.credits, debits: m.debits, net: m.netChange }))}
+                  margin={{ top: 4, right: 16, left: 0, bottom: 4 }}
+                  barGap={2}
+                  barCategoryGap="25%"
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={false}
+                    interval={monthly.length > 12 ? Math.floor(monthly.length / 8) : 0} />
+                  <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={false}
+                    tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(0)}K` : `${v}`} width={44} />
+                  <Tooltip content={<MonthTooltip />} cursor={{ fill: '#f8fafc' }} />
+                  <Legend iconType="square" iconSize={8} wrapperStyle={{ fontSize: 11 }}
+                    formatter={(val: string) => val === 'credits' ? 'Money In' : 'Money Out'} />
+                  <Bar dataKey="credits" fill="#10b981" radius={[3, 3, 0, 0]} maxBarSize={32} name="credits" />
+                  <Bar dataKey="debits"  fill="#f87171" radius={[3, 3, 0, 0]} maxBarSize={32} name="debits"  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* ── Monthly summary table ── */}
+          {monthly.length > 0 && (
+            <div className="border-b border-slate-100 overflow-x-auto">
+              <table className="w-full text-xs min-w-[600px]">
+                <thead>
+                  <tr className="bg-slate-50 text-left">
+                    <th className="px-5 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wide">Month</th>
+                    <th className="px-4 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wide text-right">Money In</th>
+                    <th className="px-4 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wide text-right">Money Out</th>
+                    <th className="px-4 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wide text-right">Net</th>
+                    <th className="px-5 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wide text-right">Closing Balance</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {[...monthly].reverse().map(m => (
+                    <tr key={m.month} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-5 py-2.5 font-medium text-slate-800">{m.label}</td>
+                      <td className="px-4 py-2.5 text-right text-emerald-700 font-semibold">{m.credits > 0 ? aed(m.credits) : '—'}</td>
+                      <td className="px-4 py-2.5 text-right text-red-600   font-semibold">{m.debits  > 0 ? aed(m.debits)  : '—'}</td>
+                      <td className={`px-4 py-2.5 text-right font-bold ${m.netChange >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                        {m.netChange >= 0 ? '+' : ''}{aed(m.netChange)}
+                      </td>
+                      <td className="px-5 py-2.5 text-right font-semibold text-slate-800">
+                        {aed(m.balance)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* ── Transaction list (collapsible) ── */}
+          <div>
+            <button
+              onClick={() => setShowTxns(s => !s)}
+              className="w-full flex items-center justify-between px-5 py-3 hover:bg-slate-50 transition-colors text-left border-b border-slate-100"
+            >
+              <span className="text-xs font-semibold text-slate-700 flex items-center gap-2">
+                {showTxns ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                All Transactions ({transactions.length})
+              </span>
+              <span className="text-[10px] text-slate-400">Click to {showTxns ? 'hide' : 'show'}</span>
+            </button>
+
+            {showTxns && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs min-w-[700px]">
+                  <thead>
+                    <tr className="bg-slate-50 text-left sticky top-0">
+                      <th className="px-5 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wide w-24">Date</th>
+                      <th className="px-4 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wide">Type</th>
+                      <th className="px-4 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wide">Name</th>
+                      <th className="px-4 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wide">Memo / Description</th>
+                      <th className="px-4 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wide">Split</th>
+                      <th className="px-4 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wide text-center">In / Out</th>
+                      <th className="px-4 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wide text-right">Amount</th>
+                      <th className="px-5 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wide text-right">Balance</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {pagedTxns.map((tx, i) => {
+                      const isIn = tx.amount >= 0
+                      return (
+                        <tr key={`${tx.txnDate}-${i}`} className={`hover:bg-blue-50 transition-colors ${i % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'}`}>
+                          <td className="px-5 py-2 text-slate-500 font-mono whitespace-nowrap">{fmtDate(tx.txnDate)}</td>
+                          <td className="px-4 py-2 text-slate-600 whitespace-nowrap">
+                            <span className="bg-slate-100 rounded px-1.5 py-0.5 font-medium">{tx.txnType || '—'}</span>
+                          </td>
+                          <td className="px-4 py-2 font-medium text-slate-800 max-w-[160px]">
+                            <span className="block truncate" title={tx.name}>{tx.name || '—'}</span>
+                          </td>
+                          <td className="px-4 py-2 text-slate-400 italic max-w-[200px]">
+                            <span className="block truncate" title={tx.memo}>{tx.memo || '—'}</span>
+                          </td>
+                          <td className="px-4 py-2 text-slate-400 max-w-[140px]">
+                            <span className="block truncate" title={tx.split}>{tx.split || '—'}</span>
+                          </td>
+                          <td className="px-4 py-2 text-center">
+                            <span className={`inline-flex items-center gap-1 text-[10px] font-bold rounded-full px-2 py-0.5 ${
+                              isIn
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : 'bg-red-50    text-red-700    border border-red-200'
+                            }`}>
+                              {isIn ? '▲ In' : '▼ Out'}
+                            </span>
+                          </td>
+                          <td className={`px-4 py-2 text-right font-bold whitespace-nowrap ${isIn ? 'text-emerald-700' : 'text-red-600'}`}>
+                            {isIn ? '+' : ''}{aed(tx.amount)}
+                          </td>
+                          <td className="px-5 py-2 text-right text-slate-700 font-semibold whitespace-nowrap">
+                            {aed(tx.balance)}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+
+                {/* Pagination */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100 bg-slate-50">
+                    <button disabled={txnPage === 0} onClick={() => setTxnPage(p => p - 1)}
+                      className="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-200 disabled:opacity-40 hover:bg-white transition-colors">
+                      ← Previous
+                    </button>
+                    <span className="text-xs text-slate-500">
+                      Page {txnPage + 1} of {totalPages} · {transactions.length} transactions
+                    </span>
+                    <button disabled={txnPage >= totalPages - 1} onClick={() => setTxnPage(p => p + 1)}
+                      className="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-200 disabled:opacity-40 hover:bg-white transition-colors">
+                      Next →
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function AccountingPage() {
   const [status,   setStatus]   = useState<QBStatus | null>(null)
@@ -927,7 +1221,46 @@ export default function AccountingPage() {
   const [aiLoading, setAiLoading] = useState(false)
   const [aiError,   setAiError]   = useState('')
 
+  // ── Alostoura account state ──────────────────────────────────────────────────
+  const [alostouraLoading,  setAlostouraLoading]  = useState(true)
+  const [alostouraFound,    setAlostouraFound]    = useState(false)
+  const [alostouraMsg,      setAlostouraMsg]      = useState<string | undefined>()
+  const [alostouraSource,   setAlostouraSource]   = useState<'live' | 'snapshot' | undefined>()
+  const [alostouraFetched,  setAlostouraFetched]  = useState<string | undefined>()
+  const [alostouraAccount,  setAlostouraAccount]  = useState<{ id: string; name: string; type: string; subType?: string; balance?: number } | undefined>()
+  const [alostouraDateRange, setAlostouraDateRange] = useState({ from: yearStartStr(), to: todayStr() })
+  const [alostouraTransactions, setAlostouraTransactions] = useState<QBAlostouraTransaction[]>([])
+  const [alostouraMonthly,      setAlostouraMonthly]      = useState<QBAlostouraMonthSummary[]>([])
+  const [alostouraSum,          setAlostouraSum]          = useState<{
+    totalCredits: number; totalDebits: number; netChange: number; closingBalance?: number; txnCount: number
+  } | undefined>()
+
   const { projects: allProjects, loading: projectsLoading } = useAllProjects()
+
+  const fetchAlostoura = useCallback(async (range: { from: string; to: string }) => {
+    setAlostouraLoading(true)
+    try {
+      const params = new URLSearchParams({ from: range.from, to: range.to })
+      const res  = await fetch(`/api/quickbooks/alostoura?${params}`)
+      const data = await res.json()
+      setAlostouraFound(data.found ?? false)
+      setAlostouraMsg(data.message)
+      if (data.found) {
+        setAlostouraSource(data.source)
+        setAlostouraFetched(data.fetched_at)
+        setAlostouraAccount(data.account)
+        setAlostouraTransactions(data.transactions ?? [])
+        setAlostouraMonthly(data.monthly ?? [])
+        setAlostouraSum(data.summary)
+      }
+    } catch (e) {
+      console.error('fetchAlostoura error:', e)
+      setAlostouraFound(false)
+      setAlostouraMsg('Failed to load account data.')
+    } finally {
+      setAlostouraLoading(false)
+    }
+  }, [])
 
   const fetchClasses = useCallback(async (range: { from: string; to: string }) => {
     setClassesLoading(true)
@@ -961,7 +1294,10 @@ export default function AccountingPage() {
     ])
     if (statusRes.status === 'fulfilled') setStatus(statusRes.value)
     if (snapRes.status  === 'fulfilled' && snapRes.value.synced) setSnapshot(snapRes.value)
-    await fetchClasses(dateRange)
+    await Promise.all([
+      fetchClasses(dateRange),
+      fetchAlostoura(alostouraDateRange),
+    ])
   }
 
   useEffect(() => {
@@ -1162,6 +1498,21 @@ export default function AccountingPage() {
           debugInfo={classesDebug}
         />
       )}
+
+      {/* Alostoura Account */}
+      <AlostouraSection
+        loading={alostouraLoading}
+        found={alostouraFound}
+        message={alostouraMsg}
+        source={alostouraSource}
+        fetchedAt={alostouraFetched}
+        account={alostouraAccount}
+        transactions={alostouraTransactions}
+        monthly={alostouraMonthly}
+        summary={alostouraSum}
+        dateRange={alostouraDateRange}
+        onDateChange={r => { setAlostouraDateRange(r); fetchAlostoura(r) }}
+      />
 
       {/* AI Accountant Briefing */}
       <div className="mb-8">

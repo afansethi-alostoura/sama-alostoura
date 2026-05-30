@@ -188,6 +188,40 @@ export interface QBClassGroup {
   transactions: QBTransactionLine[]      // sorted date desc
 }
 
+// ── Chart of Accounts entry ───────────────────────────────────────────────────
+export interface QBAccount {
+  Id:                  string
+  Name:                string
+  FullyQualifiedName:  string
+  AccountType:         string   // 'Bank' | 'Expense' | 'Income' | etc.
+  AccountSubType?:     string
+  CurrentBalance?:     number
+  CurrencyRef?:        { value: string; name: string }
+  Active:              boolean
+}
+
+// ── A single line from the General Ledger report for the Alostoura account ───
+export interface QBAlostouraTransaction {
+  txnDate:  string   // YYYY-MM-DD
+  txnType:  string   // 'Bill Payment' | 'Check' | 'Deposit' | etc.
+  txnId:    string   // QB transaction id (from ColData id attribute)
+  name:     string   // vendor / customer name
+  memo:     string
+  split:    string   // contra-account name
+  amount:   number   // positive = credit/money-in, negative = debit/money-out
+  balance:  number   // running balance after this line
+}
+
+// ── Per-month rollup ──────────────────────────────────────────────────────────
+export interface QBAlostouraMonthSummary {
+  month:     string   // YYYY-MM
+  label:     string   // "Jan 2025"
+  credits:   number   // total money in  (sum of positive amounts)
+  debits:    number   // total money out (sum of absolute negative amounts)
+  netChange: number   // credits − debits
+  balance:   number   // closing running balance for the month
+}
+
 // ── Debug / reconciliation stats returned by /api/quickbooks/classes ─────────
 export interface QBDebugInfo {
   fetchedAt:   string
