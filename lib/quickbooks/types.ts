@@ -188,6 +188,37 @@ export interface QBClassGroup {
   transactions: QBTransactionLine[]      // sorted date desc
 }
 
+// ── Debug / reconciliation stats returned by /api/quickbooks/classes ─────────
+export interface QBDebugInfo {
+  fetchedAt:   string
+  source:      'live' | 'snapshot'
+  dateFilter:  { from: string | null; to: string | null }
+  purchases: {
+    fetched:        number
+    inRange:        number
+    expenseLines:   number
+    taggedLines:    number
+    untaggedLines:  number
+    qbHeaderTotal:  number
+    ourLineTotal:   number
+  }
+  bills: {
+    fetched:        number
+    inRange:        number
+    expenseLines:   number
+    taggedLines:    number
+    untaggedLines:  number
+    qbHeaderTotal:  number
+    ourLineTotal:   number
+  }
+  combined: {
+    qbHeaderTotal:  number
+    ourTotal:       number
+    untaggedTotal:  number
+    discrepancy:    number
+  }
+}
+
 // ── Cached snapshot stored in Supabase qb_snapshot ──────────
 export interface QBSnapshot {
   realm_id:     string

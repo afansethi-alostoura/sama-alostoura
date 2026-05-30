@@ -6,12 +6,12 @@ import {
   TrendingDown, ChevronDown, ChevronRight,
   BrainCircuit, TriangleAlert, Info, CircleX,
   CalendarRange, Receipt, CreditCard, FileText,
-  Building2,
+  Building2, Bug, CheckCircle2, Clock,
 } from 'lucide-react'
 import { AccountantBriefing } from '@/components/accounting/accountant-briefing'
 import { InvoiceTable }       from '@/components/accounting/invoice-table'
 import type {
-  QBSnapshot, QBClassExpenseRow, QBClass, QBClassGroup,
+  QBSnapshot, QBClassExpenseRow, QBClass, QBClassGroup, QBDebugInfo,
 } from '@/lib/quickbooks/types'
 import type { QBStatus }  from '@/lib/quickbooks/client'
 import { useAllProjects } from '@/hooks/useAllProjects'
@@ -274,6 +274,113 @@ function FindingsPanel({ findings, onClose }: { findings: Finding[]; onClose: ()
   )
 }
 
+// ── Debug Panel ───────────────────────────────────────────────────────────────
+function DebugPanel({ info, onClose }: { info: QBDebugInfo; onClose: () => void }) {
+  const { purchases: p, bills: b, combined: c } = info
+  const ok = Math.abs(c.discrepancy) < 1   // within AED 1 = fine
+
+  function Row({ label, val, sub, highlight }: { label: string; val: string; sub?: string; highlight?: 'red' | 'green' | 'amber' }) {
+    const col = highlight === 'red' ? 'text-red-700 font-bold'
+      : highlight === 'green'       ? 'text-emerald-700 font-bold'
+      : highlight === 'amber'       ? 'text-amber-700 font-semibold'
+      : 'text-slate-800'
+    return (
+      <tr className="border-b border-slate-100 last:border-0">
+        <td className="px-4 py-2 text-xs text-slate-500 w-56">{label}</td>
+        <td className={`px-4 py-2 text-xs font-mono ${col}`}>{val}</td>
+        {sub && <td className="px-4 py-2 text-[10px] text-slate-400 italic">{sub}</td>}
+      </tr>
+    )
+  }
+
+  return (
+    <div className="mb-6 bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+      <div className="px-5 py-3 bg-slate-800 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Bug className="w-4 h-4 text-slate-300" />
+          <span className="text-sm font-semibold text-white">Debug — Reconciliation Report</span>
+          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ml-2 ${
+            info.source === 'live' ? 'bg-emerald-500 text-white' : 'bg-amber-500 text-white'
+          }`}>
+            {info.source === 'live' ? '● LIVE QB API' : '● SNAPSHOT'}
+          </span>
+        </div>
+        <button onClick={onClose} className="text-slate-400 hover:text-white text-xs transition-colors">Close</button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-0 divide-y md:divide-y-0 md:divide-x divide-slate-100">
+
+        {/* Purchases */}
+        <div>
+          <p className="px-4 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-wide bg-slate-50 border-b border-slate-100">
+            Purchases ({p.fetched} fetched)
+          </p>
+          <table className="w-full">
+            <tbody>
+              <Row label="In date range"       val={`${p.inRange} txns`} />
+              <Row label="Expense lines"        val={`${p.expenseLines} lines`} sub="SubTotal lines excluded" />
+              <Row label="Class-tagged lines"   val={`${p.taggedLines} lines`}  highlight="green" />
+              <Row label="Untagged lines"       val={`${p.untaggedLines} lines`} highlight={p.untaggedLines > 0 ? 'amber' : undefined} />
+              <Row label="QB header total"      val={`AED ${p.qbHeaderTotal.toLocaleString()}`} sub="sum of TotalAmt" />
+              <Row label="Our line total"       val={`AED ${p.ourLineTotal.toLocaleString()}`}  highlight="green" />
+            </tbody>
+          </table>
+        </div>
+
+        {/* Bills */}
+        <div>
+          <p className="px-4 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-wide bg-slate-50 border-b border-slate-100">
+            Bills ({b.fetched} fetched)
+          </p>
+          <table className="w-full">
+            <tbody>
+              <Row label="In date range"       val={`${b.inRange} txns`} />
+              <Row label="Expense lines"        val={`${b.expenseLines} lines`} sub="SubTotal lines excluded" />
+              <Row label="Class-tagged lines"   val={`${b.taggedLines} lines`}  highlight="green" />
+              <Row label="Untagged lines"       val={`${b.untaggedLines} lines`} highlight={b.untaggedLines > 0 ? 'amber' : undefined} />
+              <Row label="QB header total"      val={`AED ${b.qbHeaderTotal.toLocaleString()}`} sub="sum of TotalAmt" />
+              <Row label="Our line total"       val={`AED ${b.ourLineTotal.toLocaleString()}`}  highlight="green" />
+            </tbody>
+          </table>
+        </div>
+
+        {/* Combined */}
+        <div>
+          <p className="px-4 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-wide bg-slate-50 border-b border-slate-100">
+            Combined Reconciliation
+          </p>
+          <table className="w-full">
+            <tbody>
+              <Row label="QB total (header sum)"  val={`AED ${c.qbHeaderTotal.toLocaleString()}`} sub="QB's own figure" />
+              <Row label="Our displayed total"     val={`AED ${c.ourTotal.toLocaleString()}`}      highlight="green" />
+              <Row label="Untagged (not shown)"    val={`AED ${c.untaggedTotal.toLocaleString()}`} highlight={c.untaggedTotal > 0 ? 'amber' : undefined}
+                sub="lines with no Class tag" />
+              <Row
+                label="Unexplained difference"
+                val={`AED ${Math.abs(c.discrepancy).toLocaleString()}`}
+                highlight={ok ? 'green' : 'red'}
+                sub={ok ? '✓ within rounding' : 'May include tax/VAT on header'}
+              />
+            </tbody>
+          </table>
+          <div className={`mx-4 my-3 flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${
+            ok ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
+          }`}>
+            {ok
+              ? <><CheckCircle2 className="w-3.5 h-3.5" /> Totals reconcile correctly</>
+              : <><TriangleAlert className="w-3.5 h-3.5" /> Discrepancy detected — check QB for tax/VAT on headers</>
+            }
+          </div>
+          <div className="px-4 pb-3 text-[10px] text-slate-400 space-y-0.5">
+            <p><Clock className="w-3 h-3 inline mr-1" />Fetched: {new Date(info.fetchedAt).toLocaleString('en-AE')}</p>
+            <p>Filter: {info.dateFilter.from ?? 'start'} → {info.dateFilter.to ?? 'today'}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Class Expenses Section ────────────────────────────────────────────────────
 function ClassExpensesSection({
   classGroups,
@@ -282,10 +389,13 @@ function ClassExpensesSection({
   classes,
   projects,
   syncedAt,
+  fetchedAt,
+  source,
   dateRange,
   onDateChange,
   onAiAnalyse,
   aiLoading,
+  debugInfo,
 }: {
   classGroups:   QBClassGroup[]
   expenses:      QBClassExpenseRow[]
@@ -293,14 +403,18 @@ function ClassExpensesSection({
   classes:       QBClass[]
   projects:      Array<{ id: string; name: string; contract_value: number; progress_percent: number; received_amount: number }>
   syncedAt?:     string
+  fetchedAt?:    string
+  source?:       'live' | 'snapshot'
   dateRange:     { from: string; to: string }
   onDateChange:  (r: { from: string; to: string }) => void
   onAiAnalyse:   () => void
   aiLoading:     boolean
+  debugInfo?:    QBDebugInfo
 }) {
   const [expanded,   setExpanded]   = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [expandAll,  setExpandAll]  = useState(false)
+  const [showDebug,  setShowDebug]  = useState(false)
 
   const totalExpenses = classGroups.reduce((s, g) => s + g.total, 0)
   const hasData       = classGroups.length > 0
@@ -326,15 +440,42 @@ function ClassExpensesSection({
         </button>
         <Tag className="w-4 h-4 text-indigo-500 flex-shrink-0" />
         <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-slate-900">Expenses by Project (QB Classes)</h3>
-          {syncedAt && (
-            <p className="text-xs text-slate-400 mt-0.5">
-              {classGroups.length} class{classGroups.length !== 1 ? 'es' : ''} ·
-              {classGroups.reduce((s, g) => s + g.txnCount, 0)} transactions ·
-              Total {aed(totalExpenses)} ·
-              Last sync {new Date(syncedAt).toLocaleString('en-AE')}
-            </p>
-          )}
+          <div className="flex items-center gap-2 flex-wrap">
+            <h3 className="font-semibold text-slate-900">Expenses by Project (QB Classes)</h3>
+            {source && (
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                source === 'live'
+                  ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                  : 'bg-amber-100  text-amber-700  border border-amber-200'
+              }`}>
+                {source === 'live' ? '● Live from QB' : '● Snapshot'}
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-1.5 flex-wrap">
+            {classGroups.length > 0 && (
+              <>
+                <span>{classGroups.length} class{classGroups.length !== 1 ? 'es' : ''}</span>
+                <span>·</span>
+                <span>{classGroups.reduce((s, g) => s + g.txnCount, 0)} transactions</span>
+                <span>·</span>
+                <span className="font-semibold text-slate-600">Total {aed(totalExpenses)}</span>
+                <span>·</span>
+              </>
+            )}
+            {fetchedAt && (
+              <span className="flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                Fetched {new Date(fetchedAt).toLocaleString('en-AE')}
+              </span>
+            )}
+            {!fetchedAt && syncedAt && (
+              <span className="flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                Last sync {new Date(syncedAt).toLocaleString('en-AE')}
+              </span>
+            )}
+          </p>
         </div>
 
         {/* Controls */}
@@ -383,6 +524,21 @@ function ClassExpensesSection({
               : <><BrainCircuit className="w-3.5 h-3.5" /> AI Accountant</>
             }
           </button>
+
+          {/* Debug */}
+          {debugInfo && (
+            <button
+              onClick={() => setShowDebug(d => !d)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${
+                showDebug
+                  ? 'bg-slate-800 text-white border-slate-700'
+                  : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'
+              }`}
+            >
+              <Bug className="w-3.5 h-3.5" />
+              Debug
+            </button>
+          )}
         </div>
       </div>
 
@@ -408,6 +564,25 @@ function ClassExpensesSection({
         </div>
       ) : (
         <div>
+          {/* Debug panel (inline, inside section) */}
+          {showDebug && debugInfo && (
+            <div className="border-b border-slate-200">
+              <DebugPanel info={debugInfo} onClose={() => setShowDebug(false)} />
+            </div>
+          )}
+
+          {/* Untagged lines warning */}
+          {debugInfo && debugInfo.combined.untaggedTotal > 0 && (
+            <div className="px-5 py-2.5 bg-amber-50 border-b border-amber-100 flex items-center gap-2 text-xs text-amber-700">
+              <TriangleAlert className="w-3.5 h-3.5 flex-shrink-0" />
+              <span>
+                <strong>AED {debugInfo.combined.untaggedTotal.toLocaleString()}</strong> in expenses has no Class tag in QuickBooks
+                ({debugInfo.purchases.untaggedLines + debugInfo.bills.untaggedLines} lines) — not shown in the breakdown below.
+                Tag those transactions in QB → Sync QB to include them.
+              </span>
+            </div>
+          )}
+
           {/* Grand total bar */}
           <div className="px-5 py-2.5 bg-indigo-50 border-b border-indigo-100 flex items-center justify-between text-xs">
             <span className="text-indigo-600 font-medium">
@@ -601,6 +776,9 @@ export default function AccountingPage() {
   const [accountNames,    setAccountNames]    = useState<string[]>([])
   const [classes,         setClasses]         = useState<QBClass[]>([])
   const [classesSyncedAt, setClassesSyncedAt] = useState<string | undefined>()
+  const [classesFetchedAt, setClassesFetchedAt] = useState<string | undefined>()
+  const [classesSource,   setClassesSource]   = useState<'live' | 'snapshot' | undefined>()
+  const [classesDebug,    setClassesDebug]    = useState<QBDebugInfo | undefined>()
   const [classesLoading,  setClassesLoading]  = useState(false)
   const [dateRange,       setDateRange]       = useState({ from: yearStartStr(), to: todayStr() })
 
@@ -619,11 +797,14 @@ export default function AccountingPage() {
       const res  = await fetch(`/api/quickbooks/classes?${params}`)
       const data = await res.json()
       if (data.synced) {
-        setClassGroups(data.classGroups  ?? [])
-        setExpenses(data.expenses        ?? [])
+        setClassGroups(data.classGroups   ?? [])
+        setExpenses(data.expenses         ?? [])
         setAccountNames(data.accountNames ?? [])
-        setClasses(data.classes          ?? [])
+        setClasses(data.classes           ?? [])
         setClassesSyncedAt(data.synced_at)
+        setClassesFetchedAt(data.fetched_at)
+        setClassesSource(data.source)
+        setClassesDebug(data.debug ?? undefined)
       }
     } catch (e) {
       console.error('fetchClasses error:', e)
@@ -831,10 +1012,13 @@ export default function AccountingPage() {
           classes={classes}
           projects={allProjects}
           syncedAt={classesSyncedAt}
+          fetchedAt={classesFetchedAt}
+          source={classesSource}
           dateRange={dateRange}
           onDateChange={handleDateChange}
           onAiAnalyse={runAiAnalysis}
           aiLoading={aiLoading}
+          debugInfo={classesDebug}
         />
       )}
 
