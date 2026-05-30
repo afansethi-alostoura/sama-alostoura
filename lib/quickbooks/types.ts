@@ -165,6 +165,29 @@ export interface QBClassExpenseRow {
   total:     number
 }
 
+// ── Individual expense line (for the accordion tree view) ────
+export interface QBTransactionLine {
+  txnId:       string
+  lineId:      string         // txnId + lineNum for uniqueness
+  txnDate:     string         // YYYY-MM-DD
+  vendor:      string
+  accountName: string
+  amount:      number
+  type:        'purchase' | 'bill'
+  paymentType: string         // 'Cash' | 'Check' | 'CreditCard' | 'Bill'
+  note:        string         // private note or line description
+}
+
+// ── Class accordion group (class → sorted transactions) ──────
+export interface QBClassGroup {
+  classId:      string
+  className:    string
+  total:        number
+  txnCount:     number        // number of line items
+  accountTotals: Record<string, number>  // accountName → subtotal
+  transactions: QBTransactionLine[]      // sorted date desc
+}
+
 // ── Cached snapshot stored in Supabase qb_snapshot ──────────
 export interface QBSnapshot {
   realm_id:     string

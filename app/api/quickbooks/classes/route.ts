@@ -1,73 +1,72 @@
 /**
  * GET /api/quickbooks/classes?from=YYYY-MM-DD&to=YYYY-MM-DD
  *
- * Returns QB Classes with a fully dynamic expense breakdown —
- * every unique QBO Account name that appears in the date range becomes
- * its own column. No pre-set categories.
- *
- * Response:
- *   { synced, synced_at, classes, accountNames, expenses, counts }
- *   expenses[n].accounts = { "Concrete & Aggregates": 12500, "Labour": 8200, … }
+ * Returns:
+ *  - classGroups  — hierarchical: class → individual transaction lines (for tree UI)
+ *  - expenses     — aggregated per-class account pivot (for AI agent)
+ *  - accountNames — all unique account names in range (for AI agent)
  */
-import { NextRequest, NextResponse }       from 'next/server'
+import { NextRequest, NextResponse }           from 'next/server'
 import { supabaseAdmin, isSupabaseConfigured } from '@/lib/supabase'
-import type { QBClass, QBPurchase, QBBill, QBClassExpenseRow } from '@/lib/quickbooks/types'
+import type {
+  QBClass, QBPurchase, QBBill,
+  QBClassExpenseRow, QBClassGroup, QBTransactionLine,
+} from '@/lib/quickbooks/types'
 
 export const dynamic = 'force-dynamic'
 
-// ── Date filter helper ────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 function inRange(txnDate: string, from: string | null, to: string | null): boolean {
   if (from && txnDate < from) return false
   if (to   && txnDate > to)   return false
   return true
 }
 
-// ── Resolve class ref: prefer line-level, fall back to header ─────────────────
 function resolveClass(
-  lineClassRef:   { value: string; name: string } | undefined,
-  headerClassRef: { value: string; name: string } | undefined,
+  lineRef:   { value: string; name: string } | undefined,
+  headerRef: { value: string; name: string } | undefined,
 ): { id: string; name: string } | null {
-  const ref = lineClassRef ?? headerClassRef
+  const ref = lineRef ?? headerRef
   return ref ? { id: ref.value, name: ref.name } : null
 }
 
-// ── Build dynamic expense breakdown ──────────────────────────────────────────
-function buildExpenses(
+// ── Build class groups (hierarchical) ────────────────────────────────────────
+function buildClassGroups(
   classes:   QBClass[],
   purchases: QBPurchase[],
   bills:     QBBill[],
   from:      string | null,
   to:        string | null,
-): { expenses: QBClassExpenseRow[]; accountNames: string[] } {
+): QBClassGroup[] {
 
-  const rows         = new Map<string, QBClassExpenseRow>()
-  const accountNames = new Set<string>()
-
-  // Build a classId → displayName lookup
+  // classId → display name
   const classNameById = new Map<string, string>()
-  for (const c of classes) {
-    classNameById.set(c.Id, c.FullyQualifiedName ?? c.Name)
-  }
+  for (const c of classes) classNameById.set(c.Id, c.FullyQualifiedName ?? c.Name)
 
-  function ensureRow(classId: string, className: string): QBClassExpenseRow {
-    if (!rows.has(classId)) {
-      rows.set(classId, { classId, className, accounts: {}, total: 0 })
+  const groups = new Map<string, QBClassGroup>()
+
+  function ensureGroup(classId: string, className: string): QBClassGroup {
+    if (!groups.has(classId)) {
+      groups.set(classId, { classId, className, total: 0, txnCount: 0, accountTotals: {}, transactions: [] })
     }
-    return rows.get(classId)!
+    return groups.get(classId)!
   }
 
-  function addAmount(classId: string, className: string, accountName: string, amount: number) {
-    if (amount <= 0) return
-    const clean = accountName.trim() || 'Uncategorized'
-    accountNames.add(clean)
-    const row = ensureRow(classId, className)
-    row.accounts[clean] = (row.accounts[clean] ?? 0) + amount
-    row.total           += amount
+  function addLine(line: QBTransactionLine, classId: string, className: string) {
+    const g = ensureGroup(classId, className)
+    g.transactions.push(line)
+    g.total += line.amount
+    g.txnCount++
+    g.accountTotals[line.accountName] = (g.accountTotals[line.accountName] ?? 0) + line.amount
   }
 
-  // ── Purchases ────────────────────────────────────────────────────────────────
+  let lineSeq = 0
+
+  // ── Process Purchases ────────────────────────────────────────────────────────
   for (const p of purchases) {
     if (!inRange(p.TxnDate, from, to)) continue
+    const vendor = p.EntityRef?.name ?? 'Unknown Vendor'
+    const note   = p.PrivateNote ?? ''
 
     for (const line of p.Line ?? []) {
       const amount = line.Amount ?? 0
@@ -75,21 +74,32 @@ function buildExpenses(
 
       const abd = line.AccountBasedExpenseLineDetail
       const ibd = line.ItemBasedExpenseLineDetail
-
-      // Resolve class (line-level first, then header)
       const cls = resolveClass(abd?.ClassRef ?? ibd?.ClassRef, p.ClassRef)
       if (!cls) continue
 
-      const className  = classNameById.get(cls.id) ?? cls.name ?? `Class ${cls.id}`
+      const className   = classNameById.get(cls.id) ?? cls.name ?? `Class ${cls.id}`
       const accountName = abd?.AccountRef?.name ?? ibd?.ItemRef?.name ?? 'Uncategorized'
+      const lineNote    = line.Description ?? note
 
-      addAmount(cls.id, className, accountName, amount)
+      addLine({
+        txnId:       p.Id,
+        lineId:      `${p.Id}-${++lineSeq}`,
+        txnDate:     p.TxnDate,
+        vendor,
+        accountName,
+        amount,
+        type:        'purchase',
+        paymentType: p.PaymentType ?? 'Purchase',
+        note:        lineNote,
+      }, cls.id, className)
     }
   }
 
-  // ── Bills ────────────────────────────────────────────────────────────────────
+  // ── Process Bills ────────────────────────────────────────────────────────────
   for (const b of bills) {
     if (!inRange(b.TxnDate, from, to)) continue
+    const vendor = b.VendorRef?.name ?? 'Unknown Vendor'
+    const note   = b.PrivateNote ?? ''
 
     for (const line of b.Line ?? []) {
       const amount = line.Amount ?? 0
@@ -97,24 +107,47 @@ function buildExpenses(
 
       const abd = line.AccountBasedExpenseLineDetail
       const ibd = line.ItemBasedExpenseLineDetail
-
       const cls = resolveClass(abd?.ClassRef ?? ibd?.ClassRef, b.ClassRef)
       if (!cls) continue
 
-      const className  = classNameById.get(cls.id) ?? cls.name ?? `Class ${cls.id}`
+      const className   = classNameById.get(cls.id) ?? cls.name ?? `Class ${cls.id}`
       const accountName = abd?.AccountRef?.name ?? ibd?.ItemRef?.name ?? 'Uncategorized'
+      const lineNote    = line.Description ?? note
 
-      addAmount(cls.id, className, accountName, amount)
+      addLine({
+        txnId:       b.Id,
+        lineId:      `${b.Id}-${++lineSeq}`,
+        txnDate:     b.TxnDate,
+        vendor,
+        accountName,
+        amount,
+        type:        'bill',
+        paymentType: 'Bill',
+        note:        lineNote,
+      }, cls.id, className)
     }
   }
 
-  // Sort account names alphabetically for stable column order
-  const sortedAccounts = Array.from(accountNames).sort((a, b) => a.localeCompare(b))
+  // Sort transactions within each group: date desc, then amount desc
+  for (const g of groups.values()) {
+    g.transactions.sort((a, b) =>
+      b.txnDate.localeCompare(a.txnDate) || b.amount - a.amount
+    )
+  }
 
-  // Sort rows by total descending
-  const sortedRows = Array.from(rows.values()).sort((a, b) => b.total - a.total)
+  return Array.from(groups.values()).sort((a, b) => b.total - a.total)
+}
 
-  return { expenses: sortedRows, accountNames: sortedAccounts }
+// ── Build pivot (for AI agent) ────────────────────────────────────────────────
+function buildExpenses(
+  classGroups: QBClassGroup[],
+): { expenses: QBClassExpenseRow[]; accountNames: string[] } {
+  const accountSet = new Set<string>()
+  const expenses: QBClassExpenseRow[] = classGroups.map(g => {
+    for (const acc of Object.keys(g.accountTotals)) accountSet.add(acc)
+    return { classId: g.classId, className: g.className, accounts: g.accountTotals, total: g.total }
+  })
+  return { expenses, accountNames: Array.from(accountSet).sort((a, b) => a.localeCompare(b)) }
 }
 
 // ── Route handler ─────────────────────────────────────────────────────────────
@@ -124,7 +157,7 @@ export async function GET(req: NextRequest) {
   }
 
   const { searchParams } = new URL(req.url)
-  const from = searchParams.get('from') || null   // YYYY-MM-DD or null
+  const from = searchParams.get('from') || null
   const to   = searchParams.get('to')   || null
 
   try {
@@ -136,11 +169,8 @@ export async function GET(req: NextRequest) {
 
     if (error || !data) {
       return NextResponse.json({
-        synced: false,
-        message: 'No QB data yet — run a sync first.',
-        expenses: [],
-        accountNames: [],
-        classes: [],
+        synced: false, message: 'No QB data yet — run a sync first.',
+        classGroups: [], expenses: [], accountNames: [], classes: [],
       })
     }
 
@@ -148,29 +178,28 @@ export async function GET(req: NextRequest) {
     const purchases: QBPurchase[] = (data.purchases ?? []) as QBPurchase[]
     const bills:     QBBill[]     = (data.bills     ?? []) as QBBill[]
 
-    const { expenses, accountNames } = buildExpenses(classes, purchases, bills, from, to)
+    const classGroups               = buildClassGroups(classes, purchases, bills, from, to)
+    const { expenses, accountNames } = buildExpenses(classGroups)
 
-    // Date range of available data (for UI defaults)
-    const allDates = [
-      ...purchases.map(p => p.TxnDate),
-      ...bills.map(b => b.TxnDate),
-    ].filter(Boolean).sort()
+    const allDates = [...purchases.map(p => p.TxnDate), ...bills.map(b => b.TxnDate)]
+      .filter(Boolean).sort()
 
     return NextResponse.json({
       synced:       true,
       synced_at:    data.synced_at,
       classes,
+      classGroups,
       accountNames,
       expenses,
       dataRange: {
-        earliest: allDates[0]               ?? null,
-        latest:   allDates[allDates.length - 1] ?? null,
+        earliest: allDates[0]                    ?? null,
+        latest:   allDates[allDates.length - 1]  ?? null,
       },
       counts: {
         classes:       classes.length,
         purchases:     purchases.length,
         bills:         bills.length,
-        expense_rows:  expenses.length,
+        classGroups:   classGroups.length,
         account_types: accountNames.length,
       },
     })
