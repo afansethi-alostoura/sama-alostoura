@@ -216,6 +216,43 @@ export async function fetchBills(maxResults = 300): Promise<QBBill[]> {
   )
 }
 
+/**
+ * Fetch purchases filtered to a specific date range directly from QB API.
+ * Uses QB IDS SQL WHERE clause — no result-count cap surprises.
+ */
+export async function fetchPurchasesInRange(
+  from: string | null,
+  to:   string | null,
+  maxResults = 1000,
+): Promise<QBPurchase[]> {
+  const conditions: string[] = []
+  if (from) conditions.push(`TxnDate >= '${from}'`)
+  if (to)   conditions.push(`TxnDate <= '${to}'`)
+  const where = conditions.length ? ` WHERE ${conditions.join(' AND ')}` : ''
+  return qbQuery<QBPurchase>(
+    `SELECT * FROM Purchase${where} ORDERBY TxnDate DESC MAXRESULTS ${maxResults}`,
+    'Purchase'
+  )
+}
+
+/**
+ * Fetch bills filtered to a specific date range directly from QB API.
+ */
+export async function fetchBillsInRange(
+  from: string | null,
+  to:   string | null,
+  maxResults = 1000,
+): Promise<QBBill[]> {
+  const conditions: string[] = []
+  if (from) conditions.push(`TxnDate >= '${from}'`)
+  if (to)   conditions.push(`TxnDate <= '${to}'`)
+  const where = conditions.length ? ` WHERE ${conditions.join(' AND ')}` : ''
+  return qbQuery<QBBill>(
+    `SELECT * FROM Bill${where} ORDERBY TxnDate DESC MAXRESULTS ${maxResults}`,
+    'Bill'
+  )
+}
+
 // ── Status check ─────────────────────────────────────────────
 export interface QBStatus {
   connected: boolean

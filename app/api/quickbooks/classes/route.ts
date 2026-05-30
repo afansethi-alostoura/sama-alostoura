@@ -1,13 +1,20 @@
 /**
  * GET /api/quickbooks/classes?from=YYYY-MM-DD&to=YYYY-MM-DD
  *
+ * Strategy:
+ *  - If QB is connected (valid tokens) AND a date range is supplied →
+ *      query QB API directly so the filter is exact and not capped by snapshot size.
+ *  - Otherwise → fall back to the cached Supabase snapshot with in-memory filtering.
+ *
  * Returns:
  *  - classGroups  — hierarchical: class → individual transaction lines (for tree UI)
  *  - expenses     — aggregated per-class account pivot (for AI agent)
  *  - accountNames — all unique account names in range (for AI agent)
  */
-import { NextRequest, NextResponse }           from 'next/server'
-import { supabaseAdmin, isSupabaseConfigured } from '@/lib/supabase'
+import { NextRequest, NextResponse }                    from 'next/server'
+import { supabaseAdmin, isSupabaseConfigured }          from '@/lib/supabase'
+import { loadTokensAsync }                              from '@/lib/quickbooks/tokens'
+import { fetchPurchasesInRange, fetchBillsInRange }     from '@/lib/quickbooks/client'
 import type {
   QBClass, QBPurchase, QBBill,
   QBClassExpenseRow, QBClassGroup, QBTransactionLine,
@@ -161,6 +168,7 @@ export async function GET(req: NextRequest) {
   const to   = searchParams.get('to')   || null
 
   try {
+    // ── Always load classes list + synced_at from snapshot ────────────────────
     const { data, error } = await supabaseAdmin
       .from('qb_snapshot')
       .select('classes, purchases, bills, synced_at')
@@ -174,11 +182,34 @@ export async function GET(req: NextRequest) {
       })
     }
 
-    const classes:   QBClass[]    = (data.classes   ?? []) as QBClass[]
-    const purchases: QBPurchase[] = (data.purchases ?? []) as QBPurchase[]
-    const bills:     QBBill[]     = (data.bills     ?? []) as QBBill[]
+    const classes: QBClass[] = (data.classes ?? []) as QBClass[]
 
-    const classGroups               = buildClassGroups(classes, purchases, bills, from, to)
+    // ── Decide data source: live QB API vs snapshot ────────────────────────────
+    let purchases: QBPurchase[]
+    let bills:     QBBill[]
+    let source:    'live' | 'snapshot'
+
+    const tokens  = await loadTokensAsync()
+    const hasRange = from || to
+
+    if (tokens && hasRange) {
+      // Fetch directly from QB API with exact date filter
+      console.log(`[QB Classes] Live fetch from QB: from=${from} to=${to}`)
+      ;[purchases, bills] = await Promise.all([
+        fetchPurchasesInRange(from, to),
+        fetchBillsInRange(from, to),
+      ])
+      source = 'live'
+    } else {
+      // Fall back to snapshot (no QB connection, or no date range set)
+      purchases = (data.purchases ?? []) as QBPurchase[]
+      bills     = (data.bills     ?? []) as QBBill[]
+      source    = 'snapshot'
+      // Apply in-memory date filter if dates were given but QB isn't connected
+      // (inRange() is still called inside buildClassGroups so this is handled automatically)
+    }
+
+    const classGroups                = buildClassGroups(classes, purchases, bills, from, to)
     const { expenses, accountNames } = buildExpenses(classGroups)
 
     const allDates = [...purchases.map(p => p.TxnDate), ...bills.map(b => b.TxnDate)]
@@ -187,6 +218,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       synced:       true,
       synced_at:    data.synced_at,
+      source,                         // 'live' | 'snapshot' — useful for debugging
       classes,
       classGroups,
       accountNames,
