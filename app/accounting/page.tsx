@@ -1,13 +1,17 @@
 'use client'
-import { useEffect, useState } from 'react'
-import Link                    from 'next/link'
-import { RefreshCw, Loader2, Link2, TrendingUp, TrendingDown, Wallet, AlertCircle } from 'lucide-react'
-import { AccountantBriefing }  from '@/components/accounting/accountant-briefing'
-import { InvoiceTable }        from '@/components/accounting/invoice-table'
-import type { QBSnapshot }     from '@/lib/quickbooks/types'
-import type { QBStatus }       from '@/lib/quickbooks/client'
-import { useAllProjects }      from '@/hooks/useAllProjects'
+import { useEffect, useState }    from 'react'
+import Link                        from 'next/link'
+import {
+  RefreshCw, Loader2, Link2, AlertCircle, Tag,
+  TrendingDown, ChevronDown, ChevronRight,
+} from 'lucide-react'
+import { AccountantBriefing }     from '@/components/accounting/accountant-briefing'
+import { InvoiceTable }           from '@/components/accounting/invoice-table'
+import type { QBSnapshot, QBClassExpenseRow, QBClass } from '@/lib/quickbooks/types'
+import type { QBStatus }          from '@/lib/quickbooks/client'
+import { useAllProjects }         from '@/hooks/useAllProjects'
 
+// ── Stat card ─────────────────────────────────────────────────────────────────
 function StatCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color: string }) {
   return (
     <div className="bg-white rounded-xl border border-slate-100 p-5 shadow-card card-hover">
@@ -18,22 +22,238 @@ function StatCard({ label, value, sub, color }: { label: string; value: string; 
   )
 }
 
+// ── Expense category badge ────────────────────────────────────────────────────
+function CatBadge({ label, color }: { label: string; color: string }) {
+  return (
+    <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${color}`}>
+      {label}
+    </span>
+  )
+}
+
+// ── Currency formatter ────────────────────────────────────────────────────────
+function aed(v: number) {
+  if (v === 0) return '—'
+  if (v >= 1_000_000) return `AED ${(v / 1_000_000).toFixed(2)}M`
+  if (v >= 1_000)     return `AED ${(v / 1_000).toFixed(1)}K`
+  return `AED ${v.toFixed(0)}`
+}
+
+// ── Expense category meta ─────────────────────────────────────────────────────
+const EXPENSE_CATS: Array<{
+  key: keyof Omit<QBClassExpenseRow, 'classId' | 'className' | 'total'>
+  label: string
+  color: string
+}> = [
+  { key: 'materials',      label: 'Materials',      color: 'bg-blue-100   text-blue-800'  },
+  { key: 'labor',          label: 'Labor',          color: 'bg-purple-100 text-purple-800'},
+  { key: 'subcontractors', label: 'Subcontractors', color: 'bg-amber-100  text-amber-800' },
+  { key: 'overhead',       label: 'Overhead',       color: 'bg-slate-100  text-slate-700' },
+  { key: 'other',          label: 'Other',          color: 'bg-rose-100   text-rose-700'  },
+]
+
+// ── Class expenses section ────────────────────────────────────────────────────
+function ClassExpensesSection({
+  expenses,
+  classes,
+  projects,
+  syncedAt,
+}: {
+  expenses:  QBClassExpenseRow[]
+  classes:   QBClass[]
+  projects:  Array<{ id: string; name: string; contract_value: number }>
+  syncedAt?: string
+}) {
+  const [expanded, setExpanded] = useState(true)
+  const [searchTerm, setSearchTerm] = useState('')
+
+  const totalExpenses = expenses.reduce((s, r) => s + r.total, 0)
+  const hasData = expenses.length > 0
+
+  // Match class name to project name (fuzzy — normalize & compare)
+  function findProject(className: string) {
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+    return projects.find(p => norm(p.name).includes(norm(className)) || norm(className).includes(norm(p.name)))
+  }
+
+  const filtered = expenses.filter(r =>
+    !searchTerm || r.className.toLowerCase().includes(searchTerm.toLowerCase())
+  )
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden mb-8">
+      {/* Header */}
+      <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setExpanded(e => !e)}
+            className="text-slate-400 hover:text-slate-700 transition-colors"
+          >
+            {expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+          </button>
+          <Tag className="w-4 h-4 text-indigo-500" />
+          <div>
+            <h3 className="font-semibold text-slate-900">Expenses by Project (QB Classes)</h3>
+            {syncedAt && (
+              <p className="text-xs text-slate-400 mt-0.5">
+                {expenses.length} class{expenses.length !== 1 ? 'es' : ''} ·
+                Total AED {(totalExpenses / 1000).toFixed(1)}K ·
+                Synced {new Date(syncedAt).toLocaleString('en-AE')}
+              </p>
+            )}
+          </div>
+        </div>
+        {hasData && (
+          <div className="flex items-center gap-3 flex-wrap">
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              placeholder="Filter by class…"
+              className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-indigo-300 w-40"
+            />
+          </div>
+        )}
+      </div>
+
+      {!expanded ? null : !hasData ? (
+        <div className="px-5 py-8 text-center">
+          <TrendingDown className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+          <p className="text-sm text-slate-500 font-medium">No class-based expenses found</p>
+          <p className="text-xs text-slate-400 mt-1">
+            {classes.length === 0
+              ? 'No QB Classes found. Create Classes in QuickBooks and tag expense lines with a Class to see the breakdown here.'
+              : 'Classes exist but no expense transactions are tagged with a Class yet.'}
+          </p>
+          <div className="mt-4 text-left max-w-sm mx-auto bg-indigo-50 border border-indigo-100 rounded-xl p-4 text-xs text-indigo-700">
+            <p className="font-semibold mb-1">How to set up:</p>
+            <ol className="list-decimal list-inside space-y-1">
+              <li>In QuickBooks, go to <strong>Settings → All Lists → Classes</strong></li>
+              <li>Create a Class for each project (e.g. &ldquo;Villa Al Khawaneej&rdquo;)</li>
+              <li>When entering Bills or Expenses, select the Class on each line</li>
+              <li>Run a QuickBooks Sync here — expenses will appear by project</li>
+            </ol>
+          </div>
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[800px]">
+            <thead>
+              <tr className="bg-slate-50 text-xs text-slate-500">
+                <th className="text-left px-5 py-3 font-medium">QB Class / Project</th>
+                <th className="text-left px-5 py-3 font-medium">Linked Project</th>
+                {EXPENSE_CATS.map(c => (
+                  <th key={c.key} className="text-right px-3 py-3 font-medium whitespace-nowrap">
+                    <CatBadge label={c.label} color={c.color} />
+                  </th>
+                ))}
+                <th className="text-right px-5 py-3 font-medium">Total Expenses</th>
+                <th className="text-right px-5 py-3 font-medium">% of Budget</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {filtered.map(row => {
+                const linked = findProject(row.className)
+                const pct = linked ? Math.round((row.total / linked.contract_value) * 100) : null
+                const pctColor = pct === null ? '' : pct > 80 ? 'text-red-600' : pct > 60 ? 'text-amber-600' : 'text-emerald-600'
+
+                return (
+                  <tr key={row.classId} className="hover:bg-slate-50">
+                    <td className="px-5 py-3.5 font-medium text-slate-800">{row.className}</td>
+                    <td className="px-5 py-3.5">
+                      {linked ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2 py-0.5">
+                          ✓ {linked.name}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-xs text-slate-400 bg-slate-50 border border-slate-200 rounded-full px-2 py-0.5">
+                          Unlinked
+                        </span>
+                      )}
+                    </td>
+                    {EXPENSE_CATS.map(c => (
+                      <td key={c.key} className="px-3 py-3.5 text-right text-slate-700 font-mono text-xs">
+                        {aed(row[c.key])}
+                      </td>
+                    ))}
+                    <td className="px-5 py-3.5 text-right font-bold text-slate-900">
+                      {aed(row.total)}
+                    </td>
+                    <td className={`px-5 py-3.5 text-right font-semibold ${pctColor}`}>
+                      {pct !== null ? `${pct}%` : '—'}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+
+            {/* Totals row */}
+            {filtered.length > 1 && (
+              <tfoot>
+                <tr className="bg-slate-50 font-bold">
+                  <td className="px-5 py-3.5 text-slate-700" colSpan={2}>
+                    Totals ({filtered.length} classes)
+                  </td>
+                  {EXPENSE_CATS.map(c => (
+                    <td key={c.key} className="px-3 py-3.5 text-right text-slate-700 font-mono text-xs">
+                      {aed(filtered.reduce((s, r) => s + r[c.key], 0))}
+                    </td>
+                  ))}
+                  <td className="px-5 py-3.5 text-right text-slate-900">
+                    {aed(filtered.reduce((s, r) => s + r.total, 0))}
+                  </td>
+                  <td className="px-5 py-3.5" />
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      )}
+
+      {/* Category legend */}
+      {expanded && hasData && (
+        <div className="px-5 py-3 border-t border-slate-100 flex items-center gap-3 flex-wrap">
+          <span className="text-xs text-slate-400 font-medium">Categories:</span>
+          {EXPENSE_CATS.map(c => (
+            <CatBadge key={c.key} label={c.label} color={c.color} />
+          ))}
+          <span className="text-xs text-slate-400 ml-auto">
+            Based on QBO account names · % of Budget = total expenses ÷ contract value
+          </span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 export default function AccountingPage() {
-  const [status,   setStatus]   = useState<QBStatus | null>(null)
-  const [snapshot, setSnapshot] = useState<QBSnapshot | null>(null)
-  const [syncing,  setSyncing]  = useState(false)
-  const [loading,  setLoading]  = useState(true)
+  const [status,    setStatus]    = useState<QBStatus | null>(null)
+  const [snapshot,  setSnapshot]  = useState<QBSnapshot | null>(null)
+  const [expenses,  setExpenses]  = useState<QBClassExpenseRow[]>([])
+  const [classes,   setClasses]   = useState<QBClass[]>([])
+  const [classesSyncedAt, setClassesSyncedAt] = useState<string | undefined>(undefined)
+  const [syncing,   setSyncing]   = useState(false)
+  const [loading,   setLoading]   = useState(true)
+
+  async function loadAll() {
+    const [statusRes, snapRes, classRes] = await Promise.allSettled([
+      fetch('/api/quickbooks/status').then(r => r.json()),
+      fetch('/api/quickbooks/sync').then(r => r.json()),
+      fetch('/api/quickbooks/classes').then(r => r.json()),
+    ])
+
+    if (statusRes.status === 'fulfilled') setStatus(statusRes.value)
+    if (snapRes.status  === 'fulfilled' && snapRes.value.synced)  setSnapshot(snapRes.value)
+    if (classRes.status === 'fulfilled' && classRes.value.synced) {
+      setExpenses(classRes.value.expenses ?? [])
+      setClasses(classRes.value.classes ?? [])
+      setClassesSyncedAt(classRes.value.synced_at)
+    }
+  }
 
   useEffect(() => {
-    Promise.all([
-      fetch('/api/quickbooks/status').then(r => r.json()).catch(() => ({ connected: false, client_configured: false, environment: 'production' })),
-      fetch('/api/quickbooks/sync').then(r => r.json()).catch(() => ({ synced: false })),
-    ]).then(([s, snap]) => {
-      setStatus(s)
-      if (snap && snap.synced) setSnapshot(snap)
-    }).catch(err => {
-      console.error('Page load error:', err)
-    }).finally(() => setLoading(false))
+    loadAll().catch(console.error).finally(() => setLoading(false))
   }, [])
 
   async function syncNow() {
@@ -42,30 +262,26 @@ export default function AccountingPage() {
       const r = await fetch('/api/quickbooks/sync', { method: 'POST' })
       const d = await r.json()
       if (d.success) {
-        const snap = await fetch('/api/quickbooks/sync').then(r => r.json())
-        if (snap.synced) setSnapshot(snap)
-        const s = await fetch('/api/quickbooks/status').then(r => r.json())
-        setStatus(s)
+        await loadAll()
       }
     } finally { setSyncing(false) }
   }
 
-  // Single source of truth — reads from /api/projects (Supabase + file data merged)
   const { projects: allProjects, loading: projectsLoading } = useAllProjects()
-  const projects = allProjects  // all statuses shown in financials
 
-  // Financial stats — prefer QB data, fall back to project db
+  // Financial stats
   const totalBilled      = snapshot?.invoices.reduce((s, i) => s + i.TotalAmt, 0)
-    ?? projects.reduce((s, p) => s + p.contract_value, 0)
+    ?? allProjects.reduce((s, p) => s + p.contract_value, 0)
   const totalOutstanding = snapshot?.invoices.reduce((s, i) => s + i.Balance, 0)
-    ?? projects.reduce((s, p) => s + (p.contract_value - p.received_amount), 0)
+    ?? allProjects.reduce((s, p) => s + (p.contract_value - p.received_amount), 0)
   const totalReceived    = snapshot?.payments.reduce((s, p) => s + p.TotalAmt, 0)
-    ?? projects.reduce((s, p) => s + p.received_amount, 0)
+    ?? allProjects.reduce((s, p) => s + p.received_amount, 0)
   const overdueCount     = snapshot?.invoices.filter(i => i.Balance > 0 && i.DueDate && new Date(i.DueDate) < new Date()).length ?? 0
-  const vatDue           = totalReceived * 0.05  // 5% UAE VAT estimate
+  const vatDue           = totalReceived * 0.05
 
   return (
     <div className="p-4 sm:p-6 max-w-[1400px] mx-auto animate-fade-in">
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
         <div>
@@ -83,17 +299,21 @@ export default function AccountingPage() {
               disabled={syncing}
               className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors disabled:opacity-60 shadow-sm"
             >
-              {syncing ? <><Loader2 className="w-4 h-4 animate-spin" /> Syncing…</> : <><RefreshCw className="w-4 h-4" /> Sync QB</>}
+              {syncing
+                ? <><Loader2 className="w-4 h-4 animate-spin" /> Syncing…</>
+                : <><RefreshCw className="w-4 h-4" /> Sync QB</>
+              }
             </button>
           ) : (
-            <Link href="/settings" className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors shadow-sm">
+            <Link href="/settings"
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors shadow-sm">
               <Link2 className="w-4 h-4" /> Connect QuickBooks
             </Link>
           )}
         </div>
       </div>
 
-      {/* QB not connected banner */}
+      {/* Not-connected banner */}
       {!loading && !status?.connected && (
         <div className="mb-6 bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-start gap-3">
           <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
@@ -101,7 +321,8 @@ export default function AccountingPage() {
             <p className="text-blue-900 text-sm font-semibold">QuickBooks not connected</p>
             <p className="text-blue-700 text-sm mt-0.5">
               Showing figures from your project database.{' '}
-              <Link href="/settings" className="underline font-medium">Connect QuickBooks</Link> for live invoices and payments.
+              <Link href="/settings" className="underline font-medium">Connect QuickBooks</Link> for live invoices,
+              payments and expense breakdowns.
             </p>
           </div>
         </div>
@@ -109,13 +330,13 @@ export default function AccountingPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard label="Total Billed"      value={`AED ${(totalBilled / 1000).toFixed(0)}K`}      sub={snapshot ? 'From QuickBooks' : 'From contracts'} color="text-slate-900" />
-        <StatCard label="Total Received"    value={`AED ${(totalReceived / 1000).toFixed(0)}K`}    sub={`${Math.round((totalReceived / totalBilled) * 100)}% collected`} color="text-emerald-600" />
-        <StatCard label="Outstanding"       value={`AED ${(totalOutstanding / 1000).toFixed(0)}K`} sub={overdueCount > 0 ? `${overdueCount} overdue` : 'All current'} color={overdueCount > 0 ? 'text-red-600' : 'text-amber-600'} />
-        <StatCard label="Est. VAT Liability" value={`AED ${(vatDue / 1000).toFixed(0)}K`}         sub="5% on received amounts" color="text-blue-600" />
+        <StatCard label="Total Billed"       value={`AED ${(totalBilled / 1000).toFixed(0)}K`}       sub={snapshot ? 'From QuickBooks' : 'From contracts'} color="text-slate-900" />
+        <StatCard label="Total Received"     value={`AED ${(totalReceived / 1000).toFixed(0)}K`}     sub={`${totalBilled ? Math.round((totalReceived / totalBilled) * 100) : 0}% collected`} color="text-emerald-600" />
+        <StatCard label="Outstanding"        value={`AED ${(totalOutstanding / 1000).toFixed(0)}K`}  sub={overdueCount > 0 ? `${overdueCount} overdue` : 'All current'} color={overdueCount > 0 ? 'text-red-600' : 'text-amber-600'} />
+        <StatCard label="Est. VAT Liability" value={`AED ${(vatDue / 1000).toFixed(0)}K`}            sub="5% on received amounts" color="text-blue-600" />
       </div>
 
-      {/* Project-level summary */}
+      {/* Per-Project Financials */}
       <div className="mb-8 bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-100">
           <h3 className="font-semibold text-slate-900">Per-Project Financials</h3>
@@ -145,10 +366,10 @@ export default function AccountingPage() {
                       ))}
                     </tr>
                   ))
-                : projects.map(p => {
-                    const out = p.contract_value - p.received_amount
-                    const ret = p.received_amount * 0.1
-                    const pct = p.progress_percent
+                : allProjects.map(p => {
+                    const out  = p.contract_value - p.received_amount
+                    const ret  = p.received_amount * 0.1
+                    const pct  = p.progress_percent
                     const barC = pct >= 70 ? 'bg-emerald-500' : pct >= 40 ? 'bg-amber-400' : 'bg-blue-500'
                     return (
                       <tr key={p.id} className="hover:bg-slate-50">
@@ -175,6 +396,14 @@ export default function AccountingPage() {
           </table>
         </div>
       </div>
+
+      {/* Expenses by Project (QB Classes) */}
+      <ClassExpensesSection
+        expenses={expenses}
+        classes={classes}
+        projects={allProjects.map(p => ({ id: p.id, name: p.name, contract_value: p.contract_value }))}
+        syncedAt={classesSyncedAt}
+      />
 
       {/* AI Accountant Briefing */}
       <div className="mb-8">

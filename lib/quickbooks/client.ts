@@ -6,7 +6,7 @@ import {
   loadTokens, loadTokensAsync, saveTokens, clearTokens,
   isAccessTokenFresh, isRefreshTokenValid,
 } from './tokens'
-import type { QBTokens, QBInvoice, QBPayment, QBCustomer, QBCompanyInfo, QBQueryResponse } from './types'
+import type { QBTokens, QBInvoice, QBPayment, QBCustomer, QBCompanyInfo, QBQueryResponse, QBClass, QBPurchase, QBBill } from './types'
 
 // ── Config ──────────────────────────────────────────────────
 const CLIENT_ID     = process.env.QUICKBOOKS_CLIENT_ID     ?? ''
@@ -193,6 +193,27 @@ export async function fetchCompanyInfo(): Promise<QBCompanyInfo | null> {
   if (!res.ok) return null
   const data = await res.json()
   return data.CompanyInfo ?? null
+}
+
+export async function fetchClasses(maxResults = 100): Promise<QBClass[]> {
+  return qbQuery<QBClass>(
+    `SELECT * FROM Class WHERE Active = true MAXRESULTS ${maxResults}`,
+    'Class'
+  )
+}
+
+export async function fetchPurchases(maxResults = 300): Promise<QBPurchase[]> {
+  return qbQuery<QBPurchase>(
+    `SELECT * FROM Purchase ORDERBY TxnDate DESC MAXRESULTS ${maxResults}`,
+    'Purchase'
+  )
+}
+
+export async function fetchBills(maxResults = 300): Promise<QBBill[]> {
+  return qbQuery<QBBill>(
+    `SELECT * FROM Bill ORDERBY TxnDate DESC MAXRESULTS ${maxResults}`,
+    'Bill'
+  )
 }
 
 // ── Status check ─────────────────────────────────────────────

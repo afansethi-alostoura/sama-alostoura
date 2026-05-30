@@ -1,8 +1,8 @@
-import { NextResponse }                                                       from 'next/server'
-import { fetchInvoices, fetchPayments, fetchCustomers, fetchCompanyInfo }     from '@/lib/quickbooks/client'
-import { loadTokensAsync }                                                     from '@/lib/quickbooks/tokens'
-import { supabaseAdmin, isSupabaseConfigured }                                from '@/lib/supabase'
-import type { QBSnapshot }                                                     from '@/lib/quickbooks/types'
+import { NextResponse }                                                                        from 'next/server'
+import { fetchInvoices, fetchPayments, fetchCustomers, fetchCompanyInfo, fetchClasses, fetchPurchases, fetchBills } from '@/lib/quickbooks/client'
+import { loadTokensAsync }                                                                     from '@/lib/quickbooks/tokens'
+import { supabaseAdmin, isSupabaseConfigured }                                               from '@/lib/supabase'
+import type { QBSnapshot }                                                                     from '@/lib/quickbooks/types'
 
 // ── POST — fetch from QBO and save snapshot ──────────────────
 
@@ -14,11 +14,14 @@ export async function POST() {
 
   try {
     console.log('[QB Sync] Fetching data from QuickBooks...')
-    const [invoices, payments, customers, companyInfo] = await Promise.all([
+    const [invoices, payments, customers, companyInfo, classes, purchases, bills] = await Promise.all([
       fetchInvoices(),
       fetchPayments(),
       fetchCustomers(),
       fetchCompanyInfo(),
+      fetchClasses().catch(e => { console.warn('[QB Sync] fetchClasses failed:', e.message); return [] }),
+      fetchPurchases().catch(e => { console.warn('[QB Sync] fetchPurchases failed:', e.message); return [] }),
+      fetchBills().catch(e => { console.warn('[QB Sync] fetchBills failed:', e.message); return [] }),
     ])
 
     const snapshot: QBSnapshot = {
@@ -28,29 +31,48 @@ export async function POST() {
       invoices,
       payments,
       customers,
+      classes,
+      purchases,
+      bills,
     }
 
-    console.log(`[QB Sync] Fetched: ${invoices.length} invoices, ${payments.length} payments, ${customers.length} customers`)
+    console.log(
+      `[QB Sync] Fetched: ${invoices.length} invoices, ${payments.length} payments, ` +
+      `${customers.length} customers, ${classes.length} classes, ` +
+      `${purchases.length} purchases, ${bills.length} bills`
+    )
 
-    // Save to Supabase
+    // Save to Supabase — try with new columns first, fall back if migration not run yet
     if (isSupabaseConfigured() && supabaseAdmin) {
+      const basePayload = {
+        id:           1,
+        realm_id:     snapshot.realm_id,
+        company_name: snapshot.company_name,
+        synced_at:    snapshot.synced_at,
+        invoices,
+        payments,
+        customers,
+      }
+
+      // Try saving with classes/purchases/bills (requires migration)
       const { error } = await supabaseAdmin
         .from('qb_snapshot')
-        .upsert({
-          id:           1, // single-row table
-          realm_id:     snapshot.realm_id,
-          company_name: snapshot.company_name,
-          synced_at:    snapshot.synced_at,
-          invoices:     invoices,
-          payments:     payments,
-          customers:    customers,
-        }, { onConflict: 'id' })
+        .upsert({ ...basePayload, classes, purchases, bills }, { onConflict: 'id' })
 
       if (error) {
-        console.error('[QB Sync] Supabase save error:', error)
-        throw new Error(`Failed to save snapshot: ${error.message}`)
+        console.warn('[QB Sync] Full upsert failed (migration may be needed):', error.message)
+        // Fall back: save base data only
+        const { error: err2 } = await supabaseAdmin
+          .from('qb_snapshot')
+          .upsert(basePayload, { onConflict: 'id' })
+        if (err2) {
+          console.error('[QB Sync] Base upsert also failed:', err2)
+          throw new Error(`Failed to save snapshot: ${err2.message}`)
+        }
+        console.log('[QB Sync] ✅ Base snapshot saved (classes/expenses need DB migration)')
+      } else {
+        console.log('[QB Sync] ✅ Full snapshot saved to Supabase (with classes & expenses)')
       }
-      console.log('[QB Sync] ✅ Snapshot saved to Supabase')
     }
 
     return NextResponse.json({
@@ -58,9 +80,12 @@ export async function POST() {
       synced_at:    snapshot.synced_at,
       company_name: snapshot.company_name,
       counts: {
-        invoices:  invoices.length,
-        payments:  payments.length,
-        customers: customers.length,
+        invoices:   invoices.length,
+        payments:   payments.length,
+        customers:  customers.length,
+        classes:    classes.length,
+        purchases:  purchases.length,
+        bills:      bills.length,
       },
     })
   } catch (err) {
@@ -93,9 +118,12 @@ export async function GET() {
       realm_id:     data.realm_id,
       company_name: data.company_name,
       synced_at:    data.synced_at,
-      invoices:     data.invoices  ?? [],
-      payments:     data.payments  ?? [],
-      customers:    data.customers ?? [],
+      invoices:     data.invoices   ?? [],
+      payments:     data.payments   ?? [],
+      customers:    data.customers  ?? [],
+      classes:      data.classes    ?? [],
+      purchases:    data.purchases  ?? [],
+      bills:        data.bills      ?? [],
     })
   } catch (err) {
     console.error('[QB Sync GET] Error:', err)

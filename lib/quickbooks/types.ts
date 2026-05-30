@@ -85,12 +85,100 @@ export interface QBQueryResponse<T> {
   time: string
 }
 
-// ── Cached snapshot stored in .qb-data.json ─────────────────
+// ── QuickBooks Classes ───────────────────────────────────────
+export interface QBClass {
+  Id:                  string
+  Name:                string
+  FullyQualifiedName:  string
+  Active:              boolean
+  SubClass?:           boolean
+  ParentRef?:          { value: string; name: string }
+}
+
+// ── Purchase (expense transactions: checks, credit cards) ────
+export interface QBPurchaseLine {
+  Id?:          string
+  Description?: string
+  Amount:       number
+  DetailType:   string
+  AccountBasedExpenseLineDetail?: {
+    AccountRef:      { value: string; name: string }
+    ClassRef?:       { value: string; name: string }
+    CustomerRef?:    { value: string; name: string }
+    BillableStatus?: string
+  }
+  ItemBasedExpenseLineDetail?: {
+    ItemRef:      { value: string; name: string }
+    ClassRef?:    { value: string; name: string }
+    CustomerRef?: { value: string; name: string }
+  }
+}
+
+export interface QBPurchase {
+  Id:           string
+  TxnDate:      string
+  TotalAmt:     number
+  PaymentType:  string          // 'Cash' | 'Check' | 'CreditCard'
+  AccountRef?:  { value: string; name: string }
+  EntityRef?:   { value: string; name: string; type?: string }
+  ClassRef?:    { value: string; name: string }  // header-level class
+  PrivateNote?: string
+  Line:         QBPurchaseLine[]
+}
+
+// ── Bill (vendor bills / AP transactions) ───────────────────
+export interface QBBillLine {
+  Id?:          string
+  Description?: string
+  Amount:       number
+  DetailType:   string
+  AccountBasedExpenseLineDetail?: {
+    AccountRef:      { value: string; name: string }
+    ClassRef?:       { value: string; name: string }
+    CustomerRef?:    { value: string; name: string }
+    BillableStatus?: string
+  }
+  ItemBasedExpenseLineDetail?: {
+    ItemRef:      { value: string; name: string }
+    ClassRef?:    { value: string; name: string }
+    CustomerRef?: { value: string; name: string }
+  }
+}
+
+export interface QBBill {
+  Id:           string
+  TxnDate:      string
+  DueDate?:     string
+  TotalAmt:     number
+  Balance:      number
+  VendorRef:    { value: string; name: string }
+  ClassRef?:    { value: string; name: string }  // header-level class
+  PrivateNote?: string
+  Line:         QBBillLine[]
+}
+
+// ── Derived: per-class expense breakdown ─────────────────────
+export interface QBClassExpenseRow {
+  classId:        string
+  className:      string
+  materials:      number
+  labor:          number
+  subcontractors: number
+  overhead:       number
+  other:          number
+  total:          number
+}
+
+// ── Cached snapshot stored in Supabase qb_snapshot ──────────
 export interface QBSnapshot {
-  realm_id: string
+  realm_id:     string
   company_name: string
-  synced_at: string           // ISO timestamp
-  invoices:  QBInvoice[]
-  payments:  QBPayment[]
-  customers: QBCustomer[]
+  synced_at:    string           // ISO timestamp
+  invoices:     QBInvoice[]
+  payments:     QBPayment[]
+  customers:    QBCustomer[]
+  // Optional — added by migration add_qb_classes_expenses.sql
+  classes?:     QBClass[]
+  purchases?:   QBPurchase[]
+  bills?:       QBBill[]
 }
