@@ -157,16 +157,12 @@ export interface QBBill {
   Line:         QBBillLine[]
 }
 
-// ── Derived: per-class expense breakdown ─────────────────────
+// ── Derived: per-class expense breakdown (dynamic accounts) ──
 export interface QBClassExpenseRow {
-  classId:        string
-  className:      string
-  materials:      number
-  labor:          number
-  subcontractors: number
-  overhead:       number
-  other:          number
-  total:          number
+  classId:   string
+  className: string
+  accounts:  Record<string, number>  // accountName → amount
+  total:     number
 }
 
 // ── Cached snapshot stored in Supabase qb_snapshot ──────────

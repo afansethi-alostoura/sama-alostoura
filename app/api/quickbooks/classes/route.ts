@@ -1,162 +1,131 @@
 /**
- * GET /api/quickbooks/classes
+ * GET /api/quickbooks/classes?from=YYYY-MM-DD&to=YYYY-MM-DD
  *
- * Returns QB Classes mapped to projects with expense breakdown by category.
- * Reads from the cached qb_snapshot (includes classes, purchases, bills).
+ * Returns QB Classes with a fully dynamic expense breakdown —
+ * every unique QBO Account name that appears in the date range becomes
+ * its own column. No pre-set categories.
  *
- * Expense categories are derived from QBO Account names:
- *   Materials      — Material*, Supplies*, Equipment*, Hardware*, Stock*
- *   Labor          — Labor*, Labour*, Wages*, Salary*, Payroll*, Manpower*
- *   Subcontractors — Subcontract*, Sub-contract*, Contract Service*, Specialist*
- *   Overhead       — Overhead*, Utilities*, Rent*, Office*, Admin*, Insurance*
- *   Other          — everything else
+ * Response:
+ *   { synced, synced_at, classes, accountNames, expenses, counts }
+ *   expenses[n].accounts = { "Concrete & Aggregates": 12500, "Labour": 8200, … }
  */
-import { NextResponse }                    from 'next/server'
+import { NextRequest, NextResponse }       from 'next/server'
 import { supabaseAdmin, isSupabaseConfigured } from '@/lib/supabase'
 import type { QBClass, QBPurchase, QBBill, QBClassExpenseRow } from '@/lib/quickbooks/types'
 
-// ── Category classifier ────────────────────────────────────────────────────────
-const CATEGORY_PATTERNS: Array<{ key: keyof Omit<QBClassExpenseRow, 'classId' | 'className' | 'total'>; patterns: RegExp[] }> = [
-  {
-    key: 'materials',
-    patterns: [
-      /material/i, /supplies/i, /equipment/i, /hardware/i, /stock/i,
-      /concrete/i, /steel/i, /cement/i, /timber/i, /tiles/i, /paint/i,
-      /plumbing/i, /electrical supply/i, /cost of goods/i, /cogs/i,
-    ],
-  },
-  {
-    key: 'labor',
-    patterns: [
-      /labour/i, /labor/i, /wages/i, /salary/i, /payroll/i, /manpower/i,
-      /salaries/i, /staff/i, /workforce/i, /employee/i,
-    ],
-  },
-  {
-    key: 'subcontractors',
-    patterns: [
-      /subcontract/i, /sub-contract/i, /sub contract/i, /contract service/i,
-      /specialist/i, /outsource/i, /third.party/i,
-    ],
-  },
-  {
-    key: 'overhead',
-    patterns: [
-      /overhead/i, /utilities/i, /rent/i, /office/i, /admin/i, /insurance/i,
-      /vehicle/i, /transport/i, /fuel/i, /depreciation/i, /maintenance/i,
-      /professional fee/i, /legal/i, /accounting/i,
-    ],
-  },
-]
+export const dynamic = 'force-dynamic'
 
-function classifyAccount(accountName: string): keyof Omit<QBClassExpenseRow, 'classId' | 'className' | 'total'> {
-  for (const { key, patterns } of CATEGORY_PATTERNS) {
-    if (patterns.some(p => p.test(accountName))) return key
-  }
-  return 'other'
+// ── Date filter helper ────────────────────────────────────────────────────────
+function inRange(txnDate: string, from: string | null, to: string | null): boolean {
+  if (from && txnDate < from) return false
+  if (to   && txnDate > to)   return false
+  return true
 }
 
-// ── Resolve class from a line item (line-level then header-level) ─────────────
-function resolveClassId(
-  lineClassRef: { value: string; name: string } | undefined,
+// ── Resolve class ref: prefer line-level, fall back to header ─────────────────
+function resolveClass(
+  lineClassRef:   { value: string; name: string } | undefined,
   headerClassRef: { value: string; name: string } | undefined,
-): string | null {
-  return lineClassRef?.value ?? headerClassRef?.value ?? null
+): { id: string; name: string } | null {
+  const ref = lineClassRef ?? headerClassRef
+  return ref ? { id: ref.value, name: ref.name } : null
 }
 
-// ── Build expense breakdown from purchases and bills ─────────────────────────
-function buildClassExpenses(
+// ── Build dynamic expense breakdown ──────────────────────────────────────────
+function buildExpenses(
   classes:   QBClass[],
   purchases: QBPurchase[],
   bills:     QBBill[],
-): QBClassExpenseRow[] {
-  // Initialize row map keyed by class ID
-  const rows = new Map<string, QBClassExpenseRow>()
+  from:      string | null,
+  to:        string | null,
+): { expenses: QBClassExpenseRow[]; accountNames: string[] } {
 
-  function ensureRow(classId: string, className: string) {
+  const rows         = new Map<string, QBClassExpenseRow>()
+  const accountNames = new Set<string>()
+
+  // Build a classId → displayName lookup
+  const classNameById = new Map<string, string>()
+  for (const c of classes) {
+    classNameById.set(c.Id, c.FullyQualifiedName ?? c.Name)
+  }
+
+  function ensureRow(classId: string, className: string): QBClassExpenseRow {
     if (!rows.has(classId)) {
-      rows.set(classId, {
-        classId, className,
-        materials: 0, labor: 0, subcontractors: 0, overhead: 0, other: 0, total: 0,
-      })
+      rows.set(classId, { classId, className, accounts: {}, total: 0 })
     }
     return rows.get(classId)!
   }
 
-  // ── Process Purchases ────────────────────────────────────────────────────────
+  function addAmount(classId: string, className: string, accountName: string, amount: number) {
+    if (amount <= 0) return
+    const clean = accountName.trim() || 'Uncategorized'
+    accountNames.add(clean)
+    const row = ensureRow(classId, className)
+    row.accounts[clean] = (row.accounts[clean] ?? 0) + amount
+    row.total           += amount
+  }
+
+  // ── Purchases ────────────────────────────────────────────────────────────────
   for (const p of purchases) {
+    if (!inRange(p.TxnDate, from, to)) continue
+
     for (const line of p.Line ?? []) {
       const amount = line.Amount ?? 0
       if (amount <= 0) continue
 
-      const detail =
-        line.AccountBasedExpenseLineDetail ??
-        line.ItemBasedExpenseLineDetail ??
-        null
+      const abd = line.AccountBasedExpenseLineDetail
+      const ibd = line.ItemBasedExpenseLineDetail
 
-      const classRef = resolveClassId(
-        (detail as { ClassRef?: { value: string; name: string } })?.ClassRef,
-        p.ClassRef,
-      )
-      if (!classRef) continue  // skip unclassified
+      // Resolve class (line-level first, then header)
+      const cls = resolveClass(abd?.ClassRef ?? ibd?.ClassRef, p.ClassRef)
+      if (!cls) continue
 
-      // Find the class name from our classes list
-      const cls = classes.find(c => c.Id === classRef)
-      const className = cls?.FullyQualifiedName ?? cls?.Name ?? `Class ${classRef}`
+      const className  = classNameById.get(cls.id) ?? cls.name ?? `Class ${cls.id}`
+      const accountName = abd?.AccountRef?.name ?? ibd?.ItemRef?.name ?? 'Uncategorized'
 
-      const accountName =
-        (line.AccountBasedExpenseLineDetail?.AccountRef?.name) ??
-        (line.ItemBasedExpenseLineDetail?.ItemRef?.name) ??
-        ''
-
-      const category = classifyAccount(accountName)
-      const row = ensureRow(classRef, className)
-      row[category] += amount
-      row.total     += amount
+      addAmount(cls.id, className, accountName, amount)
     }
   }
 
-  // ── Process Bills ────────────────────────────────────────────────────────────
+  // ── Bills ────────────────────────────────────────────────────────────────────
   for (const b of bills) {
+    if (!inRange(b.TxnDate, from, to)) continue
+
     for (const line of b.Line ?? []) {
       const amount = line.Amount ?? 0
       if (amount <= 0) continue
 
-      const detail =
-        line.AccountBasedExpenseLineDetail ??
-        line.ItemBasedExpenseLineDetail ??
-        null
+      const abd = line.AccountBasedExpenseLineDetail
+      const ibd = line.ItemBasedExpenseLineDetail
 
-      const classRef = resolveClassId(
-        (detail as { ClassRef?: { value: string; name: string } })?.ClassRef,
-        b.ClassRef,
-      )
-      if (!classRef) continue
+      const cls = resolveClass(abd?.ClassRef ?? ibd?.ClassRef, b.ClassRef)
+      if (!cls) continue
 
-      const cls = classes.find(c => c.Id === classRef)
-      const className = cls?.FullyQualifiedName ?? cls?.Name ?? `Class ${classRef}`
+      const className  = classNameById.get(cls.id) ?? cls.name ?? `Class ${cls.id}`
+      const accountName = abd?.AccountRef?.name ?? ibd?.ItemRef?.name ?? 'Uncategorized'
 
-      const accountName =
-        (line.AccountBasedExpenseLineDetail?.AccountRef?.name) ??
-        (line.ItemBasedExpenseLineDetail?.ItemRef?.name) ??
-        ''
-
-      const category = classifyAccount(accountName)
-      const row = ensureRow(classRef, className)
-      row[category] += amount
-      row.total     += amount
+      addAmount(cls.id, className, accountName, amount)
     }
   }
 
-  // Return sorted by total descending
-  return Array.from(rows.values()).sort((a, b) => b.total - a.total)
+  // Sort account names alphabetically for stable column order
+  const sortedAccounts = Array.from(accountNames).sort((a, b) => a.localeCompare(b))
+
+  // Sort rows by total descending
+  const sortedRows = Array.from(rows.values()).sort((a, b) => b.total - a.total)
+
+  return { expenses: sortedRows, accountNames: sortedAccounts }
 }
 
 // ── Route handler ─────────────────────────────────────────────────────────────
-export async function GET() {
+export async function GET(req: NextRequest) {
   if (!isSupabaseConfigured() || !supabaseAdmin) {
     return NextResponse.json({ error: 'Supabase not configured' }, { status: 500 })
   }
+
+  const { searchParams } = new URL(req.url)
+  const from = searchParams.get('from') || null   // YYYY-MM-DD or null
+  const to   = searchParams.get('to')   || null
 
   try {
     const { data, error } = await supabaseAdmin
@@ -170,26 +139,39 @@ export async function GET() {
         synced: false,
         message: 'No QB data yet — run a sync first.',
         expenses: [],
+        accountNames: [],
         classes: [],
       })
     }
 
-    const classes:   QBClass[]   = (data.classes   ?? []) as QBClass[]
+    const classes:   QBClass[]    = (data.classes   ?? []) as QBClass[]
     const purchases: QBPurchase[] = (data.purchases ?? []) as QBPurchase[]
-    const bills:     QBBill[]    = (data.bills     ?? []) as QBBill[]
+    const bills:     QBBill[]     = (data.bills     ?? []) as QBBill[]
 
-    const expenses = buildClassExpenses(classes, purchases, bills)
+    const { expenses, accountNames } = buildExpenses(classes, purchases, bills, from, to)
+
+    // Date range of available data (for UI defaults)
+    const allDates = [
+      ...purchases.map(p => p.TxnDate),
+      ...bills.map(b => b.TxnDate),
+    ].filter(Boolean).sort()
 
     return NextResponse.json({
-      synced:    true,
-      synced_at: data.synced_at,
+      synced:       true,
+      synced_at:    data.synced_at,
       classes,
+      accountNames,
       expenses,
+      dataRange: {
+        earliest: allDates[0]               ?? null,
+        latest:   allDates[allDates.length - 1] ?? null,
+      },
       counts: {
-        classes:   classes.length,
-        purchases: purchases.length,
-        bills:     bills.length,
-        expense_rows: expenses.length,
+        classes:       classes.length,
+        purchases:     purchases.length,
+        bills:         bills.length,
+        expense_rows:  expenses.length,
+        account_types: accountNames.length,
       },
     })
   } catch (err) {
