@@ -40,28 +40,20 @@ async function sendOTP(to: string, code: string): Promise<void> {
   const phoneId = process.env.META_WHATSAPP_PHONE_ID ?? ''
   if (!token || !phoneId) throw new Error('META_WHATSAPP_TOKEN and META_WHATSAPP_PHONE_ID not configured')
 
-  const controller = new AbortController()
-  const t = setTimeout(() => controller.abort(), 4000)
-  try {
-    const res = await fetch(`https://graph.facebook.com/v20.0/${phoneId}/messages`, {
-      method: 'POST',
-      signal: controller.signal,
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        to: to.replace(/^\+/, ''),
-        type: 'text',
-        text: { body: msg },
-      }),
-    })
-    clearTimeout(t)
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      throw new Error(`Meta WA error: ${JSON.stringify(err)}`)
-    }
-  } catch (e) {
-    clearTimeout(t)
-    throw e
+  const res = await fetch(`https://graph.facebook.com/v20.0/${phoneId}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      to: to.replace(/^\+/, ''),
+      type: 'text',
+      text: { body: msg },
+    }),
+  })
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(`Meta WA error: ${JSON.stringify(err)}`)
   }
 }
 
@@ -74,7 +66,6 @@ export async function POST(req: Request) {
   try {
     const { username, password } = await req.json()
 
-    // Fallback credentials so login always works even if env vars not set in Vercel
     const expectedUser = process.env.ADMIN_USERNAME ?? 'Samaalostoura'
     const expectedPass = process.env.ADMIN_PASSWORD ?? 'Alostoura1122@'
 
@@ -91,10 +82,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid username or password.' }, { status: 401 })
     }
 
-    // Check if WhatsApp OTP is configured
+    // No WhatsApp configured — log in directly
     const adminWA = process.env.ADMIN_WHATSAPP ?? ''
     if (!adminWA) {
-      // No WhatsApp configured — log in directly
       const token = createSessionToken()
       const res = NextResponse.json({ ok: true, step: 'done' })
       setSessionCookie(res, token)
@@ -108,18 +98,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ step: 'otp', cooldown: wait })
     }
 
-    // Generate OTP and try to send
+    // Generate and send OTP — no timeout, let it complete
     const code = generateCode()
     setPendingOTP({ code, expiresAt: Date.now() + OTP_TTL_MS, attempts: 0, requestedAt: Date.now() })
 
     try {
-      const timeout = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('WhatsApp timeout')), 5000)
-      )
-      await Promise.race([sendOTP(adminWA, code), timeout])
+      await sendOTP(adminWA, code)
     } catch (err) {
       console.error('[login] WhatsApp send failed:', err)
-      // WhatsApp failed or timed out — fall back to direct login so user is never locked out
+      // Fall back to direct login so user is never locked out
       const token = createSessionToken()
       const res = NextResponse.json({ ok: true, step: 'done', warning: 'WhatsApp unavailable' })
       setSessionCookie(res, token)
