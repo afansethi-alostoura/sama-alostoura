@@ -13,6 +13,14 @@ node_modules/
 .qb-data.json
 .qb-oauth-state.tmp
 
+# HR & operational data (employee/vehicle PII, financials)
+.staff-data.json
+.vehicles-data.json
+.company-docs-data.json
+.boq-data.json
+.rates-data.json
+.uploads/
+
 # Debug route (remove before production)
 app/api/debug/
 
