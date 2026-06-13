@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import crypto from 'crypto'
-import { sendWhatsApp, isTwilioConfigured } from '@/lib/twilio'
 import { generateCode, setPendingOTP, getPendingOTP, OTP_TTL_MS } from '@/lib/otp-store'
 
 const SESSION_SECRET = process.env.SESSION_SECRET ?? 'dev-secret-change-in-production'
@@ -37,28 +36,32 @@ function setSessionCookie(res: NextResponse, token: string) {
 async function sendOTP(to: string, code: string): Promise<void> {
   const msg = `🔐 *Sama Alostoura*\n\nYour login code:\n\n*${code}*\n\nValid for 10 minutes. Do not share.`
 
-  if (isTwilioConfigured()) {
-    await sendWhatsApp(to, msg)
-    return
-  }
-
-  const token = process.env.META_WHATSAPP_TOKEN ?? ''
+  const token   = process.env.META_WHATSAPP_TOKEN    ?? ''
   const phoneId = process.env.META_WHATSAPP_PHONE_ID ?? ''
-  if (!token || !phoneId) throw new Error('No WhatsApp provider configured')
+  if (!token || !phoneId) throw new Error('META_WHATSAPP_TOKEN and META_WHATSAPP_PHONE_ID not configured')
 
-  const res = await fetch(`https://graph.facebook.com/v20.0/${phoneId}/messages`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      messaging_product: 'whatsapp',
-      to: to.replace(/^\+/, ''),
-      type: 'text',
-      text: { body: msg },
-    }),
-  })
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    throw new Error(`Meta WA error: ${JSON.stringify(err)}`)
+  const controller = new AbortController()
+  const t = setTimeout(() => controller.abort(), 4000)
+  try {
+    const res = await fetch(`https://graph.facebook.com/v20.0/${phoneId}/messages`, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to: to.replace(/^\+/, ''),
+        type: 'text',
+        text: { body: msg },
+      }),
+    })
+    clearTimeout(t)
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(`Meta WA error: ${JSON.stringify(err)}`)
+    }
+  } catch (e) {
+    clearTimeout(t)
+    throw e
   }
 }
 
