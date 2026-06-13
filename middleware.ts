@@ -7,6 +7,8 @@ const PUBLIC_PATHS = new Set([
   '/privacy',
   '/api/auth/login',
   '/api/auth/logout',
+  '/api/auth/request-otp',
+  '/api/auth/verify-otp',
   '/api/webhooks/whatsapp',
   '/api/meta/whatsapp/webhook',
   '/api/quickbooks/callback',
