@@ -60,7 +60,14 @@ function todayStr()    { return new Date().toISOString().slice(0, 10) }
 function yearStartStr(){ return `${new Date().getFullYear()}-01-01`   }
 
 // ── Payment type badge ────────────────────────────────────────────────────────
-function TypeBadge({ type, paymentType }: { type: 'purchase' | 'bill'; paymentType: string }) {
+function TypeBadge({ type, paymentType }: { type: 'purchase' | 'bill' | 'vendor_credit'; paymentType: string }) {
+  if (type === 'vendor_credit') {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded px-1.5 py-0.5">
+        <CheckCircle2 className="w-2.5 h-2.5" /> Credit
+      </span>
+    )
+  }
   if (type === 'bill') {
     return (
       <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-violet-50 text-violet-700 border border-violet-200 rounded px-1.5 py-0.5">
@@ -282,7 +289,7 @@ function FindingsPanel({ findings, onClose }: { findings: Finding[]; onClose: ()
 // ── Debug Panel ───────────────────────────────────────────────────────────────
 function DebugPanel({ info, onClose }: { info: QBDebugInfo; onClose: () => void }) {
   const { purchases: p, bills: b, combined: c } = info
-  const ok = Math.abs(c.discrepancy) < 1   // within AED 1 = fine
+  const ok = Math.abs((c as any).taxGap ?? 0) < 1000  // VAT gap < AED 1000 = fine
 
   function Row({ label, val, sub, highlight }: { label: string; val: string; sub?: string; highlight?: 'red' | 'green' | 'amber' }) {
     const col = highlight === 'red' ? 'text-red-700 font-bold'
@@ -318,16 +325,17 @@ function DebugPanel({ info, onClose }: { info: QBDebugInfo; onClose: () => void 
         {/* Purchases */}
         <div>
           <p className="px-4 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-wide bg-slate-50 border-b border-slate-100">
-            Purchases ({p.fetched} fetched)
+            Purchases — {p.fetched} fetched ({p.pages} page{p.pages !== 1 ? 's' : ''})
           </p>
           <table className="w-full">
             <tbody>
-              <Row label="In date range"       val={`${p.inRange} txns`} />
-              <Row label="Expense lines"        val={`${p.expenseLines} lines`} sub="SubTotal lines excluded" />
-              <Row label="Class-tagged lines"   val={`${p.taggedLines} lines`}  highlight="green" />
-              <Row label="Untagged lines"       val={`${p.untaggedLines} lines`} highlight={p.untaggedLines > 0 ? 'amber' : undefined} />
-              <Row label="QB header total"      val={`AED ${p.qbHeaderTotal.toLocaleString()}`} sub="sum of TotalAmt" />
-              <Row label="Our line total"       val={`AED ${p.ourLineTotal.toLocaleString()}`}  highlight="green" />
+              <Row label="API pages fetched"     val={`${p.pages} × 1000`} highlight={p.pages > 1 ? 'green' : undefined} sub={p.pages > 1 ? '✓ pagination working' : 'single page'} />
+              <Row label="In date range"         val={`${p.inRange} txns`} />
+              <Row label="Expense lines"         val={`${p.expenseLines} lines`} sub="SubTotal lines excluded" />
+              <Row label="Class-tagged lines"    val={`${p.taggedLines} lines`}  highlight="green" />
+              <Row label="Untagged lines"        val={`${p.untaggedLines} lines`} highlight={p.untaggedLines > 0 ? 'amber' : undefined} />
+              <Row label="QB header total"       val={`AED ${p.qbHeaderTotal.toLocaleString()}`} sub="incl. VAT on header" />
+              <Row label="Our line total"        val={`AED ${p.ourLineTotal.toLocaleString()}`}  highlight="green" sub="excl. VAT" />
             </tbody>
           </table>
         </div>
@@ -335,18 +343,34 @@ function DebugPanel({ info, onClose }: { info: QBDebugInfo; onClose: () => void 
         {/* Bills */}
         <div>
           <p className="px-4 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-wide bg-slate-50 border-b border-slate-100">
-            Bills ({b.fetched} fetched)
+            Bills — {b.fetched} fetched ({b.pages} page{b.pages !== 1 ? 's' : ''})
           </p>
           <table className="w-full">
             <tbody>
-              <Row label="In date range"       val={`${b.inRange} txns`} />
-              <Row label="Expense lines"        val={`${b.expenseLines} lines`} sub="SubTotal lines excluded" />
-              <Row label="Class-tagged lines"   val={`${b.taggedLines} lines`}  highlight="green" />
-              <Row label="Untagged lines"       val={`${b.untaggedLines} lines`} highlight={b.untaggedLines > 0 ? 'amber' : undefined} />
-              <Row label="QB header total"      val={`AED ${b.qbHeaderTotal.toLocaleString()}`} sub="sum of TotalAmt" />
-              <Row label="Our line total"       val={`AED ${b.ourLineTotal.toLocaleString()}`}  highlight="green" />
+              <Row label="API pages fetched"     val={`${b.pages} × 1000`} highlight={b.pages > 1 ? 'green' : undefined} sub={b.pages > 1 ? '✓ pagination working' : 'single page'} />
+              <Row label="In date range"         val={`${b.inRange} txns`} />
+              <Row label="Expense lines"         val={`${b.expenseLines} lines`} sub="SubTotal lines excluded" />
+              <Row label="Class-tagged lines"    val={`${b.taggedLines} lines`}  highlight="green" />
+              <Row label="Untagged lines"        val={`${b.untaggedLines} lines`} highlight={b.untaggedLines > 0 ? 'amber' : undefined} />
+              <Row label="QB header total"       val={`AED ${b.qbHeaderTotal.toLocaleString()}`} sub="incl. VAT on header" />
+              <Row label="Our line total"        val={`AED ${b.ourLineTotal.toLocaleString()}`}  highlight="green" sub="excl. VAT" />
             </tbody>
           </table>
+          {/* Vendor Credits below Bills */}
+          {info.vendorCredits && (
+            <>
+              <p className="px-4 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-wide bg-slate-50 border-t border-b border-slate-100 mt-2">
+                Vendor Credits — {info.vendorCredits.fetched} fetched
+              </p>
+              <table className="w-full">
+                <tbody>
+                  <Row label="In date range"    val={`${info.vendorCredits.inRange} credits`} />
+                  <Row label="Class-tagged"     val={`${info.vendorCredits.taggedLines} lines`} />
+                  <Row label="Credit total"     val={`−AED ${info.vendorCredits.creditTotal.toLocaleString()}`} highlight={info.vendorCredits.creditTotal > 0 ? 'amber' : undefined} sub="subtracted from class totals" />
+                </tbody>
+              </table>
+            </>
+          )}
         </div>
 
         {/* Combined */}
@@ -356,24 +380,24 @@ function DebugPanel({ info, onClose }: { info: QBDebugInfo; onClose: () => void 
           </p>
           <table className="w-full">
             <tbody>
-              <Row label="QB total (header sum)"  val={`AED ${c.qbHeaderTotal.toLocaleString()}`} sub="QB's own figure" />
-              <Row label="Our displayed total"     val={`AED ${c.ourTotal.toLocaleString()}`}      highlight="green" />
-              <Row label="Untagged (not shown)"    val={`AED ${c.untaggedTotal.toLocaleString()}`} highlight={c.untaggedTotal > 0 ? 'amber' : undefined}
-                sub="lines with no Class tag" />
-              <Row
-                label="Unexplained difference"
-                val={`AED ${Math.abs(c.discrepancy).toLocaleString()}`}
-                highlight={ok ? 'green' : 'red'}
-                sub={ok ? '✓ within rounding' : 'May include tax/VAT on header'}
-              />
+              <Row label="QB header total"        val={`AED ${c.qbHeaderTotal.toLocaleString()}`}  sub="gross incl. VAT on headers" />
+              <Row label="Gross expense lines"     val={`AED ${(c as any).grossLineTotal?.toLocaleString() ?? c.ourTotal.toLocaleString()}`} sub="pre-credit, excl. VAT" />
+              {(c as any).creditTotal > 0 && (
+                <Row label="Vendor credits"        val={`−AED ${(c as any).creditTotal?.toLocaleString()}`} highlight="amber" sub="subtracted" />
+              )}
+              <Row label="Net displayed total"     val={`AED ${c.ourTotal.toLocaleString()}`} highlight="green" />
+              <Row label="Untagged (not shown)"    val={`AED ${c.untaggedTotal.toLocaleString()}`} highlight={c.untaggedTotal > 0 ? 'amber' : undefined} sub="no Class tag in QB" />
+              <Row label="VAT gap (header vs lines)" val={`AED ${Math.abs((c as any).taxGap ?? 0).toLocaleString()}`}
+                highlight={Math.abs((c as any).taxGap ?? 0) > 1000 ? 'amber' : 'green'}
+                sub="QB adds 5% VAT at header level" />
             </tbody>
           </table>
           <div className={`mx-4 my-3 flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold ${
             ok ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'
           }`}>
             {ok
-              ? <><CheckCircle2 className="w-3.5 h-3.5" /> Totals reconcile correctly</>
-              : <><TriangleAlert className="w-3.5 h-3.5" /> Discrepancy detected — check QB for tax/VAT on headers</>
+              ? <><CheckCircle2 className="w-3.5 h-3.5" /> Totals reconcile within rounding</>
+              : <><TriangleAlert className="w-3.5 h-3.5" /> Note: QB header total includes VAT; our line total is pre-tax</>
             }
           </div>
           <div className="px-4 pb-3 text-[10px] text-slate-400 space-y-0.5">

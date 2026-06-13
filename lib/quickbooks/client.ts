@@ -6,7 +6,7 @@ import {
   loadTokens, loadTokensAsync, saveTokens, clearTokens,
   isAccessTokenFresh, isRefreshTokenValid,
 } from './tokens'
-import type { QBTokens, QBInvoice, QBPayment, QBCustomer, QBCompanyInfo, QBQueryResponse, QBClass, QBPurchase, QBBill, QBAccount, QBAlostouraTransaction, QBAlostouraMonthSummary } from './types'
+import type { QBTokens, QBInvoice, QBPayment, QBCustomer, QBCompanyInfo, QBQueryResponse, QBClass, QBPurchase, QBBill, QBVendorCredit, QBAccount, QBAlostouraTransaction, QBAlostouraMonthSummary } from './types'
 
 // ── Config ──────────────────────────────────────────────────
 const CLIENT_ID     = process.env.QUICKBOOKS_CLIENT_ID     ?? ''
@@ -164,6 +164,28 @@ async function qbQuery<T>(sql: string, entityName: string): Promise<T[]> {
   return (data.QueryResponse?.[entityName] as T[] | undefined) ?? []
 }
 
+/**
+ * Automatically paginate through all QB results using STARTPOSITION.
+ * QB hard-caps MAXRESULTS at 1000; this loops until a page < 1000 items.
+ * baseSql must NOT include MAXRESULTS or STARTPOSITION — this function adds them.
+ */
+async function qbQueryPaginated<T>(baseSql: string, entityName: string): Promise<T[]> {
+  const PAGE_SIZE = 1000
+  const all: T[] = []
+  let position = 1
+
+  while (true) {
+    const sql   = `${baseSql} MAXRESULTS ${PAGE_SIZE} STARTPOSITION ${position}`
+    const batch = await qbQuery<T>(sql, entityName)
+    all.push(...batch)
+    console.log(`[QB] ${entityName} page pos=${position} got=${batch.length} total=${all.length}`)
+    if (batch.length < PAGE_SIZE) break   // last page
+    position += PAGE_SIZE
+  }
+
+  return all
+}
+
 // ── Data fetch functions ─────────────────────────────────────
 export async function fetchInvoices(maxResults = 200): Promise<QBInvoice[]> {
   return qbQuery<QBInvoice>(
@@ -202,54 +224,80 @@ export async function fetchClasses(maxResults = 100): Promise<QBClass[]> {
   )
 }
 
-export async function fetchPurchases(maxResults = 300): Promise<QBPurchase[]> {
-  return qbQuery<QBPurchase>(
-    `SELECT * FROM Purchase ORDERBY TxnDate DESC MAXRESULTS ${maxResults}`,
+/** Fetch ALL purchases (paginated — no 1000-record cap). */
+export async function fetchPurchases(): Promise<QBPurchase[]> {
+  return qbQueryPaginated<QBPurchase>(
+    'SELECT * FROM Purchase ORDERBY TxnDate ASC',
     'Purchase'
   )
 }
 
-export async function fetchBills(maxResults = 300): Promise<QBBill[]> {
-  return qbQuery<QBBill>(
-    `SELECT * FROM Bill ORDERBY TxnDate DESC MAXRESULTS ${maxResults}`,
+/** Fetch ALL bills (paginated). */
+export async function fetchBills(): Promise<QBBill[]> {
+  return qbQueryPaginated<QBBill>(
+    'SELECT * FROM Bill ORDERBY TxnDate ASC',
     'Bill'
   )
 }
 
+/** Fetch ALL vendor credits (paginated). */
+export async function fetchVendorCredits(): Promise<QBVendorCredit[]> {
+  return qbQueryPaginated<QBVendorCredit>(
+    'SELECT * FROM VendorCredit ORDERBY TxnDate ASC',
+    'VendorCredit'
+  )
+}
+
 /**
- * Fetch purchases filtered to a specific date range directly from QB API.
- * Uses QB IDS SQL WHERE clause — no result-count cap surprises.
+ * Fetch purchases in a date range — PAGINATED so > 1000 records are captured.
+ * QB MAXRESULTS is capped at 1000; this function loops with STARTPOSITION.
  */
 export async function fetchPurchasesInRange(
   from: string | null,
   to:   string | null,
-  maxResults = 1000,
 ): Promise<QBPurchase[]> {
   const conditions: string[] = []
   if (from) conditions.push(`TxnDate >= '${from}'`)
   if (to)   conditions.push(`TxnDate <= '${to}'`)
   const where = conditions.length ? ` WHERE ${conditions.join(' AND ')}` : ''
-  return qbQuery<QBPurchase>(
-    `SELECT * FROM Purchase${where} ORDERBY TxnDate DESC MAXRESULTS ${maxResults}`,
+  return qbQueryPaginated<QBPurchase>(
+    `SELECT * FROM Purchase${where} ORDERBY TxnDate ASC`,
     'Purchase'
   )
 }
 
 /**
- * Fetch bills filtered to a specific date range directly from QB API.
+ * Fetch bills in a date range — PAGINATED.
  */
 export async function fetchBillsInRange(
   from: string | null,
   to:   string | null,
-  maxResults = 1000,
 ): Promise<QBBill[]> {
   const conditions: string[] = []
   if (from) conditions.push(`TxnDate >= '${from}'`)
   if (to)   conditions.push(`TxnDate <= '${to}'`)
   const where = conditions.length ? ` WHERE ${conditions.join(' AND ')}` : ''
-  return qbQuery<QBBill>(
-    `SELECT * FROM Bill${where} ORDERBY TxnDate DESC MAXRESULTS ${maxResults}`,
+  return qbQueryPaginated<QBBill>(
+    `SELECT * FROM Bill${where} ORDERBY TxnDate ASC`,
     'Bill'
+  )
+}
+
+/**
+ * Fetch vendor credits in a date range — PAGINATED.
+ * Vendor credits REDUCE expense totals for a class (they are credits from vendors).
+ */
+export async function fetchVendorCreditsInRange(
+  from: string | null,
+  to:   string | null,
+): Promise<QBVendorCredit[]> {
+  const conditions: string[] = []
+  if (from) conditions.push(`TxnDate >= '${from}'`)
+  if (to)   conditions.push(`TxnDate <= '${to}'`)
+  const where = conditions.length ? ` WHERE ${conditions.join(' AND ')}` : ''
+  return qbQueryPaginated<QBVendorCredit>(
+    `SELECT * FROM VendorCredit${where} ORDERBY TxnDate ASC`,
+    'VendorCredit'
   )
 }
 

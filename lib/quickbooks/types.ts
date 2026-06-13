@@ -157,6 +157,34 @@ export interface QBBill {
   Line:         QBBillLine[]
 }
 
+// ── Vendor Credit (reduces expense totals for a class) ───────────────────────
+export interface QBVendorCreditLine {
+  Id?:          string
+  Description?: string
+  Amount:       number
+  DetailType:   string
+  AccountBasedExpenseLineDetail?: {
+    AccountRef:   { value: string; name: string }
+    ClassRef?:    { value: string; name: string }
+    CustomerRef?: { value: string; name: string }
+  }
+  ItemBasedExpenseLineDetail?: {
+    ItemRef:   { value: string; name: string }
+    ClassRef?: { value: string; name: string }
+  }
+}
+
+export interface QBVendorCredit {
+  Id:           string
+  TxnDate:      string
+  TotalAmt:     number
+  Balance:      number
+  VendorRef:    { value: string; name: string }
+  ClassRef?:    { value: string; name: string }
+  PrivateNote?: string
+  Line:         QBVendorCreditLine[]
+}
+
 // ── Derived: per-class expense breakdown (dynamic accounts) ──
 export interface QBClassExpenseRow {
   classId:   string
@@ -172,9 +200,9 @@ export interface QBTransactionLine {
   txnDate:     string         // YYYY-MM-DD
   vendor:      string
   accountName: string
-  amount:      number
-  type:        'purchase' | 'bill'
-  paymentType: string         // 'Cash' | 'Check' | 'CreditCard' | 'Bill'
+  amount:      number         // negative for vendor credits
+  type:        'purchase' | 'bill' | 'vendor_credit'
+  paymentType: string         // 'Cash' | 'Check' | 'CreditCard' | 'Bill' | 'Vendor Credit'
   note:        string         // private note or line description
 }
 
@@ -229,6 +257,7 @@ export interface QBDebugInfo {
   dateFilter:  { from: string | null; to: string | null }
   purchases: {
     fetched:        number
+    pages:          number
     inRange:        number
     expenseLines:   number
     taggedLines:    number
@@ -238,6 +267,7 @@ export interface QBDebugInfo {
   }
   bills: {
     fetched:        number
+    pages:          number
     inRange:        number
     expenseLines:   number
     taggedLines:    number
@@ -245,11 +275,19 @@ export interface QBDebugInfo {
     qbHeaderTotal:  number
     ourLineTotal:   number
   }
+  vendorCredits?: {
+    fetched:        number
+    inRange:        number
+    taggedLines:    number
+    creditTotal:    number
+  }
   combined: {
     qbHeaderTotal:  number
+    grossLineTotal: number
+    creditTotal:    number
     ourTotal:       number
     untaggedTotal:  number
-    discrepancy:    number
+    taxGap:         number
   }
 }
 

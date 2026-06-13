@@ -19,16 +19,17 @@
  *  lines → 2× totals.  We now only process lines whose DetailType is
  *  "AccountBasedExpenseLineDetail" or "ItemBasedExpenseLineDetail".
  */
-import { NextRequest, NextResponse }                from 'next/server'
-import { supabaseAdmin, isSupabaseConfigured }      from '@/lib/supabase'
-import { loadTokensAsync }                          from '@/lib/quickbooks/tokens'
-import { fetchPurchasesInRange, fetchBillsInRange } from '@/lib/quickbooks/client'
+import { NextRequest, NextResponse }                                             from 'next/server'
+import { supabaseAdmin, isSupabaseConfigured }                                  from '@/lib/supabase'
+import { loadTokensAsync }                                                      from '@/lib/quickbooks/tokens'
+import { fetchPurchasesInRange, fetchBillsInRange, fetchVendorCreditsInRange }  from '@/lib/quickbooks/client'
 import type {
-  QBClass, QBPurchase, QBBill,
+  QBClass, QBPurchase, QBBill, QBVendorCredit,
   QBClassExpenseRow, QBClassGroup, QBTransactionLine,
 } from '@/lib/quickbooks/types'
 
-export const dynamic = 'force-dynamic'
+export const dynamic     = 'force-dynamic'
+export const maxDuration = 60   // paginated fetches can take > 10 s for large datasets
 
 // ── Only these DetailTypes carry real expense amounts ─────────────────────────
 const EXPENSE_LINE_TYPES = new Set([
@@ -62,8 +63,9 @@ export interface QBDebugInfo {
     expenseLines:   number          // lines with valid DetailType
     taggedLines:    number          // lines WITH a class tag  ← counted in our total
     untaggedLines:  number          // lines WITHOUT a class tag ← NOT in our total
-    qbHeaderTotal:  number          // sum of TotalAmt (QB's own figure)
-    ourLineTotal:   number          // sum of tagged expense line amounts
+    qbHeaderTotal:  number          // sum of TotalAmt (QB's own figure, incl. tax)
+    ourLineTotal:   number          // sum of tagged expense line amounts (excl. tax)
+    pages:          number          // how many QB API pages were fetched (each = 1000 records)
   }
   bills: {
     fetched:        number
@@ -73,22 +75,32 @@ export interface QBDebugInfo {
     untaggedLines:  number
     qbHeaderTotal:  number
     ourLineTotal:   number
+    pages:          number
+  }
+  vendorCredits: {
+    fetched:        number
+    inRange:        number
+    taggedLines:    number
+    creditTotal:    number          // total amount being subtracted from class totals
   }
   combined: {
-    qbHeaderTotal:  number          // what QB says the total should be
-    ourTotal:       number          // what we are displaying
+    qbHeaderTotal:  number          // what QB says the gross total is (incl. tax)
+    grossLineTotal: number          // our expense lines before credit subtraction
+    creditTotal:    number          // vendor credits subtracted
+    ourTotal:       number          // net total displayed = grossLines - credits
     untaggedTotal:  number          // expense not shown (no class tag)
-    discrepancy:    number          // qbHeaderTotal - ourTotal - untaggedTotal
+    taxGap:         number          // qbHeaderTotal - grossLineTotal - untaggedTotal (≈ VAT)
   }
 }
 
 // ── Build class groups + collect debug stats ──────────────────────────────────
 function buildClassGroups(
-  classes:   QBClass[],
-  purchases: QBPurchase[],
-  bills:     QBBill[],
-  from:      string | null,
-  to:        string | null,
+  classes:       QBClass[],
+  purchases:     QBPurchase[],
+  bills:         QBBill[],
+  vendorCredits: QBVendorCredit[],
+  from:          string | null,
+  to:            string | null,
 ): { classGroups: QBClassGroup[]; debug: Omit<QBDebugInfo, 'fetchedAt' | 'source' | 'dateFilter'> } {
 
   const classNameById = new Map<string, string>()
@@ -114,8 +126,10 @@ function buildClassGroups(
   let lineSeq = 0
 
   // ── Debug counters ─────────────────────────────────────────────────────────
-  const pd = { fetched: purchases.length, inRange: 0, expenseLines: 0, taggedLines: 0, untaggedLines: 0, qbHeaderTotal: 0, ourLineTotal: 0, untaggedLineAmt: 0 }
-  const bd = { fetched: bills.length,     inRange: 0, expenseLines: 0, taggedLines: 0, untaggedLines: 0, qbHeaderTotal: 0, ourLineTotal: 0, untaggedLineAmt: 0 }
+  const PAGE = 1000
+  const pd = { fetched: purchases.length,     inRange: 0, expenseLines: 0, taggedLines: 0, untaggedLines: 0, qbHeaderTotal: 0, ourLineTotal: 0, untaggedLineAmt: 0, pages: Math.ceil(purchases.length / PAGE) || 1 }
+  const bd = { fetched: bills.length,         inRange: 0, expenseLines: 0, taggedLines: 0, untaggedLines: 0, qbHeaderTotal: 0, ourLineTotal: 0, untaggedLineAmt: 0, pages: Math.ceil(bills.length     / PAGE) || 1 }
+  const vd = { fetched: vendorCredits.length, inRange: 0, taggedLines: 0, creditTotal: 0 }
 
   // ── Process Purchases ──────────────────────────────────────────────────────
   for (const p of purchases) {
@@ -211,6 +225,44 @@ function buildClassGroups(
     }
   }
 
+  // ── Process Vendor Credits (SUBTRACT from class totals) ────────────────────
+  for (const vc of vendorCredits) {
+    if (!inRange(vc.TxnDate, from, to)) continue
+    vd.inRange++
+    const vendor = vc.VendorRef?.name ?? 'Unknown Vendor'
+    const note   = vc.PrivateNote ?? ''
+
+    for (const line of vc.Line ?? []) {
+      if (!EXPENSE_LINE_TYPES.has(line.DetailType)) continue
+      const amount = line.Amount ?? 0
+      if (amount <= 0) continue
+
+      const abd = line.AccountBasedExpenseLineDetail
+      const ibd = line.ItemBasedExpenseLineDetail
+      const cls = resolveClass(abd?.ClassRef ?? ibd?.ClassRef, vc.ClassRef)
+      if (!cls) continue
+
+      vd.taggedLines++
+      vd.creditTotal += amount
+
+      const className   = classNameById.get(cls.id) ?? cls.name ?? `Class ${cls.id}`
+      const accountName = abd?.AccountRef?.name ?? ibd?.ItemRef?.name ?? 'Uncategorized'
+
+      // Negative amount = credit (reduces class total)
+      addLine({
+        txnId:       vc.Id,
+        lineId:      `vc-${vc.Id}-${++lineSeq}`,
+        txnDate:     vc.TxnDate,
+        vendor,
+        accountName,
+        amount:      -amount,          // negative → reduces class total
+        type:        'vendor_credit',
+        paymentType: 'Vendor Credit',
+        note:        line.Description ?? note,
+      }, cls.id, className)
+    }
+  }
+
   // ── Sort ───────────────────────────────────────────────────────────────────
   for (const g of groups.values()) {
     g.transactions.sort((a, b) =>
@@ -218,13 +270,15 @@ function buildClassGroups(
     )
   }
 
-  const classGroups = Array.from(groups.values()).sort((a, b) => b.total - a.total)
+  const classGroups    = Array.from(groups.values()).sort((a, b) => b.total - a.total)
 
-  const ourTotal       = pd.ourLineTotal    + bd.ourLineTotal
+  const grossLineTotal = pd.ourLineTotal    + bd.ourLineTotal
+  const creditTotal    = vd.creditTotal
+  const ourTotal       = grossLineTotal     - creditTotal
   const qbHeaderTotal  = pd.qbHeaderTotal   + bd.qbHeaderTotal
   const untaggedTotal  = pd.untaggedLineAmt + bd.untaggedLineAmt
-  // discrepancy: anything we still can't account for (tax on header, rounding, etc.)
-  const discrepancy    = Math.round((qbHeaderTotal - ourTotal - untaggedTotal) * 100) / 100
+  // Tax gap: QB's TotalAmt includes VAT added at header level; expense lines are pre-tax
+  const taxGap         = Math.round((qbHeaderTotal - grossLineTotal - untaggedTotal) * 100) / 100
 
   return {
     classGroups,
@@ -237,6 +291,7 @@ function buildClassGroups(
         untaggedLines: pd.untaggedLines,
         qbHeaderTotal: Math.round(pd.qbHeaderTotal * 100) / 100,
         ourLineTotal:  Math.round(pd.ourLineTotal  * 100) / 100,
+        pages:         pd.pages,
       },
       bills: {
         fetched:       bd.fetched,
@@ -246,12 +301,21 @@ function buildClassGroups(
         untaggedLines: bd.untaggedLines,
         qbHeaderTotal: Math.round(bd.qbHeaderTotal * 100) / 100,
         ourLineTotal:  Math.round(bd.ourLineTotal  * 100) / 100,
+        pages:         bd.pages,
+      },
+      vendorCredits: {
+        fetched:     vd.fetched,
+        inRange:     vd.inRange,
+        taggedLines: vd.taggedLines,
+        creditTotal: Math.round(vd.creditTotal * 100) / 100,
       },
       combined: {
-        qbHeaderTotal: Math.round(qbHeaderTotal * 100) / 100,
-        ourTotal:      Math.round(ourTotal      * 100) / 100,
-        untaggedTotal: Math.round(untaggedTotal * 100) / 100,
-        discrepancy,
+        qbHeaderTotal:  Math.round(qbHeaderTotal  * 100) / 100,
+        grossLineTotal: Math.round(grossLineTotal  * 100) / 100,
+        creditTotal:    Math.round(creditTotal     * 100) / 100,
+        ourTotal:       Math.round(ourTotal        * 100) / 100,
+        untaggedTotal:  Math.round(untaggedTotal   * 100) / 100,
+        taxGap,
       },
     },
   }
@@ -299,27 +363,31 @@ export async function GET(req: NextRequest) {
     const classes: QBClass[] = (data.classes ?? []) as QBClass[]
 
     // ── Decide data source: live QB API vs snapshot ────────────────────────────
-    let purchases: QBPurchase[]
-    let bills:     QBBill[]
-    let source:    'live' | 'snapshot'
+    let purchases:     QBPurchase[]
+    let bills:         QBBill[]
+    let vendorCredits: QBVendorCredit[]
+    let source:        'live' | 'snapshot'
 
     const tokens   = await loadTokensAsync()
     const hasRange = from || to
 
     if (tokens && hasRange) {
-      console.log(`[QB Classes] Live fetch from QB: from=${from} to=${to}`)
-      ;[purchases, bills] = await Promise.all([
+      console.log(`[QB Classes] Live paginated fetch from QB: from=${from} to=${to}`)
+      ;[purchases, bills, vendorCredits] = await Promise.all([
         fetchPurchasesInRange(from, to),
         fetchBillsInRange(from, to),
+        fetchVendorCreditsInRange(from, to),
       ])
+      console.log(`[QB Classes] Fetched: ${purchases.length} purchases, ${bills.length} bills, ${vendorCredits.length} vendor credits`)
       source = 'live'
     } else {
-      purchases = (data.purchases ?? []) as QBPurchase[]
-      bills     = (data.bills     ?? []) as QBBill[]
-      source    = 'snapshot'
+      purchases     = (data.purchases ?? []) as QBPurchase[]
+      bills         = (data.bills     ?? []) as QBBill[]
+      vendorCredits = []   // not cached in snapshot yet
+      source        = 'snapshot'
     }
 
-    const { classGroups, debug }     = buildClassGroups(classes, purchases, bills, from, to)
+    const { classGroups, debug }     = buildClassGroups(classes, purchases, bills, vendorCredits, from, to)
     const { expenses, accountNames } = buildExpenses(classGroups)
 
     const allDates = [
@@ -334,12 +402,13 @@ export async function GET(req: NextRequest) {
       ...debug,
     }
 
-    console.log('[QB Classes] debug:', JSON.stringify(fullDebug.combined))
+    console.log('[QB Classes] debug combined:', JSON.stringify(fullDebug.combined))
+    console.log('[QB Classes] purchases pages:', fullDebug.purchases.pages, 'bills pages:', fullDebug.bills.pages)
 
     return NextResponse.json({
       synced:       true,
       synced_at:    data.synced_at,
-      fetched_at:   fetchedAt,          // when this request hit QB / snapshot
+      fetched_at:   fetchedAt,
       source,
       classes,
       classGroups,
@@ -351,11 +420,12 @@ export async function GET(req: NextRequest) {
         latest:   allDates[allDates.length - 1]  ?? null,
       },
       counts: {
-        classes:       classes.length,
-        purchases:     debug.purchases.inRange,
-        bills:         debug.bills.inRange,
-        classGroups:   classGroups.length,
-        account_types: accountNames.length,
+        classes:        classes.length,
+        purchases:      debug.purchases.inRange,
+        bills:          debug.bills.inRange,
+        vendorCredits:  debug.vendorCredits.inRange,
+        classGroups:    classGroups.length,
+        account_types:  accountNames.length,
       },
     })
   } catch (err) {
