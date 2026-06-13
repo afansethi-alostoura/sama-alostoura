@@ -110,10 +110,13 @@ export async function POST(req: Request) {
     setPendingOTP({ code, expiresAt: Date.now() + OTP_TTL_MS, attempts: 0, requestedAt: Date.now() })
 
     try {
-      await sendOTP(adminWA, code)
+      const timeout = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('WhatsApp timeout')), 5000)
+      )
+      await Promise.race([sendOTP(adminWA, code), timeout])
     } catch (err) {
       console.error('[login] WhatsApp send failed:', err)
-      // WhatsApp failed — fall back to direct login so user is never locked out
+      // WhatsApp failed or timed out — fall back to direct login so user is never locked out
       const token = createSessionToken()
       const res = NextResponse.json({ ok: true, step: 'done', warning: 'WhatsApp unavailable' })
       setSessionCookie(res, token)
