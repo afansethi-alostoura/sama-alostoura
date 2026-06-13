@@ -1,16 +1,8 @@
-/**
- * POST /api/auth/verify-otp
- * Body: { code: "123456" }
- *
- * Validates the pending OTP and issues a signed session cookie on success.
- */
-import { NextResponse }  from 'next/server'
-import { cookies }       from 'next/headers'
-import { createSessionToken } from '../login/route'
-import { getPendingOTP, clearPendingOTP, markAttempt } from '../request-otp/route'
-
-const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000
-const MAX_ATTEMPTS   = 3
+import { NextResponse } from 'next/server'
+import { createSessionToken } from '@/app/api/auth/login/route'
+import {
+  getPendingOTP, clearPendingOTP, markWrongAttempt, MAX_ATTEMPTS,
+} from '@/lib/otp-store'
 
 export async function POST(req: Request) {
   try {
@@ -24,42 +16,38 @@ export async function POST(req: Request) {
     const otp = getPendingOTP()
 
     if (!otp) {
-      return NextResponse.json({ error: 'No OTP pending. Request a new code.' }, { status: 400 })
+      return NextResponse.json({ error: 'No pending OTP. Please log in again.' }, { status: 400 })
     }
-
     if (Date.now() > otp.expiresAt) {
       clearPendingOTP()
-      return NextResponse.json({ error: 'OTP has expired. Request a new code.' }, { status: 400 })
+      return NextResponse.json({ error: 'Code has expired. Please log in again.' }, { status: 400 })
     }
-
     if (otp.attempts >= MAX_ATTEMPTS) {
       clearPendingOTP()
-      return NextResponse.json({ error: 'Too many wrong attempts. Request a new code.' }, { status: 429 })
+      return NextResponse.json({ error: 'Too many wrong attempts. Please log in again.' }, { status: 429 })
     }
-
     if (code !== otp.code) {
-      markAttempt()
-      const remaining = MAX_ATTEMPTS - otp.attempts
+      markWrongAttempt()
+      const left = MAX_ATTEMPTS - (otp.attempts + 1)
       return NextResponse.json(
-        { error: `Incorrect code. ${remaining} attempt${remaining === 1 ? '' : 's'} remaining.` },
+        { error: `Incorrect code. ${left} attempt${left === 1 ? '' : 's'} remaining.` },
         { status: 401 }
       )
     }
 
-    // ── Valid OTP — issue session ───────────────────────────────────────────
+    // Correct — clear OTP and issue signed session cookie
     clearPendingOTP()
     const token = createSessionToken()
 
-    const cookieStore = await cookies()
-    cookieStore.set('sama-session', token, {
+    const res = NextResponse.json({ ok: true })
+    res.cookies.set('sama-session', token, {
       httpOnly: true,
-      secure:   process.env.NODE_ENV === 'production',
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
-      maxAge:   SESSION_TTL_MS / 1000,
-      path:     '/',
+      maxAge: 7 * 24 * 60 * 60,
+      path: '/',
     })
-
-    return NextResponse.json({ success: true })
+    return res
   } catch (err) {
     console.error('[verify-otp]', err)
     return NextResponse.json({ error: 'Verification failed.' }, { status: 500 })
