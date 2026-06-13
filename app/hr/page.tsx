@@ -1,10 +1,11 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Users, Plus, Search, Clock, Phone, Calendar, Banknote,
   Pencil, Trash2, X, Shield, CreditCard, FileText, UserCheck,
   ChevronDown, AlertCircle, Car, Building2, AlertTriangle,
-  CheckCircle2, Tag, Hash, Wrench,
+  CheckCircle2, Tag, Hash, Wrench, ScanLine, Upload, Sparkles,
+  RotateCcw, Save, ChevronRight, Info,
 } from 'lucide-react'
 
 // ── Shared expiry helpers ─────────────────────────────────────────────────────
@@ -848,6 +849,488 @@ function CompanyDocsTab() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
+// SCAN DOCUMENT TAB — AI-powered document analysis
+// ════════════════════════════════════════════════════════════════════════════════
+
+interface Extracted {
+  documentType:     string
+  category:         'employee' | 'vehicle' | 'company'
+  confidence:       'high' | 'medium' | 'low'
+  // employee
+  holderName?:      string | null
+  nationality?:     string | null
+  dateOfBirth?:     string | null
+  gender?:          string | null
+  // vehicle
+  plateNumber?:     string | null
+  vehicleMake?:     string | null
+  vehicleModel?:    string | null
+  vehicleYear?:     string | null
+  vehicleColor?:    string | null
+  chassisNumber?:   string | null
+  // company
+  companyName?:     string | null
+  licenseNumber?:   string | null
+  // common
+  docNumber?:       string | null
+  issuingAuthority?: string | null
+  issueDate?:       string | null
+  expiryDate?:      string | null
+  notes?:           string | null
+}
+
+type SaveTarget = 'new-employee' | 'existing-employee' | 'new-vehicle' | 'existing-vehicle' | 'company-doc'
+
+const CONFIDENCE_BADGE: Record<string, string> = {
+  high:   'bg-emerald-100 text-emerald-700',
+  medium: 'bg-amber-100 text-amber-700',
+  low:    'bg-red-100 text-red-700',
+}
+
+const CATEGORY_ICON: Record<string, React.ElementType> = {
+  employee: Users,
+  vehicle:  Car,
+  company:  Building2,
+}
+
+function Field({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <div>
+      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">{label}</label>
+      <input
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+      />
+    </div>
+  )
+}
+
+function ScanDocumentTab() {
+  const fileRef   = useRef<HTMLInputElement>(null)
+  const [dragging, setDragging]   = useState(false)
+  const [file,     setFile]       = useState<File | null>(null)
+  const [preview,  setPreview]    = useState<string | null>(null)
+  const [loading,  setLoading]    = useState(false)
+  const [error,    setError]      = useState<string | null>(null)
+  const [result,   setResult]     = useState<Extracted | null>(null)
+  const [edited,   setEdited]     = useState<Extracted | null>(null)
+  const [target,   setTarget]     = useState<SaveTarget | null>(null)
+  const [employees, setEmployees] = useState<Employee[]>([])
+  const [vehicles,  setVehicles]  = useState<Vehicle[]>([])
+  const [selEmpId,  setSelEmpId]  = useState('')
+  const [selVehId,  setSelVehId]  = useState('')
+  const [saving,    setSaving]    = useState(false)
+  const [saved,     setSaved]     = useState(false)
+
+  // Pre-load lists for existing-record selection
+  useEffect(() => {
+    fetch('/api/staff').then(r => r.json()).then(d => setEmployees(d.employees ?? []))
+    fetch('/api/vehicles').then(r => r.json()).then(d => setVehicles(d.vehicles ?? []))
+  }, [])
+
+  function pickFile(f: File) {
+    setFile(f)
+    setResult(null)
+    setEdited(null)
+    setError(null)
+    setSaved(false)
+    setTarget(null)
+    if (f.type.startsWith('image/')) {
+      const url = URL.createObjectURL(f)
+      setPreview(url)
+    } else {
+      setPreview(null)
+    }
+  }
+
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault()
+    setDragging(false)
+    const f = e.dataTransfer.files[0]
+    if (f) pickFile(f)
+  }
+
+  async function analyze() {
+    if (!file) return
+    setLoading(true)
+    setError(null)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const res  = await fetch('/api/hr/analyze-document', { method: 'POST', body: form })
+      const data = await res.json()
+      if (!res.ok || !data.ok) throw new Error(data.error ?? 'Analysis failed')
+      const ext = data.extracted as Extracted
+      setResult(ext)
+      setEdited({ ...ext })
+      // Default target based on category
+      if (ext.category === 'employee') setTarget('existing-employee')
+      if (ext.category === 'vehicle')  setTarget('existing-vehicle')
+      if (ext.category === 'company')  setTarget('company-doc')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Unknown error')
+    }
+    setLoading(false)
+  }
+
+  function setField(k: keyof Extracted, v: string) {
+    setEdited(e => e ? { ...e, [k]: v || null } : e)
+  }
+
+  async function save() {
+    if (!edited || !target) return
+    setSaving(true)
+    try {
+      if (target === 'new-employee' || target === 'existing-employee') {
+        const isNew = target === 'new-employee'
+        const url   = isNew ? '/api/staff' : `/api/staff/${selEmpId}`
+        const method = isNew ? 'POST' : 'PATCH'
+
+        // Map extracted fields to employee fields
+        const docTypeL = (edited.documentType ?? '').toLowerCase()
+        const body: Record<string, string | null> = {}
+        if (isNew) {
+          body.name              = edited.holderName    ?? ''
+          body.role              = 'Site Labourer'
+          body.nationality       = edited.nationality   ?? ''
+          body.status            = 'active'
+        }
+        if (docTypeL.includes('visa'))              body.visa_expiry           = edited.expiryDate ?? null
+        else if (docTypeL.includes('emirates'))     body.emirates_id_expiry    = edited.expiryDate ?? null
+        else if (docTypeL.includes('passport'))     body.passport_expiry       = edited.expiryDate ?? null
+        else if (docTypeL.includes('labour') || docTypeL.includes('work permit')) body.labour_card_expiry = edited.expiryDate ?? null
+
+        await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      }
+
+      else if (target === 'new-vehicle' || target === 'existing-vehicle') {
+        const isNew = target === 'new-vehicle'
+        const url    = isNew ? '/api/vehicles' : `/api/vehicles/${selVehId}`
+        const method = isNew ? 'POST' : 'PATCH'
+
+        const docTypeL = (edited.documentType ?? '').toLowerCase()
+        const body: Record<string, string | null | number> = {}
+        if (isNew) {
+          body.plate_number = edited.plateNumber ?? ''
+          body.make         = edited.vehicleMake  ?? ''
+          body.model        = edited.vehicleModel ?? ''
+          body.year         = edited.vehicleYear ? Number(edited.vehicleYear) : 0
+          body.color        = edited.vehicleColor ?? null
+          body.type         = 'Pickup'
+          body.status       = 'active'
+        }
+        if (docTypeL.includes('mulkiya') || docTypeL.includes('registr')) body.registration_expiry = edited.expiryDate ?? null
+        else if (docTypeL.includes('insurance'))                           body.insurance_expiry    = edited.expiryDate ?? null
+        else if (docTypeL.includes('rta') || docTypeL.includes('test'))   body.rta_test_expiry     = edited.expiryDate ?? null
+
+        await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      }
+
+      else if (target === 'company-doc') {
+        const catMap: Record<string, string> = {
+          license: 'License', certificate: 'Certificate', insurance: 'Insurance',
+          permit: 'Permit', registration: 'Registration', bond: 'Bond',
+        }
+        const typeL = (edited.documentType ?? '').toLowerCase()
+        const category = Object.entries(catMap).find(([k]) => typeL.includes(k))?.[1] ?? 'Other'
+        await fetch('/api/company-docs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name:              edited.documentType ?? 'Document',
+            category,
+            issuing_authority: edited.issuingAuthority ?? '',
+            doc_number:        edited.licenseNumber ?? edited.docNumber ?? null,
+            issue_date:        edited.issueDate    ?? null,
+            expiry_date:       edited.expiryDate   ?? null,
+            reminder_days:     30,
+            notes:             edited.notes        ?? null,
+          }),
+        })
+      }
+
+      setSaved(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Save failed')
+    }
+    setSaving(false)
+  }
+
+  function reset() {
+    setFile(null); setPreview(null); setResult(null); setEdited(null)
+    setError(null); setSaved(false); setTarget(null); setSelEmpId(''); setSelVehId('')
+  }
+
+  const CatIcon = edited ? (CATEGORY_ICON[edited.category] ?? FileText) : FileText
+
+  return (
+    <div className="space-y-6 max-w-3xl mx-auto">
+      {/* Intro */}
+      <div className="bg-gradient-to-br from-blue-600 to-indigo-600 rounded-2xl p-6 text-white">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center">
+            <Sparkles className="w-5 h-5"/>
+          </div>
+          <h2 className="text-lg font-bold">AI Document Scanner</h2>
+        </div>
+        <p className="text-blue-100 text-sm leading-relaxed">
+          Upload any document — Visa, Emirates ID, Passport, Labour Card, Mulkiya, Vehicle Insurance, Trade License, or any company certificate.
+          The AI will read it and automatically extract all details, then save them to the right place.
+        </p>
+      </div>
+
+      {/* Upload zone */}
+      {!file && (
+        <div
+          onDragOver={e => { e.preventDefault(); setDragging(true) }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={onDrop}
+          onClick={() => fileRef.current?.click()}
+          className={`border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-all ${
+            dragging ? 'border-blue-400 bg-blue-50' : 'border-slate-300 hover:border-blue-400 hover:bg-slate-50'
+          }`}
+        >
+          <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <Upload className="w-7 h-7 text-slate-400"/>
+          </div>
+          <p className="font-semibold text-slate-700 mb-1">Drop document here or click to browse</p>
+          <p className="text-sm text-slate-400">PDF, JPG, PNG — max 20 MB</p>
+          <p className="text-xs text-slate-400 mt-2">Works with: Visa · Emirates ID · Passport · Labour Card · Mulkiya · Vehicle Insurance · Trade License · Certificates</p>
+          <input ref={fileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) pickFile(f) }}/>
+        </div>
+      )}
+
+      {/* File selected — preview + analyze button */}
+      {file && !result && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          {preview && (
+            <div className="bg-slate-50 border-b border-slate-100 flex justify-center p-4">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={preview} alt="Document preview" className="max-h-64 rounded-lg shadow object-contain"/>
+            </div>
+          )}
+          <div className="p-5">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center flex-shrink-0">
+                <FileText className="w-5 h-5 text-blue-500"/>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-slate-800 text-sm truncate">{file.name}</p>
+                <p className="text-xs text-slate-400">{(file.size / 1024).toFixed(0)} KB</p>
+              </div>
+              <button onClick={reset} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400"><X className="w-4 h-4"/></button>
+            </div>
+
+            {error && <div className="mb-4 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">{error}</div>}
+
+            <button onClick={analyze} disabled={loading}
+              className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-colors">
+              {loading ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"/>
+                  Analyzing document…
+                </>
+              ) : (
+                <><Sparkles className="w-4 h-4"/> Analyze with AI</>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Results */}
+      {edited && !saved && (
+        <div className="space-y-4">
+          {/* Header card */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                  edited.category === 'employee' ? 'bg-purple-100' : edited.category === 'vehicle' ? 'bg-amber-100' : 'bg-blue-100'
+                }`}>
+                  <CatIcon className={`w-5 h-5 ${edited.category === 'employee' ? 'text-purple-600' : edited.category === 'vehicle' ? 'text-amber-600' : 'text-blue-600'}`}/>
+                </div>
+                <div>
+                  <p className="font-bold text-slate-800">{edited.documentType}</p>
+                  <p className="text-xs text-slate-500 capitalize">{edited.category} document</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${CONFIDENCE_BADGE[edited.confidence ?? 'low']}`}>
+                  {edited.confidence} confidence
+                </span>
+                <button onClick={reset} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400"><X className="w-4 h-4"/></button>
+              </div>
+            </div>
+
+            {edited.confidence === 'low' && (
+              <div className="mt-3 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+                <Info className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5"/>
+                <p className="text-xs text-amber-800">Low confidence — please review and correct the extracted fields below before saving.</p>
+              </div>
+            )}
+          </div>
+
+          {/* Extracted fields — editable */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">Extracted Information — Review &amp; Edit</p>
+
+            {/* Key expiry / dates row */}
+            <div className="grid grid-cols-2 gap-3">
+              {edited.expiryDate !== undefined && (
+                <Field label="Expiry Date" value={edited.expiryDate ?? ''} onChange={v => setField('expiryDate', v)}/>
+              )}
+              {edited.issueDate !== undefined && (
+                <Field label="Issue Date" value={edited.issueDate ?? ''} onChange={v => setField('issueDate', v)}/>
+              )}
+            </div>
+
+            {/* Document identity */}
+            <div className="grid grid-cols-2 gap-3">
+              {edited.docNumber !== undefined && (
+                <Field label="Document Number" value={edited.docNumber ?? ''} onChange={v => setField('docNumber', v)}/>
+              )}
+              {edited.issuingAuthority !== undefined && (
+                <Field label="Issuing Authority" value={edited.issuingAuthority ?? ''} onChange={v => setField('issuingAuthority', v)}/>
+              )}
+            </div>
+
+            {/* Employee fields */}
+            {edited.category === 'employee' && (
+              <div className="grid grid-cols-2 gap-3">
+                {edited.holderName !== undefined && (
+                  <Field label="Full Name" value={edited.holderName ?? ''} onChange={v => setField('holderName', v)}/>
+                )}
+                {edited.nationality !== undefined && (
+                  <Field label="Nationality" value={edited.nationality ?? ''} onChange={v => setField('nationality', v)}/>
+                )}
+                {edited.dateOfBirth !== undefined && (
+                  <Field label="Date of Birth" value={edited.dateOfBirth ?? ''} onChange={v => setField('dateOfBirth', v)}/>
+                )}
+              </div>
+            )}
+
+            {/* Vehicle fields */}
+            {edited.category === 'vehicle' && (
+              <div className="grid grid-cols-2 gap-3">
+                {edited.plateNumber !== undefined && (
+                  <Field label="Plate Number" value={edited.plateNumber ?? ''} onChange={v => setField('plateNumber', v)}/>
+                )}
+                {edited.vehicleMake !== undefined && (
+                  <Field label="Make" value={edited.vehicleMake ?? ''} onChange={v => setField('vehicleMake', v)}/>
+                )}
+                {edited.vehicleModel !== undefined && (
+                  <Field label="Model" value={edited.vehicleModel ?? ''} onChange={v => setField('vehicleModel', v)}/>
+                )}
+                {edited.vehicleYear !== undefined && (
+                  <Field label="Year" value={edited.vehicleYear ?? ''} onChange={v => setField('vehicleYear', v)}/>
+                )}
+              </div>
+            )}
+
+            {/* Company fields */}
+            {edited.category === 'company' && edited.licenseNumber !== undefined && (
+              <Field label="License / Certificate Number" value={edited.licenseNumber ?? ''} onChange={v => setField('licenseNumber', v)}/>
+            )}
+
+            {edited.notes && (
+              <div className="bg-slate-50 rounded-xl px-3 py-2.5 text-xs text-slate-500 leading-relaxed">
+                <span className="font-semibold text-slate-600">AI Notes: </span>{edited.notes}
+              </div>
+            )}
+          </div>
+
+          {/* Save target selection */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">Where to Save</p>
+
+            {edited.category === 'employee' && (
+              <div className="space-y-2">
+                <label className="flex items-center gap-3 p-3 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-50 transition-colors">
+                  <input type="radio" name="target" value="existing-employee" checked={target==='existing-employee'} onChange={() => setTarget('existing-employee')} className="accent-blue-600"/>
+                  <span className="text-sm font-medium text-slate-700">Update existing employee record</span>
+                </label>
+                {target === 'existing-employee' && (
+                  <select value={selEmpId} onChange={e => setSelEmpId(e.target.value)}
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 ml-6">
+                    <option value="">Select employee…</option>
+                    {employees.map(e => <option key={e.id} value={e.id}>{e.name} — {e.role}</option>)}
+                  </select>
+                )}
+                <label className="flex items-center gap-3 p-3 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-50 transition-colors">
+                  <input type="radio" name="target" value="new-employee" checked={target==='new-employee'} onChange={() => setTarget('new-employee')} className="accent-blue-600"/>
+                  <span className="text-sm font-medium text-slate-700">Create new employee from this document</span>
+                </label>
+              </div>
+            )}
+
+            {edited.category === 'vehicle' && (
+              <div className="space-y-2">
+                <label className="flex items-center gap-3 p-3 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-50 transition-colors">
+                  <input type="radio" name="target" value="existing-vehicle" checked={target==='existing-vehicle'} onChange={() => setTarget('existing-vehicle')} className="accent-blue-600"/>
+                  <span className="text-sm font-medium text-slate-700">Update existing vehicle record</span>
+                </label>
+                {target === 'existing-vehicle' && (
+                  <select value={selVehId} onChange={e => setSelVehId(e.target.value)}
+                    className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 ml-6">
+                    <option value="">Select vehicle…</option>
+                    {vehicles.map(v => <option key={v.id} value={v.id}>{v.plate_number} — {v.make} {v.model}</option>)}
+                  </select>
+                )}
+                <label className="flex items-center gap-3 p-3 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-50 transition-colors">
+                  <input type="radio" name="target" value="new-vehicle" checked={target==='new-vehicle'} onChange={() => setTarget('new-vehicle')} className="accent-blue-600"/>
+                  <span className="text-sm font-medium text-slate-700">Create new vehicle from this document</span>
+                </label>
+              </div>
+            )}
+
+            {edited.category === 'company' && (
+              <label className="flex items-center gap-3 p-3 border border-blue-200 bg-blue-50 rounded-xl cursor-pointer">
+                <input type="radio" name="target" value="company-doc" checked={target==='company-doc'} onChange={() => setTarget('company-doc')} className="accent-blue-600"/>
+                <span className="text-sm font-medium text-blue-800">Save to Company Documents</span>
+              </label>
+            )}
+
+            {error && <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">{error}</div>}
+
+            <div className="flex gap-3 pt-1">
+              <button onClick={reset} className="flex items-center gap-2 px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-600 hover:bg-slate-50">
+                <RotateCcw className="w-4 h-4"/> Scan another
+              </button>
+              <button
+                onClick={save}
+                disabled={saving || !target || (target==='existing-employee' && !selEmpId) || (target==='existing-vehicle' && !selVehId)}
+                className="flex-1 flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl transition-colors"
+              >
+                {saving ? <><div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin"/>Saving…</> : <><Save className="w-4 h-4"/> Save to Records</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Success state */}
+      {saved && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8 text-center space-y-4">
+          <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto">
+            <CheckCircle2 className="w-8 h-8 text-emerald-600"/>
+          </div>
+          <div>
+            <p className="text-lg font-bold text-slate-800">Document Saved</p>
+            <p className="text-sm text-slate-500 mt-1">The expiry date and details have been updated in your records.</p>
+          </div>
+          <button onClick={reset} className="flex items-center gap-2 mx-auto text-sm font-semibold text-blue-600 hover:text-blue-700">
+            <ScanLine className="w-4 h-4"/> Scan another document
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
 // ROOT PAGE
 // ════════════════════════════════════════════════════════════════════════════════
 
@@ -855,6 +1338,7 @@ const TABS = [
   { id: 'employees',    label: 'Employees',          icon: Users     },
   { id: 'vehicles',     label: 'Vehicles',            icon: Car       },
   { id: 'company-docs', label: 'Company Documents',   icon: Building2 },
+  { id: 'scan',         label: 'Scan Document',       icon: ScanLine  },
 ] as const
 
 type TabId = typeof TABS[number]['id']
@@ -871,19 +1355,20 @@ export default function HRPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-slate-200">
+      <div className="flex gap-1 border-b border-slate-200 overflow-x-auto">
         {TABS.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             onClick={() => setTab(id)}
-            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors -mb-px ${
+            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors -mb-px whitespace-nowrap ${
               tab === id
                 ? 'border-blue-600 text-blue-700'
                 : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
-            }`}
+            } ${id === 'scan' ? 'ml-auto' : ''}`}
           >
             <Icon className="w-4 h-4"/>
             {label}
+            {id === 'scan' && <span className="text-[9px] font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full ml-1">AI</span>}
           </button>
         ))}
       </div>
@@ -892,6 +1377,7 @@ export default function HRPage() {
       {tab === 'employees'    && <EmployeesTab/>}
       {tab === 'vehicles'     && <VehiclesTab/>}
       {tab === 'company-docs' && <CompanyDocsTab/>}
+      {tab === 'scan'         && <ScanDocumentTab/>}
     </div>
   )
 }
