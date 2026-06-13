@@ -105,12 +105,9 @@ export async function POST(req: Request) {
     try {
       await sendOTP(adminWA, code)
     } catch (err) {
-      console.error('[login] WhatsApp send failed:', err)
-      // Fall back to direct login so user is never locked out
-      const token = createSessionToken()
-      const res = NextResponse.json({ ok: true, step: 'done', warning: 'WhatsApp unavailable' })
-      setSessionCookie(res, token)
-      return res
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('[login] WhatsApp send failed:', msg)
+      return NextResponse.json({ error: `WhatsApp error: ${msg}` }, { status: 500 })
     }
 
     const masked = adminWA.slice(0, -4).replace(/\d/g, '*') + adminWA.slice(-4)
