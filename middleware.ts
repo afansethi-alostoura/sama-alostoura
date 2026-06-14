@@ -21,8 +21,7 @@ const PUBLIC_PATHS = new Set([
 // Signature covers "{randomHex}.{expiryMs}" so expiry cannot be tampered.
 async function verifySession(cookie: string): Promise<boolean> {
   try {
-    const secret = process.env.SESSION_SECRET
-    if (!secret) return false
+    const secret = process.env.SESSION_SECRET ?? 'dev-secret-change-in-production'
 
     const lastDot = cookie.lastIndexOf('.')
     if (lastDot === -1) return false
