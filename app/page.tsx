@@ -142,20 +142,20 @@ export default function CEODashboard() {
             color: 'violet', trend: null,
           },
         ].map(({ label, value, sub, icon: Icon, color, trend }) => (
-          <div key={label} className="bg-white rounded-xl border border-slate-100 p-5 shadow-card card-hover">
-            <div className="flex items-start justify-between mb-4">
-              <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${COLOR_MAP[color]?.bg}`}>
-                <Icon className={`w-5 h-5 ${COLOR_MAP[color]?.text}`} />
+          <div key={label} className="bg-white rounded-xl border border-slate-100 p-3 sm:p-5 shadow-card card-hover min-w-0">
+            <div className="flex items-start justify-between mb-2 sm:mb-4">
+              <div className={`w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${COLOR_MAP[color]?.bg}`}>
+                <Icon className={`w-4 h-4 sm:w-5 sm:h-5 ${COLOR_MAP[color]?.text}`} />
               </div>
               {trend && (
-                <span className="flex items-center gap-0.5 text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
-                  <ArrowUpRight className="w-3 h-3" />{trend}
+                <span className="flex items-center gap-0.5 text-[10px] sm:text-xs font-medium text-emerald-600 bg-emerald-50 px-1.5 sm:px-2 py-0.5 rounded-full">
+                  <ArrowUpRight className="w-2.5 h-2.5 sm:w-3 sm:h-3" />{trend}
                 </span>
               )}
             </div>
-            <p className="text-2xl font-bold text-slate-900">{value}</p>
-            <p className="text-sm text-slate-500 mt-1">{label}</p>
-            <p className="text-xs text-slate-400 mt-0.5">{sub}</p>
+            <p className="text-base sm:text-2xl font-bold text-slate-900 truncate">{value}</p>
+            <p className="text-xs sm:text-sm text-slate-500 mt-0.5 sm:mt-1 leading-tight">{label}</p>
+            <p className="text-[10px] sm:text-xs text-slate-400 mt-0.5 truncate">{sub}</p>
           </div>
         ))}
       </div>
