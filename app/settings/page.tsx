@@ -69,7 +69,7 @@ function SettingsInner() {
   const clientConfigured = status?.client_configured
 
   return (
-    <div className="p-8 max-w-3xl">
+    <div className="p-4 sm:p-8 max-w-3xl">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
           <Settings className="w-6 h-6" /> Settings
@@ -122,7 +122,7 @@ function SettingsInner() {
           {status?.connected ? (
             <>
               {/* Connection info */}
-              <div className="grid grid-cols-2 gap-4 mb-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5">
                 {[
                   { label: 'Company',         value: status.company_name ?? 'Fetching…' },
                   { label: 'Realm ID',         value: status.realm_id ?? '—' },

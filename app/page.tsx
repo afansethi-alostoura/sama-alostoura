@@ -119,7 +119,7 @@ export default function CEODashboard() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
         {[
           {
             label: 'Total Contract Value', value: formatCurrency(totalContract),
@@ -161,7 +161,7 @@ export default function CEODashboard() {
       </div>
 
       {/* Main content grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 sm:gap-6">
 
         {/* Morning briefing + project health */}
         <div className="lg:col-span-2 space-y-6">

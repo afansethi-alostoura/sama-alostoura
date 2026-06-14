@@ -112,7 +112,7 @@ function EmpModal({ initial, onSave, onClose }: {
         <form onSubmit={submit} className="p-6 space-y-5">
           <div>
             <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Basic Information</p>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Field label="Full Name" name="name" required />
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Role <span className="text-red-500">*</span></label>
@@ -138,7 +138,7 @@ function EmpModal({ initial, onSave, onClose }: {
           </div>
           <div>
             <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Document Expiry Dates</p>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Field label="Visa Expiry"        name="visa_expiry"        type="date" />
               <Field label="Emirates ID Expiry" name="emirates_id_expiry" type="date" />
               <Field label="Passport Expiry"    name="passport_expiry"    type="date" />
@@ -412,7 +412,7 @@ function VehModal({ initial, onSave, onClose }: {
         <form onSubmit={submit} className="p-6 space-y-5">
           <div>
             <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Vehicle Details</p>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Field label="Plate Number" name="plate_number" required />
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Type</label>
@@ -669,8 +669,8 @@ function DocModal({ initial, onSave, onClose }: {
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400"><X className="w-5 h-5"/></button>
         </div>
         <form onSubmit={submit} className="p-6 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="col-span-2"><Field label="Document Name" name="name" required /></div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="col-span-1 sm:col-span-2"><Field label="Document Name" name="name" required /></div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Category <span className="text-red-500">*</span></label>
               <select value={form.category} onChange={e => set('category', e.target.value)} required
@@ -1178,7 +1178,7 @@ function ScanDocumentTab() {
             <p className="text-xs font-bold text-slate-400 uppercase tracking-wide">Extracted Information — Review &amp; Edit</p>
 
             {/* Key expiry / dates row */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {edited.expiryDate !== undefined && (
                 <Field label="Expiry Date" value={edited.expiryDate ?? ''} onChange={v => setField('expiryDate', v)}/>
               )}
@@ -1188,7 +1188,7 @@ function ScanDocumentTab() {
             </div>
 
             {/* Document identity */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {edited.docNumber !== undefined && (
                 <Field label="Document Number" value={edited.docNumber ?? ''} onChange={v => setField('docNumber', v)}/>
               )}
@@ -1199,7 +1199,7 @@ function ScanDocumentTab() {
 
             {/* Employee fields */}
             {edited.category === 'employee' && (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {edited.holderName !== undefined && (
                   <Field label="Full Name" value={edited.holderName ?? ''} onChange={v => setField('holderName', v)}/>
                 )}
@@ -1214,7 +1214,7 @@ function ScanDocumentTab() {
 
             {/* Vehicle fields */}
             {edited.category === 'vehicle' && (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {edited.plateNumber !== undefined && (
                   <Field label="Plate Number" value={edited.plateNumber ?? ''} onChange={v => setField('plateNumber', v)}/>
                 )}
@@ -1347,7 +1347,7 @@ export default function HRPage() {
   const [tab, setTab] = useState<TabId>('employees')
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-4 sm:space-y-6">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-slate-800">HR &amp; Admin</h1>

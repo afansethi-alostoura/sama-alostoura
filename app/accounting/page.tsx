@@ -1424,7 +1424,7 @@ export default function AccountingPage() {
       )}
 
       {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mb-6">
         <StatCard label="Total Billed"       value={`AED ${(totalBilled / 1000).toFixed(0)}K`}      sub={snapshot ? 'From QuickBooks' : 'From contracts'} color="text-slate-900" />
         <StatCard label="Total Received"     value={`AED ${(totalReceived / 1000).toFixed(0)}K`}    sub={`${totalBilled ? Math.round((totalReceived / totalBilled) * 100) : 0}% collected`} color="text-emerald-600" />
         <StatCard label="Outstanding"        value={`AED ${(totalOutstanding / 1000).toFixed(0)}K`} sub={overdueCount > 0 ? `${overdueCount} overdue` : 'All current'} color={overdueCount > 0 ? 'text-red-600' : 'text-amber-600'} />

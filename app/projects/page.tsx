@@ -60,7 +60,7 @@ export default function ProjectsPage() {
       </div>
 
       {/* Stats row */}
-      <div className="grid grid-cols-3 gap-3 mb-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
         {[
           { label: 'Total Portfolio Value', value: formatCurrency(totalValue), color: 'text-blue-600' },
           { label: 'Active Projects',       value: String(activeCount),        color: 'text-emerald-600' },

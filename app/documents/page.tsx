@@ -64,7 +64,7 @@ export default function DocumentsPage() {
   }, [])
 
   return (
-    <div className="p-6 sm:p-10 max-w-3xl mx-auto">
+    <div className="p-4 sm:p-8 max-w-3xl mx-auto">
       {/* Header */}
       <div className="flex items-center gap-3 mb-8">
         <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center">
@@ -79,7 +79,7 @@ export default function DocumentsPage() {
       </div>
 
       {/* Folder grid */}
-      <div className="grid grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5">
         {FOLDERS.map(({ key, label, Icon, bg, border, hover, text, badge }) => {
           const count = counts[key] ?? 0
           return (

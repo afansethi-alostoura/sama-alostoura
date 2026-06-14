@@ -103,7 +103,7 @@ export default function AddProjectPage() {
   }
 
   return (
-    <div className="p-8 max-w-2xl">
+    <div className="p-4 sm:p-8 max-w-2xl">
       {/* Header */}
       <div className="mb-8">
         <button
@@ -126,7 +126,7 @@ export default function AddProjectPage() {
       <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-slate-100 shadow-sm p-6 space-y-5">
 
         {/* Project name + type */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Project Name" required>
             <input
               className={INPUT}
@@ -146,7 +146,7 @@ export default function AddProjectPage() {
         </div>
 
         {/* Client + location */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Client Name">
             <input
               className={INPUT}
@@ -167,7 +167,7 @@ export default function AddProjectPage() {
         </div>
 
         {/* Financials */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Contract Value (AED)" required>
             <input
               className={INPUT}
@@ -188,7 +188,7 @@ export default function AddProjectPage() {
         </div>
 
         {/* Progress + stage */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Progress (%)">
             <input
               className={INPUT}
@@ -212,7 +212,7 @@ export default function AddProjectPage() {
         </div>
 
         {/* Dates */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <Field label="Start Date">
             <input
               className={INPUT}
