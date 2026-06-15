@@ -90,6 +90,12 @@ export default function ProjectPage() {
   const [qbIncomeSyncing,   setQbIncomeSyncing]   = useState(false)
   const [qbIncomeSynced,    setQbIncomeSynced]    = useState(false)
 
+  // MBHRE Approved %
+  const [mbhreApprovedPct, setMbhreApprovedPct] = useState<number | ''>('')
+  const [mbhreEditMode,    setMbhreEditMode]    = useState(false)
+  const [mbhreSaving,      setMbhreSaving]      = useState(false)
+  const [mbhreSaved,       setMbhreSaved]       = useState(false)
+
   // Documents — only count loaded here; full UI is on /documents sub-pages
   const [documents, setDocuments] = useState<{ id: string }[]>([])
 
@@ -116,6 +122,10 @@ export default function ProjectPage() {
 
   useEffect(() => {
     if (project) setQbClassName((project as any).qb_class_name ?? '')
+  }, [project])
+
+  useEffect(() => {
+    if (project) setMbhreApprovedPct(project.mbhre_approved_progress ?? '')
   }, [project])
 
   function openEdit() {
@@ -160,6 +170,25 @@ export default function ProjectPage() {
     } finally {
       setEditSaving(false)
     }
+  }
+
+  async function saveMbhreApproved() {
+    if (!project || mbhreApprovedPct === '') return
+    setMbhreSaving(true)
+    try {
+      const val = Math.max(0, Math.min(100, Number(mbhreApprovedPct)))
+      await fetch(`/api/projects/${project.id}`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ mbhre_approved_progress: val }),
+      })
+      setProject(prev => prev ? { ...prev, mbhre_approved_progress: val } : prev)
+      setMbhreEditMode(false)
+      setMbhreSaved(true)
+      setTimeout(() => setMbhreSaved(false), 3000)
+      broadcastProjectUpdate()
+    } catch {}
+    finally { setMbhreSaving(false) }
   }
 
   async function saveQbClass() {
@@ -515,45 +544,140 @@ export default function ProjectPage() {
         )}
 
 
-        {/* Progress bars */}
-        <div className="mb-5 space-y-4">
-          <div>
-            <div className="flex items-center justify-between text-sm mb-2">
-              <span className="text-slate-600">
-                <strong>Overall Completion</strong>
-                {boqSaving && <span className="ml-2 text-xs text-slate-400 font-normal">saving…</span>}
-              </span>
-              <span className="font-bold text-slate-800 text-lg">{effectivePct}%</span>
-            </div>
-            <div className="h-4 bg-slate-100 rounded-full overflow-hidden">
-              <div className={`h-full rounded-full transition-all duration-500 ${progressBarColor(effectivePct)}`} style={{ width: `${effectivePct}%` }} />
-            </div>
-            {project.company_boq_id && boqItems.length > 0 && (
-              <p className="text-xs text-slate-500 mt-1">Weighted by AED value across {boqItems.length} BOQ items</p>
-            )}
-          </div>
+        {/* Progress & Certification Panel */}
+        {(() => {
+          const approvedPct = mbhreApprovedPct !== '' ? Number(mbhreApprovedPct) : (project.mbhre_approved_progress ?? null)
+          const diff = approvedPct !== null ? effectivePct - approvedPct : null
 
-          {isMBHRE && project.mbhre_approved_progress !== undefined && (
-            <div>
-              <div className="flex items-center justify-between text-sm mb-2">
-                <span className="text-slate-600"><strong>MBHRE Approved Progress</strong></span>
-                <span className="font-bold text-indigo-800">{project.mbhre_approved_progress}%</span>
-              </div>
-              <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
-                <div className="h-full rounded-full bg-indigo-500 transition-all" style={{ width: `${project.mbhre_approved_progress}%` }} />
-              </div>
-            </div>
-          )}
+          let alertBg = '', alertBorder = '', alertIcon = '', alertText = ''
+          if (diff !== null) {
+            if (diff > 5) {
+              alertBg = 'bg-amber-50'; alertBorder = 'border-amber-200'
+              alertIcon = '⚠️'
+              alertText = `You are ${diff}% ahead of certification. You are eligible to prepare and submit a payment application.`
+            } else if (diff >= -5) {
+              alertBg = 'bg-emerald-50'; alertBorder = 'border-emerald-200'
+              alertIcon = '✅'
+              alertText = 'Work progress and certification are aligned. You can proceed with payment application.'
+            } else {
+              alertBg = 'bg-red-50'; alertBorder = 'border-red-200'
+              alertIcon = '⚠️'
+              alertText = `Certification is ${Math.abs(diff)}% ahead of actual progress. Review required before further application.`
+            }
+          }
 
-          {isMBHRE && project.mbhre_approved_progress !== undefined && project.mbhre_approved_progress < effectivePct && (
-            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
-              💡 <strong>{effectivePct - project.mbhre_approved_progress}% ahead of MBHRE approval</strong> — Ready to submit stage report for next payment
+          return (
+            <div className="mb-5 space-y-3">
+              {/* Work Completed */}
+              <div>
+                <div className="flex items-center justify-between text-sm mb-1.5">
+                  <span className="text-slate-600 font-medium flex items-center gap-1.5">
+                    Work Completed
+                    <span className="text-[10px] font-normal text-slate-400 bg-slate-100 rounded px-1.5 py-0.5">System · BOQ weighted</span>
+                    {boqSaving && <span className="text-xs text-slate-400">saving…</span>}
+                  </span>
+                  <span className="font-bold text-slate-900 text-base tabular-nums">{effectivePct}%</span>
+                </div>
+                <div className="h-4 bg-slate-100 rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full transition-all duration-500 ${progressBarColor(effectivePct)}`} style={{ width: `${effectivePct}%` }} />
+                </div>
+              </div>
+
+              {/* MBHRE Approved */}
+              <div>
+                <div className="flex items-center justify-between text-sm mb-1.5">
+                  <span className="text-slate-600 font-medium flex items-center gap-1.5">
+                    MBHRE / Consultant Approved
+                    <span className="text-[10px] font-normal text-slate-400 bg-slate-100 rounded px-1.5 py-0.5">Manual</span>
+                    {mbhreSaved && <span className="text-[10px] text-emerald-600 font-semibold">Saved ✓</span>}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    {mbhreEditMode ? (
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="number" min="0" max="100"
+                          value={mbhreApprovedPct}
+                          onChange={e => setMbhreApprovedPct(e.target.value === '' ? '' : Math.max(0, Math.min(100, Number(e.target.value))))}
+                          onKeyDown={e => { if (e.key === 'Enter') saveMbhreApproved(); if (e.key === 'Escape') setMbhreEditMode(false) }}
+                          autoFocus
+                          className="w-16 text-center text-sm font-bold border border-indigo-300 rounded-lg px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                        />
+                        <span className="text-sm text-slate-600">%</span>
+                        <button
+                          onClick={saveMbhreApproved}
+                          disabled={mbhreSaving}
+                          className="text-[10px] font-semibold bg-indigo-600 hover:bg-indigo-700 text-white px-2 py-1 rounded-lg transition-colors disabled:opacity-60"
+                        >
+                          {mbhreSaving ? '…' : 'Save'}
+                        </button>
+                        <button onClick={() => setMbhreEditMode(false)} className="text-[10px] text-slate-400 hover:text-slate-600">Cancel</button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-indigo-700 text-base tabular-nums">
+                          {approvedPct !== null ? `${approvedPct}%` : '—'}
+                        </span>
+                        <button
+                          onClick={() => setMbhreEditMode(true)}
+                          className="text-[10px] font-semibold text-indigo-600 hover:text-indigo-800 border border-indigo-200 hover:border-indigo-400 rounded px-1.5 py-0.5 transition-colors"
+                        >
+                          {approvedPct !== null ? 'Edit' : '+ Set'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="h-4 bg-slate-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-indigo-500 transition-all duration-500"
+                    style={{ width: `${approvedPct ?? 0}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Difference row */}
+              {diff !== null && (
+                <div className="flex items-center gap-3 pt-0.5">
+                  <div className="flex-1 grid grid-cols-3 gap-2 text-center">
+                    <div className="bg-slate-50 rounded-lg px-3 py-2">
+                      <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wide">Completed</p>
+                      <p className="text-sm font-bold text-slate-800 tabular-nums">{effectivePct}%</p>
+                    </div>
+                    <div className="bg-indigo-50 rounded-lg px-3 py-2">
+                      <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wide">Approved</p>
+                      <p className="text-sm font-bold text-indigo-700 tabular-nums">{approvedPct}%</p>
+                    </div>
+                    <div className={`rounded-lg px-3 py-2 ${diff > 5 ? 'bg-amber-50' : diff >= -5 ? 'bg-emerald-50' : 'bg-red-50'}`}>
+                      <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wide">Difference</p>
+                      <p className={`text-sm font-bold tabular-nums ${diff > 5 ? 'text-amber-700' : diff >= -5 ? 'text-emerald-700' : 'text-red-600'}`}>
+                        {diff > 0 ? '+' : ''}{diff}%
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Payment alert */}
+              {diff !== null && (
+                <div className={`rounded-lg border px-4 py-3 text-sm ${alertBg} ${alertBorder}`}>
+                  <span className="mr-1">{alertIcon}</span>
+                  <strong>
+                    {diff > 5
+                      ? `${diff}% ahead of certification`
+                      : diff >= -5
+                      ? 'Progress aligned with certification'
+                      : `${Math.abs(diff)}% behind certification`}
+                  </strong>
+                  {' — '}
+                  {alertText}
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          )
+        })()}
 
         {/* Financials */}
-        <div className={`grid gap-4 grid-cols-2 ${isMBHRE ? 'sm:grid-cols-5' : 'sm:grid-cols-4'}`}>
+        <div className="grid gap-4 grid-cols-2 sm:grid-cols-4">
           <div className="bg-emerald-50 rounded-lg px-4 py-3">
             <div className="flex items-center justify-between gap-2">
               <p className="text-xs text-slate-600">Received</p>
@@ -588,12 +712,6 @@ export default function ProjectPage() {
             <p className="text-xs text-slate-600">Expected End</p>
             <p className="font-bold text-slate-900 mt-0.5">{formatDate(project.expected_completion)}</p>
           </div>
-          {isMBHRE && (
-            <div className="bg-indigo-50 rounded-lg px-4 py-3">
-              <p className="text-xs text-slate-600">MBHRE Approved</p>
-              <p className="font-bold text-slate-900 mt-0.5">{project.mbhre_approved_progress != null ? `${project.mbhre_approved_progress}%` : 'Pending'}</p>
-            </div>
-          )}
         </div>
       </div>
 

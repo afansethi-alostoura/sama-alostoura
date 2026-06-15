@@ -34,7 +34,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const { id } = await params
   try {
     const body = await req.json()
-    const { progress_percent, current_stage, boq_sections, qb_class_name, company_boq_id, received_amount, total_expenses } = body
+    const { progress_percent, current_stage, boq_sections, qb_class_name, company_boq_id, received_amount, total_expenses, mbhre_approved_progress } = body
 
     const base = await findBase(id)
     if (!base) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
@@ -59,6 +59,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       const val = Number(total_expenses)
       await saveOverride(id, { total_expenses: val })
       try { updateStoredProject(id, { total_expenses: val } as any) } catch {}
+    }
+
+    if (mbhre_approved_progress !== undefined) {
+      const val = Number(mbhre_approved_progress)
+      await saveOverride(id, { mbhre_approved_progress: val })
+      try { updateStoredProject(id, { mbhre_approved_progress: val } as any) } catch {}
     }
 
     // Save progress to Supabase (works on Vercel; file system is read-only)
