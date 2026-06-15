@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Save, Printer, CheckCircle } from 'lucide-react'
+import { ArrowLeft, Save, Printer, CheckCircle, Link2 } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -204,6 +204,30 @@ function CompanyBOQInner() {
   const [saved, setSaved]     = useState(false)
   const [loading, setLoading] = useState(!!boqId)
 
+  // Project linking
+  const [projects,         setProjects]         = useState<{ id: string; name: string; client_name?: string }[]>([])
+  const [linkedProjectId,  setLinkedProjectId]  = useState<string>('')
+  const [linkSaved,        setLinkSaved]        = useState(false)
+
+  useEffect(() => {
+    fetch('/api/projects')
+      .then(r => r.ok ? r.json() : [])
+      .then((list: any[]) => setProjects(list.map(p => ({ id: p.id, name: p.name, client_name: p.client_name }))))
+      .catch(() => {})
+  }, [])
+
+  // When editing existing BOQ, find which project links to it
+  useEffect(() => {
+    if (!boqId || projects.length === 0) return
+    fetch('/api/projects')
+      .then(r => r.ok ? r.json() : [])
+      .then((list: any[]) => {
+        const linked = list.find(p => p.company_boq_id === boqId)
+        if (linked) setLinkedProjectId(linked.id)
+      })
+      .catch(() => {})
+  }, [boqId, projects.length])
+
   // Load existing BOQ if id present in URL
   useEffect(() => {
     if (!boqId) { setLoading(false); return }
@@ -214,7 +238,7 @@ function CompanyBOQInner() {
           setHeader({ project_number: data.project_number ?? '', project_name: data.project_name ?? '', area: data.area ?? '', owner: data.owner ?? '', contractor: data.contractor ?? 'SAMA ALOSTOURA BUILDING CONTRACTING L.L.C' })
           const savedMap = new Map<string, BOQItem>()
           ;(data.items as BOQItem[]).forEach((it: BOQItem) => savedMap.set(it.item_code, it))
-          setItems(DEFAULT_ITEMS.map(t => { const sv = savedMap.get(t.item_code); return sv ? { ...t, qty: sv.qty, rate: sv.rate, remarks: sv.remarks } : { ...t } }))
+          setItems(DEFAULT_ITEMS.map(t => { const sv = savedMap.get(t.item_code); return sv ? { ...t, qty: sv.qty, rate: sv.rate, remarks: sv.remarks ?? '', quantity_done: (sv as any).quantity_done, progress: (sv as any).progress } : { ...t } }))
         }
       })
       .catch(() => {})
@@ -229,21 +253,32 @@ function CompanyBOQInner() {
   async function handleSave() {
     setSaving(true)
     try {
+      let savedId = boqDbId
       let res: Response
       if (boqDbId) {
-        // Update existing
         res = await fetch('/api/boq/company', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: boqDbId, ...header, items }) })
       } else {
-        // Create new
         res = await fetch('/api/boq/company', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...header, items }) })
         if (res.ok) {
           const data = await res.json()
+          savedId = data.id
           setBoqDbId(data.id)
-          // Update URL without navigation
           router.replace(`/estimation/boq/company?id=${data.id}`, { scroll: false })
         }
       }
       if (!res.ok) throw new Error('Save failed')
+
+      // Link BOQ to selected project
+      if (linkedProjectId && savedId) {
+        await fetch(`/api/projects/${linkedProjectId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ company_boq_id: savedId }),
+        })
+        setLinkSaved(true)
+        setTimeout(() => setLinkSaved(false), 3000)
+      }
+
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } catch {
@@ -300,6 +335,40 @@ function CompanyBOQInner() {
               </div>
             ))}
           </div>
+        </div>
+
+        {/* Project Link */}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Link2 className="w-4 h-4 text-brand-500" />
+            <h3 className="font-semibold text-slate-900 text-sm">Link to Project</h3>
+            {linkSaved && <span className="ml-auto text-xs text-emerald-600 font-semibold">Linked successfully</span>}
+          </div>
+          <div className="flex items-center gap-3">
+            <select
+              value={linkedProjectId}
+              onChange={e => setLinkedProjectId(e.target.value)}
+              className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-400"
+            >
+              <option value="">— Not linked to any project —</option>
+              {projects.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.name}{p.client_name ? ` — ${p.client_name}` : ''}
+                </option>
+              ))}
+            </select>
+            {linkedProjectId && (
+              <Link
+                href={`/projects/${linkedProjectId}`}
+                className="text-xs text-brand-600 hover:underline whitespace-nowrap"
+              >
+                View Project →
+              </Link>
+            )}
+          </div>
+          <p className="text-xs text-slate-400 mt-2">
+            Selecting a project here will automatically attach this BOQ to that project when you save.
+          </p>
         </div>
 
         {/* Table */}

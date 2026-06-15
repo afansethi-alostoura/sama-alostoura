@@ -1,13 +1,19 @@
 import { NextResponse }       from 'next/server'
 import { getAllStoredProjects, deleteStoredProject, updateStoredProject } from '@/lib/projects-store'
 import { getProgress, saveProgress } from '@/lib/project-progress'
-import { getOverride, saveOverride, saveNewProjectToSupabase, deleteProjectFromSupabase } from '@/lib/project-overrides'
+import { getOverride, saveOverride, saveNewProjectToSupabase, deleteProjectFromSupabase, getAllStoredFromSupabase } from '@/lib/project-overrides'
+
+async function findBase(id: string) {
+  const file = getAllStoredProjects().find(p => p.id === id)
+  if (file) return file
+  const supabase = await getAllStoredFromSupabase()
+  return supabase.find(p => p.id === id) ?? null
+}
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   try {
-    const all  = getAllStoredProjects()
-    const base = all.find(p => p.id === id)
+    const base = await findBase(id)
     if (!base) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     const [prog, over] = await Promise.all([getProgress(id), getOverride(id)])
@@ -28,17 +34,19 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const { id } = await params
   try {
     const body = await req.json()
-    const { progress_percent, current_stage, boq_sections, qb_class_name } = body
+    const { progress_percent, current_stage, boq_sections, qb_class_name, company_boq_id } = body
 
-    // Verify project exists in file store
-    const all  = getAllStoredProjects()
-    const base = all.find(p => p.id === id)
+    const base = await findBase(id)
     if (!base) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 
-    // If qb_class_name is being updated, save it to Supabase
     if (qb_class_name !== undefined) {
       await saveOverride(id, { qb_class_name })
       try { updateStoredProject(id, { qb_class_name }) } catch {}
+    }
+
+    if (company_boq_id !== undefined) {
+      await saveOverride(id, { company_boq_id })
+      try { updateStoredProject(id, { company_boq_id } as any) } catch {}
     }
 
     // Save progress to Supabase (works on Vercel; file system is read-only)
@@ -66,8 +74,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const { id } = await params
   try {
     const body = await req.json()
-    const all  = getAllStoredProjects()
-    const base = all.find(p => p.id === id)
+    const base = await findBase(id)
     if (!base) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 
     const fields = {
@@ -84,6 +91,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       start_date:          body.start_date         ?? base.start_date,
       expected_completion: body.expected_completion ?? base.expected_completion,
       qb_class_name:       body.qb_class_name      ?? (base as any).qb_class_name,
+      company_boq_id:      body.company_boq_id     ?? (base as any).company_boq_id,
     }
 
     // Save to Supabase (Vercel-safe) and try local file (dev)

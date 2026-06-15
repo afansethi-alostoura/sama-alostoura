@@ -38,16 +38,18 @@ interface ProjectData {
 }
 
 interface BOQItem {
-  itemNo: string | number
-  section: string
+  section_no?: number
+  section_name: string
+  item_code: string
   description: string
   unit: string
-  quantity: number
-  unitRate: number
-  amount: number
+  qty: number
+  rate: number
+  remarks?: string
+  // monitoring fields
+  quantity_done?: number
   progress?: number
   done?: boolean
-  quantity_done?: number
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -202,9 +204,9 @@ export default function ProjectPage() {
   }, [project?.id])
 
   // ── BOQ: weighted overall completion ────────────────────────────────────────
-  const totalBOQAmt = boqItems.reduce((s, i) => s + (i.amount || 0), 0)
+  const totalBOQAmt = boqItems.reduce((s, i) => s + (i.qty || 0) * (i.rate || 0), 0)
   const overallBOQPct = totalBOQAmt > 0
-    ? Math.round(boqItems.reduce((s, i) => s + (i.amount || 0) * ((i.progress || 0) / 100), 0) / totalBOQAmt * 100)
+    ? Math.round(boqItems.reduce((s, i) => s + (i.qty || 0) * (i.rate || 0) * ((i.progress || 0) / 100), 0) / totalBOQAmt * 100)
     : 0
 
   // ── BOQ: core save function ─────────────────────────────────────────────────
@@ -213,9 +215,9 @@ export default function ProjectPage() {
     setBoqSaving(true)
     setBoqSaved(false)
     try {
-      const totalAmt = updated.reduce((s, i) => s + (i.amount || 0), 0)
+      const totalAmt = updated.reduce((s, i) => s + (i.qty || 0) * (i.rate || 0), 0)
       const newPct   = totalAmt > 0
-        ? Math.round(updated.reduce((s, i) => s + (i.amount || 0) * ((i.progress || 0) / 100), 0) / totalAmt * 100)
+        ? Math.round(updated.reduce((s, i) => s + (i.qty || 0) * (i.rate || 0) * ((i.progress || 0) / 100), 0) / totalAmt * 100)
         : 0
       await Promise.all([
         fetch('/api/boq/company', {
@@ -246,7 +248,7 @@ export default function ProjectPage() {
   function updateItemProgress(globalIdx: number, raw: string) {
     const item    = boqItems[globalIdx]
     const val     = Math.max(0, Math.min(100, Number(raw) || 0))
-    const qtyDone = item.quantity > 0 ? Math.round((val / 100) * item.quantity * 100) / 100 : (item.quantity_done ?? 0)
+    const qtyDone = item.qty > 0 ? Math.round((val / 100) * item.qty * 100) / 100 : (item.quantity_done ?? 0)
     const updated = boqItems.map((bi, i) => i === globalIdx ? { ...bi, progress: val, quantity_done: qtyDone, done: val === 100 } : bi)
     setBoqItems(updated)
     if (project && boqRecord) scheduleSave(updated, boqRecord, project)
@@ -254,8 +256,8 @@ export default function ProjectPage() {
 
   function updateItemQuantityDone(globalIdx: number, raw: string) {
     const item    = boqItems[globalIdx]
-    const done    = Math.max(0, Math.min(item.quantity || 999999, Number(raw) || 0))
-    const pct     = item.quantity > 0 ? Math.min(100, Math.round((done / item.quantity) * 100)) : 0
+    const done    = Math.max(0, Math.min(item.qty || 999999, Number(raw) || 0))
+    const pct     = item.qty > 0 ? Math.min(100, Math.round((done / item.qty) * 100)) : 0
     const updated = boqItems.map((bi, i) => i === globalIdx ? { ...bi, quantity_done: done, progress: pct, done: pct === 100 } : bi)
     setBoqItems(updated)
     if (project && boqRecord) scheduleSave(updated, boqRecord, project)
@@ -321,9 +323,9 @@ export default function ProjectPage() {
   const effectivePct = project.company_boq_id && boqItems.length > 0 ? overallBOQPct : project.progress_percent
 
   // Grouped BOQ sections
-  const boqSections = boqItems.reduce<Record<string, { items: BOQItem[]; indices: number[] }>>((acc, item, idx) => {
-    const s = item.section || 'General'
-    if (!acc[s]) acc[s] = { items: [], indices: [] }
+  const boqSections = boqItems.reduce<Record<string, { items: BOQItem[]; indices: number[]; section_no: number }>>((acc, item, idx) => {
+    const s = item.section_name || 'General'
+    if (!acc[s]) acc[s] = { items: [], indices: [], section_no: item.section_no ?? 99 }
     acc[s].items.push(item)
     acc[s].indices.push(idx)
     return acc
@@ -639,50 +641,55 @@ export default function ProjectPage() {
               {/* ── Expanded Detail ────────────────────────────────────────── */}
               {boqExpanded && (
                 <>
-                  {/* Detail Table */}
+                  {/* BOQ Monitoring Table */}
                   <div className="overflow-x-auto">
-                    <table className="w-full min-w-[1050px] text-sm border-collapse">
+                    <table className="w-full min-w-[1100px] text-sm border-collapse">
                       <thead>
                         <tr className="bg-slate-800 text-white">
-                          <th className="px-3 py-2.5 text-left font-semibold border border-slate-600 w-8">N</th>
                           <th className="px-3 py-2.5 text-left font-semibold border border-slate-600 w-16">ITEM</th>
                           <th className="px-3 py-2.5 text-left font-semibold border border-slate-600">DESCRIPTION</th>
                           <th className="px-3 py-2.5 text-center font-semibold border border-slate-600 w-14">UNIT</th>
                           <th className="px-3 py-2.5 text-center font-semibold border border-slate-600 w-20">TOTAL QTY</th>
                           <th className="px-3 py-2.5 text-center font-semibold border border-slate-600 w-24 bg-emerald-900">QTY DONE</th>
                           <th className="px-3 py-2.5 text-center font-semibold border border-slate-600 w-24 bg-amber-900">REMAINING</th>
-                          <th className="px-3 py-2.5 text-right font-semibold border border-slate-600 w-28">AMOUNT (AED)</th>
+                          <th className="px-3 py-2.5 text-right font-semibold border border-slate-600 w-28">VALUE (AED)</th>
                           <th className="px-3 py-2.5 text-center font-semibold border border-slate-600 w-32">PROGRESS %</th>
+                          <th className="px-3 py-2.5 text-center font-semibold border border-slate-600 w-28">STATUS</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {Object.entries(boqSections).map(([sectionName, { items, indices }], secIdx) => {
-                          const secAmt     = items.reduce((s, i) => s + (i.amount || 0), 0)
+                        {Object.entries(boqSections)
+                          .sort((a, b) => (a[1].section_no ?? 99) - (b[1].section_no ?? 99))
+                          .map(([sectionName, { items, indices }]) => {
+                          const secAmt     = items.reduce((s, i) => s + (i.qty || 0) * (i.rate || 0), 0)
                           const secPct     = secAmt > 0
-                            ? Math.round(items.reduce((s, i) => s + (i.amount || 0) * ((i.progress || 0) / 100), 0) / secAmt * 100)
+                            ? Math.round(items.reduce((s, i) => s + (i.qty || 0) * (i.rate || 0) * ((i.progress || 0) / 100), 0) / secAmt * 100)
                             : 0
+                          const secNo      = items[0]?.section_no ?? ''
                           const allDone    = secPct === 100
                           const anyStarted = secPct > 0
 
                           return (
                             <React.Fragment key={sectionName}>
-                              {/* Section header row */}
+                              {/* Section header */}
                               <tr className="bg-blue-50 border-t-2 border-blue-200">
-                                <td className="px-3 py-2 font-bold text-blue-800 border border-blue-200 text-sm">{secIdx + 1}</td>
-                                <td colSpan={6} className="px-3 py-2 font-bold text-blue-800 uppercase tracking-wide border border-blue-200 text-sm">{sectionName}</td>
+                                <td className="px-3 py-2 font-bold text-blue-800 border border-blue-200 text-xs">{secNo}</td>
+                                <td colSpan={5} className="px-3 py-2 font-bold text-blue-800 uppercase tracking-wide border border-blue-200 text-sm">{sectionName}</td>
                                 <td className="px-3 py-2 text-right font-bold text-blue-800 border border-blue-200 text-sm">
                                   {secAmt > 0 ? secAmt.toLocaleString('en-AE', { minimumFractionDigits: 2 }) : '—'}
                                 </td>
                                 <td className="px-3 py-2 border border-blue-200">
                                   <div className="flex items-center gap-2">
                                     <div className="flex-1 h-2 bg-blue-100 rounded-full overflow-hidden">
-                                      <div
-                                        className={`h-full rounded-full transition-all ${allDone ? 'bg-emerald-500' : anyStarted ? 'bg-amber-400' : 'bg-slate-300'}`}
-                                        style={{ width: `${secPct}%` }}
-                                      />
+                                      <div className={`h-full rounded-full transition-all ${allDone ? 'bg-emerald-500' : anyStarted ? 'bg-amber-400' : 'bg-slate-300'}`} style={{ width: `${secPct}%` }} />
                                     </div>
                                     <span className={`text-xs font-bold w-8 text-right ${allDone ? 'text-emerald-600' : anyStarted ? 'text-amber-600' : 'text-slate-400'}`}>{secPct}%</span>
                                   </div>
+                                </td>
+                                <td className="px-3 py-2 border border-blue-200 text-center">
+                                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${allDone ? 'bg-emerald-100 text-emerald-700' : anyStarted ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+                                    {allDone ? 'Completed' : anyStarted ? 'In Progress' : 'Not Started'}
+                                  </span>
                                 </td>
                               </tr>
 
@@ -692,25 +699,25 @@ export default function ProjectPage() {
                                 const pct          = item.progress || 0
                                 const isDone       = pct === 100
                                 const isStarted    = pct > 0
-                                const qtyDone      = item.quantity_done ?? (item.quantity > 0 ? Math.round((pct / 100) * item.quantity * 100) / 100 : 0)
-                                const qtyRemaining = Math.max(0, (item.quantity || 0) - qtyDone)
+                                const itemAmt      = (item.qty || 0) * (item.rate || 0)
+                                const qtyDone      = item.quantity_done ?? (item.qty > 0 ? Math.round((pct / 100) * item.qty * 100) / 100 : 0)
+                                const qtyRemaining = Math.max(0, (item.qty || 0) - qtyDone)
+                                const status       = isDone ? 'Completed' : isStarted ? 'In Progress' : 'Not Started'
+                                const statusClass  = isDone ? 'bg-emerald-100 text-emerald-700' : isStarted ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'
 
                                 return (
-                                  <tr key={globalIdx} className={`${isDone ? 'bg-emerald-50/40' : localIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} hover:bg-blue-50/20 transition-colors`}>
-                                    <td className="px-3 py-1.5 border border-slate-100 text-slate-400 text-xs" />
-                                    <td className="px-3 py-1.5 border border-slate-100 font-mono text-xs text-slate-500">{item.itemNo}</td>
-                                    <td className="px-3 py-1.5 border border-slate-100 text-slate-800">{item.description}</td>
+                                  <tr key={`${globalIdx}-${item.item_code}`} className={`${isDone ? 'bg-emerald-50/40' : localIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} hover:bg-blue-50/20 transition-colors`}>
+                                    <td className="px-3 py-1.5 border border-slate-100 font-mono text-xs text-slate-500">{item.item_code}</td>
+                                    <td className="px-3 py-1.5 border border-slate-100 text-slate-800 text-xs">{item.description}</td>
                                     <td className="px-3 py-1.5 border border-slate-100 text-center text-slate-500 font-mono text-xs">{item.unit}</td>
                                     <td className="px-3 py-1.5 border border-slate-100 text-center text-slate-600 text-xs font-medium">
-                                      {item.quantity > 0 ? item.quantity.toLocaleString() : '—'}
+                                      {item.qty > 0 ? item.qty.toLocaleString() : '—'}
                                     </td>
 
                                     {/* QTY DONE — editable */}
                                     <td className="px-2 py-1 border border-slate-100 bg-emerald-50/30">
                                       <input
-                                        type="number"
-                                        min="0"
-                                        max={item.quantity || undefined}
+                                        type="number" min="0" max={item.qty || undefined}
                                         value={qtyDone || ''}
                                         placeholder="0"
                                         onChange={e => updateItemQuantityDone(globalIdx, e.target.value)}
@@ -720,23 +727,20 @@ export default function ProjectPage() {
                                       />
                                     </td>
 
-                                    {/* QTY REMAINING — read-only */}
+                                    {/* QTY REMAINING */}
                                     <td className={`px-3 py-1.5 border border-slate-100 text-center text-xs font-medium ${isDone ? 'text-emerald-600' : isStarted ? 'text-amber-700' : 'text-slate-400'}`}>
-                                      {isDone ? '✓ Done' : item.quantity > 0 ? qtyRemaining.toLocaleString() : '—'}
+                                      {isDone ? '✓' : item.qty > 0 ? qtyRemaining.toLocaleString() : '—'}
                                     </td>
 
                                     <td className="px-3 py-1.5 border border-slate-100 text-right font-medium text-slate-700 text-xs">
-                                      {(item.amount || 0) > 0 ? (item.amount || 0).toLocaleString('en-AE', { minimumFractionDigits: 2 }) : ''}
+                                      {itemAmt > 0 ? itemAmt.toLocaleString('en-AE', { minimumFractionDigits: 2 }) : '—'}
                                     </td>
 
                                     {/* PROGRESS % — editable */}
                                     <td className="px-2 py-1 border border-slate-100">
                                       <div className="flex items-center gap-1.5">
                                         <div className="flex-1 h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                                          <div
-                                            className={`h-full rounded-full transition-all ${isDone ? 'bg-emerald-500' : isStarted ? 'bg-amber-400' : 'bg-slate-300'}`}
-                                            style={{ width: `${pct}%` }}
-                                          />
+                                          <div className={`h-full rounded-full transition-all ${isDone ? 'bg-emerald-500' : isStarted ? 'bg-amber-400' : 'bg-slate-300'}`} style={{ width: `${pct}%` }} />
                                         </div>
                                         <div className="relative flex-shrink-0">
                                           <input
@@ -750,18 +754,24 @@ export default function ProjectPage() {
                                         </div>
                                       </div>
                                     </td>
+
+                                    {/* STATUS */}
+                                    <td className="px-2 py-1 border border-slate-100 text-center">
+                                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${statusClass}`}>{status}</span>
+                                    </td>
                                   </tr>
                                 )
                               })}
 
                               {/* Section subtotal */}
                               <tr className="bg-slate-100">
-                                <td colSpan={7} className="px-3 py-1.5 text-right text-xs font-semibold text-slate-600 border border-slate-200 uppercase tracking-wide">
-                                  {sectionName} — Section Total
+                                <td colSpan={6} className="px-3 py-1.5 text-right text-xs font-semibold text-slate-600 border border-slate-200 uppercase tracking-wide">
+                                  {sectionName} — Total
                                 </td>
                                 <td className="px-3 py-1.5 text-right font-bold text-slate-900 border border-slate-200 text-xs">
                                   {secAmt > 0 ? secAmt.toLocaleString('en-AE', { minimumFractionDigits: 2 }) : '—'}
                                 </td>
+                                <td className="px-3 py-1.5 border border-slate-200 text-center text-xs font-bold text-slate-600">{secPct}%</td>
                                 <td className="px-3 py-1.5 border border-slate-200" />
                               </tr>
                             </React.Fragment>
@@ -811,10 +821,12 @@ export default function ProjectPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {Object.entries(boqSections).map(([sectionName, { items }], secIdx) => {
-                          const secAmt = items.reduce((s, i) => s + (i.amount || 0), 0)
+                        {Object.entries(boqSections)
+                          .sort((a, b) => (a[1].section_no ?? 99) - (b[1].section_no ?? 99))
+                          .map(([sectionName, { items }], secIdx) => {
+                          const secAmt = items.reduce((s, i) => s + (i.qty || 0) * (i.rate || 0), 0)
                           const secPct = secAmt > 0
-                            ? Math.round(items.reduce((s, i) => s + (i.amount || 0) * ((i.progress || 0) / 100), 0) / secAmt * 100)
+                            ? Math.round(items.reduce((s, i) => s + (i.qty || 0) * (i.rate || 0) * ((i.progress || 0) / 100), 0) / secAmt * 100)
                             : 0
                           return (
                             <tr key={sectionName} className={secIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
