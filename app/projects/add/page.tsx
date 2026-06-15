@@ -63,6 +63,8 @@ export default function AddProjectPage() {
     status:             'active' as 'active' | 'completed' | 'on-hold',
     contract_value:     '',
     received_amount:    '',
+    owner_share:        '',
+    mbhre_share:        '',
     progress_percent:   '',
     current_stage:      '',
     notes:              '',
@@ -88,6 +90,8 @@ export default function AddProjectPage() {
           contract_value:   parseFloat(form.contract_value.replace(/,/g, '')) || 0,
           received_amount:  parseFloat(form.received_amount.replace(/,/g, '')) || 0,
           progress_percent: parseFloat(form.progress_percent) || 0,
+          owner_share:      parseFloat(form.owner_share.replace(/,/g, '')) || 0,
+          mbhre_share:      parseFloat(form.mbhre_share.replace(/,/g, '')) || 0,
         }),
       })
       if (!res.ok) {
@@ -196,6 +200,22 @@ export default function AddProjectPage() {
               placeholder="e.g. 520,000"
               value={form.received_amount}
               onChange={e => set('received_amount', e.target.value)}
+            />
+          </Field>
+          <Field label="Owner Share (AED)">
+            <input
+              className={INPUT}
+              placeholder="e.g. 450,000"
+              value={form.owner_share}
+              onChange={e => set('owner_share', e.target.value)}
+            />
+          </Field>
+          <Field label="MBHRE Share (AED)">
+            <input
+              className={INPUT}
+              placeholder="e.g. 750,000"
+              value={form.mbhre_share}
+              onChange={e => set('mbhre_share', e.target.value)}
             />
           </Field>
         </div>

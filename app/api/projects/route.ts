@@ -36,7 +36,8 @@ export async function POST(req: Request) {
     const body = await req.json()
     const { name, client_name, location, type, status, contract_value,
             received_amount, progress_percent, current_stage, notes,
-            start_date, expected_completion, qb_class_name } = body
+            start_date, expected_completion, qb_class_name,
+            owner_share, mbhre_share } = body
 
     if (!name || !location || !contract_value) {
       return NextResponse.json({ error: 'name, location, and contract_value are required' }, { status: 400 })
@@ -58,6 +59,8 @@ export async function POST(req: Request) {
       start_date:          start_date          || now.split('T')[0],
       expected_completion: expected_completion || '',
       qb_class_name:       qb_class_name       || '',
+      owner_share:         Number(owner_share  || 0),
+      mbhre_approved_amount: Number(mbhre_share || 0),
       created_at:          now,
       updated_at:          now,
     }
