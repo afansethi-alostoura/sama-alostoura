@@ -1,7 +1,7 @@
 import { NextResponse }       from 'next/server'
 import { getAllStoredProjects, deleteStoredProject, updateStoredProject } from '@/lib/projects-store'
 import { getProgress, saveProgress } from '@/lib/project-progress'
-import { getOverride, saveOverride } from '@/lib/project-overrides'
+import { getOverride, saveOverride, saveNewProjectToSupabase, deleteProjectFromSupabase } from '@/lib/project-overrides'
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -86,11 +86,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       qb_class_name:       body.qb_class_name      ?? (base as any).qb_class_name,
     }
 
-    // Save to Supabase (works on Vercel; file system is read-only)
+    // Save to Supabase (Vercel-safe) and try local file (dev)
     await saveOverride(id, fields)
-
-    // Also try local file (works in dev)
     try { updateStoredProject(id, fields as any) } catch {}
+    // Also update stored_projects row if this project was created via Supabase
+    try { await saveNewProjectToSupabase({ ...base, ...fields, id } as any) } catch {}
 
     return NextResponse.json({ ...base, ...fields })
   } catch (err) {
@@ -100,7 +100,8 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const ok = deleteStoredProject(id)
-  if (!ok) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  // Remove from local file (dev) and Supabase (production)
+  deleteStoredProject(id)
+  await deleteProjectFromSupabase(id)
   return NextResponse.json({ deleted: true })
 }
