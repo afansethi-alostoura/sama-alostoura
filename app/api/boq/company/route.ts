@@ -101,6 +101,6 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ success: true })
   }
 
-  deleteCompanyBOQ(id)
+  try { deleteCompanyBOQ(id) } catch {}
   return NextResponse.json({ success: true })
 }
