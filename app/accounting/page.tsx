@@ -956,7 +956,7 @@ function AlostouraSection({
   dateRange:    { from: string; to: string }
   onDateChange: (r: { from: string; to: string }) => void
 }) {
-  const [expanded,     setExpanded]     = useState(true)
+  const [expanded,     setExpanded]     = useState(false)
   const [showTxns,     setShowTxns]     = useState(false)
   const [txnPage,      setTxnPage]      = useState(0)
   const PAGE = 50
