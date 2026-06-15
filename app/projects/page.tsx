@@ -3,7 +3,7 @@ import { useState, useCallback } from 'react'
 import Link from 'next/link'
 import { Building2, Plus, Search, ExternalLink, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
-import { useAllProjects, type ProjectRow } from '@/hooks/useAllProjects'
+import { useAllProjects, broadcastProjectUpdate, type ProjectRow } from '@/hooks/useAllProjects'
 
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
@@ -41,7 +41,7 @@ export default function ProjectsPage() {
       const n = data.counts.unchanged
       const x = data.counts.unmatched
       setSyncMsg({ type: 'ok', text: `QB sync done — ${u} updated, ${n} already correct, ${x} unmatched` })
-      if (u > 0) refresh()
+      if (u > 0) { refresh(); broadcastProjectUpdate() }
     } catch (e: unknown) {
       setSyncMsg({ type: 'err', text: e instanceof Error ? e.message : 'Sync failed' })
     } finally {

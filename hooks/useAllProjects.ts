@@ -1,16 +1,13 @@
 'use client'
-/**
- * Single source of truth for all project data.
- *
- * Fetches /api/projects which returns:
- *   - Real projects from .projects-data.json
- *   - WITH Supabase progress overrides applied (progress_percent, current_stage, boq_sections)
- *   - PLUS DEMO_PROJECTS as fallbacks for any projects not in the file store
- *
- * All pages that display project data should use this hook so any progress
- * update saved to Supabase is immediately reflected everywhere.
- */
 import { useState, useEffect, useCallback } from 'react'
+
+/** Fire this after any project data change (edit, QB sync, etc.)
+ *  All useAllProjects instances on the page will re-fetch automatically. */
+export function broadcastProjectUpdate() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('projects-updated'))
+  }
+}
 
 export interface ProjectRow {
   id:               string
@@ -60,7 +57,12 @@ export function useAllProjects() {
     }
   }, [])
 
-  useEffect(() => { refresh() }, [refresh])
+  useEffect(() => {
+    refresh()
+    // Re-fetch whenever any page broadcasts a project update
+    window.addEventListener('projects-updated', refresh)
+    return () => window.removeEventListener('projects-updated', refresh)
+  }, [refresh])
 
   // Derived helpers
   const activeProjects    = projects.filter(p => p.status === 'active')

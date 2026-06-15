@@ -7,8 +7,8 @@ import {
   CheckCircle2, CheckCircle, Clock, AlertCircle, Loader2, Sparkles, Save,
   FolderOpen, Link2, TrendingUp, TrendingDown, Pencil, X,
 } from 'lucide-react'
-import { getDemoProject } from '@/lib/demo-data'
 import { formatCurrency, formatDate, progressBarColor, statusBadge, statusLabel } from '@/lib/utils'
+import { broadcastProjectUpdate } from '@/hooks/useAllProjects'
 import type { StoredProject } from '@/lib/projects-store'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -87,17 +87,14 @@ export default function ProjectPage() {
 
   // ── Load project ────────────────────────────────────────────────────────────
   useEffect(() => {
+    setLoading(true)
     fetch('/api/projects')
       .then(r => r.json())
       .then((list: StoredProject[]) => {
         const found = list.find(p => p.id === id)
         if (found) setProject(found as unknown as ProjectData)
-        else {
-          const demo = getDemoProject(id)
-          if (demo) setProject(demo as unknown as ProjectData)
-        }
       })
-      .catch(() => { const d = getDemoProject(id); if (d) setProject(d as unknown as ProjectData) })
+      .catch(() => {})
       .finally(() => setLoading(false))
   }, [id])
 
@@ -149,6 +146,7 @@ export default function ProjectPage() {
       setProject(prev => prev ? { ...prev, ...updated } : prev)
       setQbClassName(updated.qb_class_name ?? '')
       setEditing(false)
+      broadcastProjectUpdate()
     } catch (e) {
       setEditError(e instanceof Error ? e.message : 'Save failed')
     } finally {
@@ -167,6 +165,7 @@ export default function ProjectPage() {
       })
       setQbSaved(true)
       setTimeout(() => setQbSaved(false), 3000)
+      broadcastProjectUpdate()
     } catch {}
     finally { setQbSaving(false) }
   }
@@ -230,6 +229,7 @@ export default function ProjectPage() {
       setProject(prev => prev ? { ...prev, progress_percent: newPct } : prev)
       setBoqSaved(true)
       setTimeout(() => setBoqSaved(false), 3000)
+      broadcastProjectUpdate()
     } catch {}
     finally { setBoqSaving(false) }
   }, [])

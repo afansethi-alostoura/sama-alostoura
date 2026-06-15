@@ -38,14 +38,6 @@ const COLOR_MAP: Record<string, { bg: string; text: string; badge: string }> = {
 
 interface AgentState { briefing: string; loading: boolean; time: string }
 
-const ACTIVITY_FEED = [
-  { time: '09:14', text: 'Fahad Al Serkal Villa — Project mobilization started', type: 'success', project: 'Fahad' },
-  { time: '09:02', text: 'Khalid Al Ameri Villa — MEP & finishing works in progress', type: 'info', project: 'Khalid' },
-  { time: '08:47', text: 'Al Mirdif Renovation — External painting 80% complete', type: 'success', project: 'Al Mirdif' },
-  { time: '08:30', text: 'Khalid Al Ameri — MBHRE Stage 4 payment AED 200,000 applied', type: 'info', project: 'Khalid' },
-  { time: 'Yesterday', text: 'Payment received AED 162,000 from Al Mirdif project', type: 'payment', project: 'Al Mirdif' },
-  { time: 'Yesterday', text: 'Fahad Al Serkal — BOQ signed, contract value AED 1,993,450', type: 'info', project: 'Fahad' },
-]
 
 const QUICK_ACTIONS = [
   { label: 'New Project',      href: '/projects/add',       icon: Plus,       color: 'blue'    },
@@ -248,31 +240,55 @@ export default function CEODashboard() {
           </div>
         </div>
 
-        {/* Activity Feed */}
+        {/* Activity Feed — generated from real project data */}
         <div className="bg-white rounded-xl border border-slate-100 shadow-card overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100">
             <h2 className="font-semibold text-slate-900 text-sm">Live Activity</h2>
           </div>
           <div className="divide-y divide-slate-50 overflow-y-auto max-h-[420px]">
-            {ACTIVITY_FEED.map((item, i) => (
-              <div key={i} className="px-5 py-3.5 hover:bg-slate-50/70 transition-colors">
-                <div className="flex items-start gap-3">
-                  <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${
-                    item.type === 'success' ? 'bg-emerald-500' :
-                    item.type === 'payment' ? 'bg-blue-500' : 'bg-slate-300'
-                  }`} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-slate-700 leading-relaxed">{item.text}</p>
-                    <p className="text-xs text-slate-400 mt-1">{item.time}</p>
+            {projects.length === 0 ? (
+              <p className="px-5 py-6 text-xs text-slate-400 text-center">No projects yet</p>
+            ) : (
+              projects
+                .slice()
+                .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+                .flatMap(p => {
+                  const items = []
+                  if (p.received_amount > 0) items.push({
+                    text: `${p.name} — AED ${p.received_amount.toLocaleString()} received`,
+                    sub:  p.client_name,
+                    type: 'payment',
+                    date: p.updated_at,
+                  })
+                  if (p.current_stage) items.push({
+                    text: `${p.name} — ${p.current_stage}`,
+                    sub:  `${p.progress_percent}% complete`,
+                    type: p.progress_percent >= 70 ? 'success' : 'info',
+                    date: p.updated_at,
+                  })
+                  return items
+                })
+                .slice(0, 12)
+                .map((item, i) => (
+                  <div key={i} className="px-5 py-3.5 hover:bg-slate-50/70 transition-colors">
+                    <div className="flex items-start gap-3">
+                      <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${
+                        item.type === 'success' ? 'bg-emerald-500' :
+                        item.type === 'payment' ? 'bg-blue-500' : 'bg-slate-300'
+                      }`} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs text-slate-700 leading-relaxed">{item.text}</p>
+                        <p className="text-xs text-slate-400 mt-0.5">{item.sub}</p>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
-            ))}
+                ))
+            )}
           </div>
           <div className="px-5 py-3 border-t border-slate-100">
-            <button className="text-xs text-blue-600 hover:text-blue-700 font-medium w-full text-center">
-              View all activity →
-            </button>
+            <Link href="/projects" className="text-xs text-blue-600 hover:text-blue-700 font-medium w-full text-center block">
+              View all projects →
+            </Link>
           </div>
         </div>
       </div>
