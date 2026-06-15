@@ -82,10 +82,12 @@ export default function ProjectPage() {
   const [editError,  setEditError]  = useState('')
 
   // QB class linking
-  const [qbClasses,     setQbClasses]     = useState<{ id: string; name: string }[]>([])
-  const [qbClassName,   setQbClassName]   = useState('')
-  const [qbSaving,      setQbSaving]      = useState(false)
-  const [qbSaved,       setQbSaved]       = useState(false)
+  const [qbClasses,         setQbClasses]         = useState<{ id: string; name: string }[]>([])
+  const [qbClassName,       setQbClassName]       = useState('')
+  const [qbSaving,          setQbSaving]          = useState(false)
+  const [qbSaved,           setQbSaved]           = useState(false)
+  const [qbIncomeSyncing,   setQbIncomeSyncing]   = useState(false)
+  const [qbIncomeSynced,    setQbIncomeSynced]    = useState(false)
 
   // Documents — only count loaded here; full UI is on /documents sub-pages
   const [documents, setDocuments] = useState<{ id: string }[]>([])
@@ -293,6 +295,30 @@ export default function ProjectPage() {
       broadcastProjectUpdate()
     } catch {}
     finally { setBoqCreating(false) }
+  }
+
+  // ── Sync income from QB ─────────────────────────────────────────────────────
+  async function syncIncomeFromQB() {
+    if (!project) return
+    const cls = (project as any).qb_class_name
+    if (!cls) return
+    setQbIncomeSyncing(true)
+    try {
+      const res  = await fetch(`/api/quickbooks/project-financials?class_name=${encodeURIComponent(cls)}`)
+      if (!res.ok) return
+      const data = await res.json()
+      const received = Math.round((data.summary?.totalIncome ?? 0) * 100) / 100
+      await fetch(`/api/projects/${project.id}`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ received_amount: received }),
+      })
+      setProject(prev => prev ? { ...prev, received_amount: received } : prev)
+      setQbIncomeSynced(true)
+      setTimeout(() => setQbIncomeSynced(false), 3000)
+      broadcastProjectUpdate()
+    } catch {}
+    finally { setQbIncomeSyncing(false) }
   }
 
   // ── Brief Me ────────────────────────────────────────────────────────────────
@@ -508,7 +534,24 @@ export default function ProjectPage() {
         {/* Financials */}
         <div className={`grid gap-4 grid-cols-2 ${isMBHRE ? 'sm:grid-cols-5' : 'sm:grid-cols-4'}`}>
           <div className="bg-emerald-50 rounded-lg px-4 py-3">
-            <p className="text-xs text-slate-600">Received</p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-slate-600">Received</p>
+              {(project as any).qb_class_name && (
+                <button
+                  onClick={syncIncomeFromQB}
+                  disabled={qbIncomeSyncing}
+                  title="Sync received amount from QuickBooks"
+                  className="flex items-center gap-1 text-[10px] font-semibold text-emerald-700 hover:text-emerald-900 disabled:opacity-50 transition-colors"
+                >
+                  {qbIncomeSyncing
+                    ? <Loader2 className="w-3 h-3 animate-spin" />
+                    : qbIncomeSynced
+                    ? <CheckCircle className="w-3 h-3 text-emerald-600" />
+                    : <TrendingUp className="w-3 h-3" />}
+                  {qbIncomeSynced ? 'Synced' : 'QB Sync'}
+                </button>
+              )}
+            </div>
             <p className="font-bold text-slate-900 mt-0.5">{formatCurrency(project.received_amount)}</p>
             <p className="text-xs text-slate-500 mt-0.5">{pctCollected}% collected</p>
           </div>
