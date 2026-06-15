@@ -5,7 +5,7 @@ import Link from 'next/link'
 import {
   ArrowLeft, MapPin, Calendar, Building2,
   CheckCircle2, CheckCircle, Clock, AlertCircle, Loader2, Sparkles, Save,
-  FolderOpen, Link2, TrendingUp, TrendingDown, Pencil, X, ChevronDown,
+  FolderOpen, Link2, TrendingUp, TrendingDown, Pencil, X, ChevronDown, BarChart2,
 } from 'lucide-react'
 import { formatCurrency, formatDate, progressBarColor, statusBadge, statusLabel } from '@/lib/utils'
 import { broadcastProjectUpdate } from '@/hooks/useAllProjects'
@@ -366,12 +366,20 @@ export default function ProjectPage() {
             </div>
           </div>
           <div className="flex flex-col items-end gap-2 flex-shrink-0">
-            <button
-              onClick={openEdit}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
-            >
-              <Pencil className="w-3.5 h-3.5" /> Edit
-            </button>
+            <div className="flex items-center gap-2">
+              <Link
+                href={`/projects/${id}/accounting`}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors"
+              >
+                <BarChart2 className="w-3.5 h-3.5" /> Financials
+              </Link>
+              <button
+                onClick={openEdit}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+              >
+                <Pencil className="w-3.5 h-3.5" /> Edit
+              </button>
+            </div>
             <div className="text-right">
               <p className="text-slate-500 text-xs">Contract Value</p>
               <p className="text-2xl font-bold text-slate-900">{formatCurrency(project.contract_value)}</p>
