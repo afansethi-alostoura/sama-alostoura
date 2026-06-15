@@ -5,7 +5,7 @@ import Link from 'next/link'
 import {
   ArrowLeft, MapPin, Calendar, Building2,
   CheckCircle2, CheckCircle, Clock, AlertCircle, Loader2, Sparkles, Save,
-  FolderOpen, Link2, TrendingUp, TrendingDown, Pencil, X,
+  FolderOpen, Link2, TrendingUp, TrendingDown, Pencil, X, ChevronDown,
 } from 'lucide-react'
 import { formatCurrency, formatDate, progressBarColor, statusBadge, statusLabel } from '@/lib/utils'
 import { broadcastProjectUpdate } from '@/hooks/useAllProjects'
@@ -47,6 +47,7 @@ interface BOQItem {
   amount: number
   progress?: number
   done?: boolean
+  quantity_done?: number
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -63,11 +64,12 @@ export default function ProjectPage() {
   const [briefingLoad,  setBriefingLoad]  = useState(false)
 
   // BOQ
-  const [boqItems,  setBoqItems]  = useState<BOQItem[]>([])
-  const [boqLoad,   setBoqLoad]   = useState(false)
-  const [boqSaving, setBoqSaving] = useState(false)
-  const [boqSaved,  setBoqSaved]  = useState(false)
-  const [boqRecord, setBoqRecord] = useState<any>(null)
+  const [boqItems,    setBoqItems]    = useState<BOQItem[]>([])
+  const [boqLoad,     setBoqLoad]     = useState(false)
+  const [boqSaving,   setBoqSaving]   = useState(false)
+  const [boqSaved,    setBoqSaved]    = useState(false)
+  const [boqRecord,   setBoqRecord]   = useState<any>(null)
+  const [boqExpanded, setBoqExpanded] = useState(false)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Inline edit
@@ -241,8 +243,19 @@ export default function ProjectPage() {
   }, [doSave])
 
   function updateItemProgress(globalIdx: number, raw: string) {
+    const item    = boqItems[globalIdx]
     const val     = Math.max(0, Math.min(100, Number(raw) || 0))
-    const updated = boqItems.map((item, i) => i === globalIdx ? { ...item, progress: val, done: val === 100 } : item)
+    const qtyDone = item.quantity > 0 ? Math.round((val / 100) * item.quantity * 100) / 100 : (item.quantity_done ?? 0)
+    const updated = boqItems.map((bi, i) => i === globalIdx ? { ...bi, progress: val, quantity_done: qtyDone, done: val === 100 } : bi)
+    setBoqItems(updated)
+    if (project && boqRecord) scheduleSave(updated, boqRecord, project)
+  }
+
+  function updateItemQuantityDone(globalIdx: number, raw: string) {
+    const item    = boqItems[globalIdx]
+    const done    = Math.max(0, Math.min(item.quantity || 999999, Number(raw) || 0))
+    const pct     = item.quantity > 0 ? Math.min(100, Math.round((done / item.quantity) * 100)) : 0
+    const updated = boqItems.map((bi, i) => i === globalIdx ? { ...bi, quantity_done: done, progress: pct, done: pct === 100 } : bi)
     setBoqItems(updated)
     if (project && boqRecord) scheduleSave(updated, boqRecord, project)
   }
@@ -521,224 +534,271 @@ export default function ProjectPage() {
           ) : (
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
 
-              {/* ── Sticky Save Bar ───────────────────────────────────────────── */}
-              <div className="sticky top-0 z-20 bg-slate-800 text-white px-5 py-3 flex items-center justify-between">
+              {/* ── Collapsible Header ─────────────────────────────────────── */}
+              <button
+                onClick={() => setBoqExpanded(e => !e)}
+                className="w-full flex items-center justify-between px-5 py-4 bg-slate-800 text-white hover:bg-slate-700 transition-colors"
+              >
                 <div className="flex items-center gap-3">
                   <span className="font-bold text-sm tracking-wide uppercase">BOQ Progress Tracker</span>
                   <span className="text-slate-400 text-xs">{boqItems.length} items</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${overallBOQPct === 100 ? 'bg-emerald-600' : overallBOQPct > 0 ? 'bg-amber-500' : 'bg-slate-600'}`}>
+                    {overallBOQPct}% complete
+                  </span>
                 </div>
-                <div className="flex items-center gap-4">
-                  <div className="text-right hidden sm:block">
-                    <p className="text-xs text-slate-400">Overall Progress</p>
-                    <p className="text-base font-bold">{overallBOQPct}%</p>
-                  </div>
-                  <button
-                    onClick={() => { if (project && boqRecord) doSave(boqItems, boqRecord, project) }}
-                    disabled={boqSaving}
-                    className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold transition-all disabled:opacity-60
-                      ${boqSaved ? 'bg-emerald-500 text-white' : 'bg-blue-500 hover:bg-blue-400 text-white'}`}
-                  >
-                    {boqSaving ? (
-                      <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>
-                    ) : boqSaved ? (
-                      <><CheckCircle className="w-4 h-4" /> Saved</>
-                    ) : (
-                      <><Save className="w-4 h-4" /> Save Progress</>
-                    )}
-                  </button>
+                <div className="flex items-center gap-3">
+                  {boqSaving && <Loader2 className="w-4 h-4 animate-spin text-slate-300" />}
+                  {boqSaved && !boqSaving && <span className="text-xs text-emerald-400 font-semibold">Saved</span>}
+                  <ChevronDown className={`w-5 h-5 transition-transform duration-200 ${boqExpanded ? 'rotate-180' : ''}`} />
+                </div>
+              </button>
+
+              {/* ── Summary Cards (always visible) ────────────────────────── */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-0 border-b border-slate-100 divide-x divide-slate-100">
+                <div className="px-5 py-4">
+                  <p className="text-xs text-slate-500 mb-0.5">Contract BOQ</p>
+                  <p className="font-bold text-slate-900">AED {totalBOQAmt.toLocaleString('en-AE', { maximumFractionDigits: 0 })}</p>
+                </div>
+                <div className="px-5 py-4">
+                  <p className="text-xs text-slate-500 mb-0.5">Value Completed</p>
+                  <p className="font-bold text-emerald-700">AED {Math.round(totalBOQAmt * overallBOQPct / 100).toLocaleString('en-AE')}</p>
+                </div>
+                <div className="px-5 py-4">
+                  <p className="text-xs text-slate-500 mb-0.5">Value Remaining</p>
+                  <p className="font-bold text-amber-700">AED {Math.round(totalBOQAmt * (100 - overallBOQPct) / 100).toLocaleString('en-AE')}</p>
+                </div>
+                <div className="px-5 py-4">
+                  <p className="text-xs text-slate-500 mb-0.5">Items Complete</p>
+                  <p className="font-bold text-slate-900">{boqItems.filter(i => (i.progress || 0) === 100).length} <span className="text-slate-400 font-normal">/ {boqItems.length}</span></p>
                 </div>
               </div>
 
-              {/* Table */}
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[900px] text-sm border-collapse">
-                  <thead>
-                    <tr className="bg-slate-800 text-white">
-                      <th className="px-3 py-2.5 text-left font-semibold border border-slate-600 w-8">N</th>
-                      <th className="px-3 py-2.5 text-left font-semibold border border-slate-600 w-16">ITEM</th>
-                      <th className="px-3 py-2.5 text-left font-semibold border border-slate-600">TASK DESCRIPTION</th>
-                      <th className="px-3 py-2.5 text-center font-semibold border border-slate-600 w-14">UNIT</th>
-                      <th className="px-3 py-2.5 text-center font-semibold border border-slate-600 w-16">QTY</th>
-                      <th className="px-3 py-2.5 text-center font-semibold border border-slate-600 w-20">RATE</th>
-                      <th className="px-3 py-2.5 text-right font-semibold border border-slate-600 w-28">AMOUNT (AED)</th>
-                      <th className="px-3 py-2.5 text-center font-semibold border border-slate-600 w-28">PROGRESS</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(boqSections).map(([sectionName, { items, indices }], secIdx) => {
-                      const secAmt  = items.reduce((s, i) => s + (i.amount || 0), 0)
-                      const secPct  = secAmt > 0
-                        ? Math.round(items.reduce((s, i) => s + (i.amount || 0) * ((i.progress || 0) / 100), 0) / secAmt * 100)
-                        : 0
-                      const allDone    = secPct === 100
-                      const anyStarted = secPct > 0
+              {/* Overall progress bar */}
+              <div className="px-5 py-3 border-b border-slate-100">
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${overallBOQPct === 100 ? 'bg-emerald-500' : overallBOQPct > 0 ? 'bg-amber-400' : 'bg-slate-300'}`}
+                      style={{ width: `${overallBOQPct}%` }}
+                    />
+                  </div>
+                  <span className="text-sm font-bold text-slate-700 w-10 text-right">{overallBOQPct}%</span>
+                </div>
+              </div>
 
-                      return (
-                        <React.Fragment key={sectionName}>
-                          {/* Section header row */}
-                          <tr className="bg-blue-50 border-t-2 border-blue-200">
-                            <td className="px-3 py-2 font-bold text-blue-800 border border-blue-200 text-sm">{secIdx + 1}</td>
-                            <td colSpan={5} className="px-3 py-2 font-bold text-blue-800 uppercase tracking-wide border border-blue-200 text-sm">{sectionName}</td>
-                            <td className="px-3 py-2 text-right font-bold text-blue-800 border border-blue-200 text-sm">
-                              {secAmt > 0 ? secAmt.toLocaleString('en-AE', { minimumFractionDigits: 2 }) : '—'}
-                            </td>
-                            <td className="px-3 py-2 border border-blue-200">
-                              <div className="flex items-center gap-2">
-                                <div className="flex-1 h-2 bg-blue-100 rounded-full overflow-hidden">
-                                  <div
-                                    className={`h-full rounded-full transition-all ${allDone ? 'bg-emerald-500' : anyStarted ? 'bg-amber-400' : 'bg-slate-300'}`}
-                                    style={{ width: `${secPct}%` }}
-                                  />
-                                </div>
-                                <span className={`text-xs font-bold w-8 text-right ${allDone ? 'text-emerald-600' : anyStarted ? 'text-amber-600' : 'text-slate-400'}`}>{secPct}%</span>
-                              </div>
-                            </td>
-                          </tr>
+              {/* ── Expanded Detail ────────────────────────────────────────── */}
+              {boqExpanded && (
+                <>
+                  {/* Detail Table */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[1050px] text-sm border-collapse">
+                      <thead>
+                        <tr className="bg-slate-800 text-white">
+                          <th className="px-3 py-2.5 text-left font-semibold border border-slate-600 w-8">N</th>
+                          <th className="px-3 py-2.5 text-left font-semibold border border-slate-600 w-16">ITEM</th>
+                          <th className="px-3 py-2.5 text-left font-semibold border border-slate-600">DESCRIPTION</th>
+                          <th className="px-3 py-2.5 text-center font-semibold border border-slate-600 w-14">UNIT</th>
+                          <th className="px-3 py-2.5 text-center font-semibold border border-slate-600 w-20">TOTAL QTY</th>
+                          <th className="px-3 py-2.5 text-center font-semibold border border-slate-600 w-24 bg-emerald-900">QTY DONE</th>
+                          <th className="px-3 py-2.5 text-center font-semibold border border-slate-600 w-24 bg-amber-900">REMAINING</th>
+                          <th className="px-3 py-2.5 text-right font-semibold border border-slate-600 w-28">AMOUNT (AED)</th>
+                          <th className="px-3 py-2.5 text-center font-semibold border border-slate-600 w-32">PROGRESS %</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(boqSections).map(([sectionName, { items, indices }], secIdx) => {
+                          const secAmt     = items.reduce((s, i) => s + (i.amount || 0), 0)
+                          const secPct     = secAmt > 0
+                            ? Math.round(items.reduce((s, i) => s + (i.amount || 0) * ((i.progress || 0) / 100), 0) / secAmt * 100)
+                            : 0
+                          const allDone    = secPct === 100
+                          const anyStarted = secPct > 0
 
-                          {/* Item rows */}
-                          {items.map((item, localIdx) => {
-                            const globalIdx = indices[localIdx]
-                            const pct       = item.progress || 0
-                            const isDone    = pct === 100
-                            const isStarted = pct > 0
-                            const subTotal  = item.amount || 0
-
-                            return (
-                              <tr key={globalIdx} className={`${isDone ? 'bg-emerald-50/40' : localIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} hover:bg-blue-50/20 transition-colors`}>
-                                <td className="px-3 py-1.5 border border-slate-100 text-slate-400 text-xs" />
-                                <td className="px-3 py-1.5 border border-slate-100 font-mono text-xs text-slate-500">{item.itemNo}</td>
-                                <td className="px-3 py-1.5 border border-slate-100 text-slate-800">{item.description}</td>
-                                <td className="px-3 py-1.5 border border-slate-100 text-center text-slate-500 font-mono text-xs">{item.unit}</td>
-                                <td className="px-3 py-1.5 border border-slate-100 text-center text-slate-600 text-xs">{item.quantity > 0 ? item.quantity.toLocaleString() : ''}</td>
-                                <td className="px-3 py-1.5 border border-slate-100 text-center text-slate-600 text-xs">{item.unitRate > 0 ? item.unitRate.toLocaleString() : ''}</td>
-                                <td className="px-3 py-1.5 border border-slate-100 text-right font-medium text-slate-700 text-xs">
-                                  {subTotal > 0 ? subTotal.toLocaleString('en-AE', { minimumFractionDigits: 2 }) : ''}
+                          return (
+                            <React.Fragment key={sectionName}>
+                              {/* Section header row */}
+                              <tr className="bg-blue-50 border-t-2 border-blue-200">
+                                <td className="px-3 py-2 font-bold text-blue-800 border border-blue-200 text-sm">{secIdx + 1}</td>
+                                <td colSpan={6} className="px-3 py-2 font-bold text-blue-800 uppercase tracking-wide border border-blue-200 text-sm">{sectionName}</td>
+                                <td className="px-3 py-2 text-right font-bold text-blue-800 border border-blue-200 text-sm">
+                                  {secAmt > 0 ? secAmt.toLocaleString('en-AE', { minimumFractionDigits: 2 }) : '—'}
                                 </td>
-                                <td className="px-2 py-1 border border-slate-100">
-                                  <div className="flex items-center gap-1.5">
-                                    <div className="flex-1 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                                <td className="px-3 py-2 border border-blue-200">
+                                  <div className="flex items-center gap-2">
+                                    <div className="flex-1 h-2 bg-blue-100 rounded-full overflow-hidden">
                                       <div
-                                        className={`h-full rounded-full transition-all ${isDone ? 'bg-emerald-500' : isStarted ? 'bg-amber-400' : 'bg-slate-300'}`}
-                                        style={{ width: `${pct}%` }}
+                                        className={`h-full rounded-full transition-all ${allDone ? 'bg-emerald-500' : anyStarted ? 'bg-amber-400' : 'bg-slate-300'}`}
+                                        style={{ width: `${secPct}%` }}
                                       />
                                     </div>
-                                    <div className="relative flex-shrink-0">
-                                      <input
-                                        type="number" min="0" max="100" value={pct}
-                                        onChange={e => updateItemProgress(globalIdx, e.target.value)}
-                                        onFocus={e => e.target.select()}
-                                        className={`w-14 text-right pr-4 pl-1 py-0.5 text-xs font-semibold rounded border outline-none focus:ring-1 focus:ring-blue-400 transition-colors
-                                          ${isDone ? 'bg-emerald-100 border-emerald-300 text-emerald-700' : isStarted ? 'bg-amber-50 border-amber-300 text-amber-700' : 'bg-blue-50/50 border-blue-100 text-slate-600'}`}
-                                      />
-                                      <span className={`absolute right-1 top-1/2 -translate-y-1/2 text-xs pointer-events-none ${isDone ? 'text-emerald-600' : isStarted ? 'text-amber-600' : 'text-slate-400'}`}>%</span>
-                                    </div>
+                                    <span className={`text-xs font-bold w-8 text-right ${allDone ? 'text-emerald-600' : anyStarted ? 'text-amber-600' : 'text-slate-400'}`}>{secPct}%</span>
                                   </div>
                                 </td>
                               </tr>
-                            )
-                          })}
 
-                          {/* Section subtotal row */}
-                          <tr className="bg-slate-100">
-                            <td colSpan={6} className="px-3 py-1.5 text-right text-xs font-semibold text-slate-600 border border-slate-200 uppercase tracking-wide">
-                              {sectionName} — Section Total
-                            </td>
-                            <td className="px-3 py-1.5 text-right font-bold text-slate-900 border border-slate-200 text-xs">
-                              {secAmt > 0 ? secAmt.toLocaleString('en-AE', { minimumFractionDigits: 2 }) : '—'}
-                            </td>
-                            <td className="px-3 py-1.5 border border-slate-200" />
-                          </tr>
-                        </React.Fragment>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                              {/* Item rows */}
+                              {items.map((item, localIdx) => {
+                                const globalIdx    = indices[localIdx]
+                                const pct          = item.progress || 0
+                                const isDone       = pct === 100
+                                const isStarted    = pct > 0
+                                const qtyDone      = item.quantity_done ?? (item.quantity > 0 ? Math.round((pct / 100) * item.quantity * 100) / 100 : 0)
+                                const qtyRemaining = Math.max(0, (item.quantity || 0) - qtyDone)
 
-              {/* Grand Total bar */}
-              <div className="border-t-2 border-slate-800 bg-slate-800 text-white px-5 py-3 flex justify-between items-center">
-                <div className="flex items-center gap-4">
-                  <span className="font-bold text-sm tracking-wide">GRAND TOTAL</span>
-                  <button
-                    onClick={() => { if (project && boqRecord) doSave(boqItems, boqRecord, project) }}
-                    disabled={boqSaving}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-60
-                      ${boqSaved ? 'bg-emerald-500 text-white' : 'bg-white/10 hover:bg-white/20 text-white border border-white/20'}`}
-                  >
-                    {boqSaving ? (
-                      <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…</>
-                    ) : boqSaved ? (
-                      <><CheckCircle className="w-3.5 h-3.5" /> Saved</>
-                    ) : (
-                      <><Save className="w-3.5 h-3.5" /> Save Progress</>
-                    )}
-                  </button>
-                </div>
-                <div className="flex items-center gap-8">
-                  <div className="text-right">
-                    <p className="text-xs text-slate-400">Overall Progress</p>
-                    <p className="text-lg font-bold">{overallBOQPct}%</p>
+                                return (
+                                  <tr key={globalIdx} className={`${isDone ? 'bg-emerald-50/40' : localIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} hover:bg-blue-50/20 transition-colors`}>
+                                    <td className="px-3 py-1.5 border border-slate-100 text-slate-400 text-xs" />
+                                    <td className="px-3 py-1.5 border border-slate-100 font-mono text-xs text-slate-500">{item.itemNo}</td>
+                                    <td className="px-3 py-1.5 border border-slate-100 text-slate-800">{item.description}</td>
+                                    <td className="px-3 py-1.5 border border-slate-100 text-center text-slate-500 font-mono text-xs">{item.unit}</td>
+                                    <td className="px-3 py-1.5 border border-slate-100 text-center text-slate-600 text-xs font-medium">
+                                      {item.quantity > 0 ? item.quantity.toLocaleString() : '—'}
+                                    </td>
+
+                                    {/* QTY DONE — editable */}
+                                    <td className="px-2 py-1 border border-slate-100 bg-emerald-50/30">
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        max={item.quantity || undefined}
+                                        value={qtyDone || ''}
+                                        placeholder="0"
+                                        onChange={e => updateItemQuantityDone(globalIdx, e.target.value)}
+                                        onFocus={e => e.target.select()}
+                                        className={`w-full text-center px-1 py-0.5 text-xs font-semibold rounded border outline-none focus:ring-1 focus:ring-emerald-400 transition-colors
+                                          ${isDone ? 'bg-emerald-100 border-emerald-300 text-emerald-700' : isStarted ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-white border-slate-200 text-slate-600'}`}
+                                      />
+                                    </td>
+
+                                    {/* QTY REMAINING — read-only */}
+                                    <td className={`px-3 py-1.5 border border-slate-100 text-center text-xs font-medium ${isDone ? 'text-emerald-600' : isStarted ? 'text-amber-700' : 'text-slate-400'}`}>
+                                      {isDone ? '✓ Done' : item.quantity > 0 ? qtyRemaining.toLocaleString() : '—'}
+                                    </td>
+
+                                    <td className="px-3 py-1.5 border border-slate-100 text-right font-medium text-slate-700 text-xs">
+                                      {(item.amount || 0) > 0 ? (item.amount || 0).toLocaleString('en-AE', { minimumFractionDigits: 2 }) : ''}
+                                    </td>
+
+                                    {/* PROGRESS % — editable */}
+                                    <td className="px-2 py-1 border border-slate-100">
+                                      <div className="flex items-center gap-1.5">
+                                        <div className="flex-1 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                                          <div
+                                            className={`h-full rounded-full transition-all ${isDone ? 'bg-emerald-500' : isStarted ? 'bg-amber-400' : 'bg-slate-300'}`}
+                                            style={{ width: `${pct}%` }}
+                                          />
+                                        </div>
+                                        <div className="relative flex-shrink-0">
+                                          <input
+                                            type="number" min="0" max="100" value={pct}
+                                            onChange={e => updateItemProgress(globalIdx, e.target.value)}
+                                            onFocus={e => e.target.select()}
+                                            className={`w-14 text-right pr-4 pl-1 py-0.5 text-xs font-semibold rounded border outline-none focus:ring-1 focus:ring-blue-400 transition-colors
+                                              ${isDone ? 'bg-emerald-100 border-emerald-300 text-emerald-700' : isStarted ? 'bg-amber-50 border-amber-300 text-amber-700' : 'bg-blue-50/50 border-blue-100 text-slate-600'}`}
+                                          />
+                                          <span className={`absolute right-1 top-1/2 -translate-y-1/2 text-xs pointer-events-none ${isDone ? 'text-emerald-600' : isStarted ? 'text-amber-600' : 'text-slate-400'}`}>%</span>
+                                        </div>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )
+                              })}
+
+                              {/* Section subtotal */}
+                              <tr className="bg-slate-100">
+                                <td colSpan={7} className="px-3 py-1.5 text-right text-xs font-semibold text-slate-600 border border-slate-200 uppercase tracking-wide">
+                                  {sectionName} — Section Total
+                                </td>
+                                <td className="px-3 py-1.5 text-right font-bold text-slate-900 border border-slate-200 text-xs">
+                                  {secAmt > 0 ? secAmt.toLocaleString('en-AE', { minimumFractionDigits: 2 }) : '—'}
+                                </td>
+                                <td className="px-3 py-1.5 border border-slate-200" />
+                              </tr>
+                            </React.Fragment>
+                          )
+                        })}
+                      </tbody>
+                    </table>
                   </div>
-                  <div className="text-right">
-                    <p className="text-xs text-slate-400">Contract Value</p>
-                    <p className="text-lg font-bold">AED {totalBOQAmt.toLocaleString('en-AE', { minimumFractionDigits: 2 })}</p>
-                  </div>
-                </div>
-              </div>
 
-              {/* Summary Schedule */}
-              <div className="border-t border-slate-200">
-                <div className="bg-slate-800 text-white px-5 py-2.5">
-                  <h3 className="font-bold text-sm tracking-wide">SUMMARY SCHEDULE</h3>
-                </div>
-                <table className="w-full text-sm border-collapse">
-                  <thead>
-                    <tr className="bg-slate-100">
-                      <th className="px-4 py-2 text-left font-semibold text-slate-600 border border-slate-200 w-10">N</th>
-                      <th className="px-4 py-2 text-left font-semibold text-slate-600 border border-slate-200">DESCRIPTION</th>
-                      <th className="px-4 py-2 text-right font-semibold text-slate-600 border border-slate-200 w-40">AMOUNT (AED)</th>
-                      <th className="px-4 py-2 text-center font-semibold text-slate-600 border border-slate-200 w-36">PROGRESS</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(boqSections).map(([sectionName, { items }], secIdx) => {
-                      const secAmt = items.reduce((s, i) => s + (i.amount || 0), 0)
-                      const secPct = secAmt > 0
-                        ? Math.round(items.reduce((s, i) => s + (i.amount || 0) * ((i.progress || 0) / 100), 0) / secAmt * 100)
-                        : 0
-                      return (
-                        <tr key={sectionName} className={secIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
-                          <td className="px-4 py-1.5 border border-slate-100 font-medium text-slate-700">{secIdx + 1}</td>
-                          <td className="px-4 py-1.5 border border-slate-100 text-slate-700">{sectionName}</td>
-                          <td className="px-4 py-1.5 border border-slate-100 text-right font-semibold text-slate-900">
-                            {secAmt > 0 ? secAmt.toLocaleString('en-AE', { minimumFractionDigits: 2 }) : '—'}
-                          </td>
-                          <td className="px-4 py-1.5 border border-slate-100">
-                            <div className="flex items-center gap-2">
-                              <div className="flex-1 h-2 bg-slate-200 rounded-full overflow-hidden">
-                                <div
-                                  className={`h-full rounded-full transition-all ${secPct === 100 ? 'bg-emerald-500' : secPct > 0 ? 'bg-amber-400' : 'bg-slate-300'}`}
-                                  style={{ width: `${secPct}%` }}
-                                />
-                              </div>
-                              <span className={`text-xs font-bold w-8 text-right ${secPct === 100 ? 'text-emerald-600' : secPct > 0 ? 'text-amber-600' : 'text-slate-400'}`}>{secPct}%</span>
-                            </div>
-                          </td>
+                  {/* Grand Total + Save */}
+                  <div className="border-t-2 border-slate-800 bg-slate-800 text-white px-5 py-3 flex justify-between items-center">
+                    <div className="flex items-center gap-4">
+                      <span className="font-bold text-sm tracking-wide">GRAND TOTAL</span>
+                      <button
+                        onClick={() => { if (project && boqRecord) doSave(boqItems, boqRecord, project) }}
+                        disabled={boqSaving}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-60
+                          ${boqSaved ? 'bg-emerald-500 text-white' : 'bg-white/10 hover:bg-white/20 text-white border border-white/20'}`}
+                      >
+                        {boqSaving ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…</> : boqSaved ? <><CheckCircle className="w-3.5 h-3.5" /> Saved</> : <><Save className="w-3.5 h-3.5" /> Save Progress</>}
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-8">
+                      <div className="text-right">
+                        <p className="text-xs text-slate-400">Overall Progress</p>
+                        <p className="text-lg font-bold">{overallBOQPct}%</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-slate-400">Contract BOQ</p>
+                        <p className="text-lg font-bold">AED {totalBOQAmt.toLocaleString('en-AE', { minimumFractionDigits: 2 })}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Summary Schedule */}
+                  <div className="border-t border-slate-200">
+                    <div className="bg-slate-700 text-white px-5 py-2.5">
+                      <h3 className="font-bold text-sm tracking-wide">SUMMARY SCHEDULE</h3>
+                    </div>
+                    <table className="w-full text-sm border-collapse">
+                      <thead>
+                        <tr className="bg-slate-100">
+                          <th className="px-4 py-2 text-left font-semibold text-slate-600 border border-slate-200 w-10">N</th>
+                          <th className="px-4 py-2 text-left font-semibold text-slate-600 border border-slate-200">DESCRIPTION</th>
+                          <th className="px-4 py-2 text-right font-semibold text-slate-600 border border-slate-200 w-40">AMOUNT (AED)</th>
+                          <th className="px-4 py-2 text-center font-semibold text-slate-600 border border-slate-200 w-36">PROGRESS</th>
                         </tr>
-                      )
-                    })}
-                  </tbody>
-                  <tfoot>
-                    <tr className="bg-slate-800 text-white">
-                      <td colSpan={2} className="px-4 py-2.5 font-bold tracking-wide">GRAND TOTAL</td>
-                      <td className="px-4 py-2.5 text-right font-bold text-base">
-                        {totalBOQAmt.toLocaleString('en-AE', { minimumFractionDigits: 2 })}
-                      </td>
-                      <td className="px-4 py-2.5 text-center font-bold text-base">{overallBOQPct}%</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
+                      </thead>
+                      <tbody>
+                        {Object.entries(boqSections).map(([sectionName, { items }], secIdx) => {
+                          const secAmt = items.reduce((s, i) => s + (i.amount || 0), 0)
+                          const secPct = secAmt > 0
+                            ? Math.round(items.reduce((s, i) => s + (i.amount || 0) * ((i.progress || 0) / 100), 0) / secAmt * 100)
+                            : 0
+                          return (
+                            <tr key={sectionName} className={secIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                              <td className="px-4 py-1.5 border border-slate-100 font-medium text-slate-700">{secIdx + 1}</td>
+                              <td className="px-4 py-1.5 border border-slate-100 text-slate-700">{sectionName}</td>
+                              <td className="px-4 py-1.5 border border-slate-100 text-right font-semibold text-slate-900">
+                                {secAmt > 0 ? secAmt.toLocaleString('en-AE', { minimumFractionDigits: 2 }) : '—'}
+                              </td>
+                              <td className="px-4 py-1.5 border border-slate-100">
+                                <div className="flex items-center gap-2">
+                                  <div className="flex-1 h-2 bg-slate-200 rounded-full overflow-hidden">
+                                    <div
+                                      className={`h-full rounded-full transition-all ${secPct === 100 ? 'bg-emerald-500' : secPct > 0 ? 'bg-amber-400' : 'bg-slate-300'}`}
+                                      style={{ width: `${secPct}%` }}
+                                    />
+                                  </div>
+                                  <span className={`text-xs font-bold w-8 text-right ${secPct === 100 ? 'text-emerald-600' : secPct > 0 ? 'text-amber-600' : 'text-slate-400'}`}>{secPct}%</span>
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-slate-800 text-white">
+                          <td colSpan={2} className="px-4 py-2.5 font-bold tracking-wide">GRAND TOTAL</td>
+                          <td className="px-4 py-2.5 text-right font-bold text-base">{totalBOQAmt.toLocaleString('en-AE', { minimumFractionDigits: 2 })}</td>
+                          <td className="px-4 py-2.5 text-center font-bold text-base">{overallBOQPct}%</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
