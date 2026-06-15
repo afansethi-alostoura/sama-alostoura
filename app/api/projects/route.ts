@@ -2,6 +2,7 @@ import { NextResponse }       from 'next/server'
 import { getAllStoredProjects, addStoredProject } from '@/lib/projects-store'
 import { getAllProgress } from '@/lib/project-progress'
 import { getAllOverrides, getAllStoredFromSupabase, saveNewProjectToSupabase } from '@/lib/project-overrides'
+import { supabaseAdmin } from '@/lib/supabase'
 
 export async function GET() {
   const [fileProjects, supabaseProjects, progressMap, overridesMap] = await Promise.all([
