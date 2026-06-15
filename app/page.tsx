@@ -60,8 +60,9 @@ export default function CEODashboard() {
   const [morningLoading, setMorningLoading] = useState(true)
   const [mounted, setMounted] = useState(false)
 
-  const { projects, activeProjects, totalContract, totalReceived, totalOutstanding: outstanding } = useAllProjects()
+  const { projects, activeProjects, totalContract, totalReceived, totalExpenses, totalOutstanding: outstanding } = useAllProjects()
   const collectionRate = totalContract > 0 ? (totalReceived / totalContract) * 100 : 0
+  const netProfit      = totalReceived - totalExpenses
 
   useEffect(() => {
     setMounted(true)
@@ -119,17 +120,28 @@ export default function CEODashboard() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
         {[
           {
             label: 'Total Contract Value', value: formatCurrency(totalContract),
             sub: `${activeProjects.length} active projects`, icon: Building2,
-            color: 'blue', trend: '+12%',
+            color: 'blue', trend: null,
           },
           {
             label: 'Total Received', value: formatCurrency(totalReceived),
             sub: `${collectionRate.toFixed(0)}% collection rate`, icon: TrendingUp,
-            color: 'emerald', trend: '+8%',
+            color: 'emerald', trend: null,
+          },
+          {
+            label: 'Total Expenses', value: formatCurrency(totalExpenses),
+            sub: 'All projects · from QB', icon: ArrowDownRight,
+            color: 'red', trend: null,
+          },
+          {
+            label: 'Net Profit', value: formatCurrency(netProfit),
+            sub: netProfit >= 0 ? 'Received minus expenses' : 'Currently negative',
+            icon: netProfit >= 0 ? ArrowUpRight : ArrowDownRight,
+            color: netProfit >= 0 ? 'emerald' : 'red', trend: null,
           },
           {
             label: 'Outstanding Balance', value: formatCurrency(outstanding),

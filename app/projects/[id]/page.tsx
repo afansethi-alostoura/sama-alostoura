@@ -5,7 +5,7 @@ import Link from 'next/link'
 import {
   ArrowLeft, MapPin, Calendar, Building2,
   CheckCircle2, CheckCircle, Clock, AlertCircle, Loader2, Sparkles, Save,
-  FolderOpen,
+  FolderOpen, Link2, TrendingUp, TrendingDown, Pencil, X,
 } from 'lucide-react'
 import { getDemoProject } from '@/lib/demo-data'
 import { formatCurrency, formatDate, progressBarColor, statusBadge, statusLabel } from '@/lib/utils'
@@ -70,6 +70,18 @@ export default function ProjectPage() {
   const [boqRecord, setBoqRecord] = useState<any>(null)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Inline edit
+  const [editing,    setEditing]    = useState(false)
+  const [editForm,   setEditForm]   = useState<Partial<ProjectData & { qb_class_name: string }>>({})
+  const [editSaving, setEditSaving] = useState(false)
+  const [editError,  setEditError]  = useState('')
+
+  // QB class linking
+  const [qbClasses,     setQbClasses]     = useState<{ id: string; name: string }[]>([])
+  const [qbClassName,   setQbClassName]   = useState('')
+  const [qbSaving,      setQbSaving]      = useState(false)
+  const [qbSaved,       setQbSaved]       = useState(false)
+
   // Documents — only count loaded here; full UI is on /documents sub-pages
   const [documents, setDocuments] = useState<{ id: string }[]>([])
 
@@ -88,6 +100,76 @@ export default function ProjectPage() {
       .catch(() => { const d = getDemoProject(id); if (d) setProject(d as unknown as ProjectData) })
       .finally(() => setLoading(false))
   }, [id])
+
+  // ── Load QB classes + set initial class name from project ───────────────────
+  useEffect(() => {
+    fetch('/api/quickbooks/class-list')
+      .then(r => r.ok ? r.json() : { classes: [] })
+      .then(d => setQbClasses(d.classes ?? []))
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (project) setQbClassName((project as any).qb_class_name ?? '')
+  }, [project])
+
+  function openEdit() {
+    if (!project) return
+    setEditForm({
+      name:               project.name,
+      client_name:        project.client_name ?? '',
+      location:           project.location,
+      type:               project.type as any,
+      status:             project.status as any,
+      contract_value:     project.contract_value,
+      received_amount:    project.received_amount,
+      progress_percent:   project.progress_percent,
+      current_stage:      project.current_stage ?? '',
+      notes:              project.notes ?? '',
+      start_date:         project.start_date ?? '',
+      expected_completion: project.expected_completion ?? '',
+      qb_class_name:      (project as any).qb_class_name ?? '',
+    })
+    setEditError('')
+    setEditing(true)
+  }
+
+  async function saveEdit() {
+    if (!project) return
+    setEditSaving(true)
+    setEditError('')
+    try {
+      const res = await fetch(`/api/projects/${project.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editForm),
+      })
+      if (!res.ok) throw new Error((await res.json()).error ?? 'Save failed')
+      const updated = await res.json()
+      setProject(prev => prev ? { ...prev, ...updated } : prev)
+      setQbClassName(updated.qb_class_name ?? '')
+      setEditing(false)
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : 'Save failed')
+    } finally {
+      setEditSaving(false)
+    }
+  }
+
+  async function saveQbClass() {
+    if (!project) return
+    setQbSaving(true)
+    try {
+      await fetch(`/api/projects/${project.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ qb_class_name: qbClassName }),
+      })
+      setQbSaved(true)
+      setTimeout(() => setQbSaved(false), 3000)
+    } catch {}
+    finally { setQbSaving(false) }
+  }
 
   // ── Load BOQ ────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -235,14 +317,100 @@ export default function ProjectPage() {
               {project.current_stage && <p className="mt-1 text-sm text-slate-600"><strong>Current:</strong> {project.current_stage}</p>}
             </div>
           </div>
-          <div className="text-right flex-shrink-0">
-            <p className="text-slate-500 text-xs">Contract Value</p>
-            <p className="text-2xl font-bold text-slate-900">{formatCurrency(project.contract_value)}</p>
-            {isMBHRE && project.mbhre_approved_amount && (
-              <p className="text-xs text-slate-500 mt-1">MBHRE: {formatCurrency(project.mbhre_approved_amount)}</p>
-            )}
+          <div className="flex flex-col items-end gap-2 flex-shrink-0">
+            <button
+              onClick={openEdit}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+            >
+              <Pencil className="w-3.5 h-3.5" /> Edit
+            </button>
+            <div className="text-right">
+              <p className="text-slate-500 text-xs">Contract Value</p>
+              <p className="text-2xl font-bold text-slate-900">{formatCurrency(project.contract_value)}</p>
+              {isMBHRE && project.mbhre_approved_amount && (
+                <p className="text-xs text-slate-500 mt-1">MBHRE: {formatCurrency(project.mbhre_approved_amount)}</p>
+              )}
+            </div>
           </div>
         </div>
+
+        {/* ── Inline Edit Form ─────────────────────────────────────────────────── */}
+        {editing && (
+          <div className="border-t border-slate-100 pt-5 mt-1">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-slate-800">Edit Project</h3>
+              <button onClick={() => setEditing(false)} className="text-slate-400 hover:text-slate-600">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {[
+                { label: 'Project Name',    key: 'name',           type: 'text'   },
+                { label: 'Client Name',     key: 'client_name',    type: 'text'   },
+                { label: 'Location',        key: 'location',       type: 'text'   },
+                { label: 'Contract Value',  key: 'contract_value', type: 'number' },
+                { label: 'Start Date',      key: 'start_date',     type: 'date'   },
+                { label: 'Expected Completion', key: 'expected_completion', type: 'date' },
+              ].map(({ label, key, type }) => (
+                <div key={key}>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">{label}</label>
+                  <input
+                    type={type}
+                    value={(editForm as any)[key] ?? ''}
+                    onChange={e => setEditForm(p => ({ ...p, [key]: type === 'number' ? parseFloat(e.target.value) || 0 : e.target.value }))}
+                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  />
+                </div>
+              ))}
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
+                <select
+                  value={(editForm.status as string) ?? ''}
+                  onChange={e => setEditForm(p => ({ ...p, status: e.target.value as any }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                >
+                  <option value="active">Active</option>
+                  <option value="on_hold">On Hold</option>
+                  <option value="completed">Completed</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">Current Stage</label>
+                <input
+                  type="text"
+                  value={editForm.current_stage ?? ''}
+                  onChange={e => setEditForm(p => ({ ...p, current_stage: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
+                <textarea
+                  rows={2}
+                  value={editForm.notes ?? ''}
+                  onChange={e => setEditForm(p => ({ ...p, notes: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"
+                />
+              </div>
+            </div>
+            {editError && <p className="text-xs text-red-600 mt-3">{editError}</p>}
+            <div className="flex items-center gap-3 mt-4">
+              <button
+                onClick={saveEdit}
+                disabled={editSaving}
+                className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-5 py-2 rounded-lg text-sm font-semibold transition-colors"
+              >
+                {editSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                {editSaving ? 'Saving…' : 'Save Changes'}
+              </button>
+              <button onClick={() => setEditing(false)} className="text-sm text-slate-500 hover:text-slate-700 transition-colors">
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
 
         {/* Progress bars */}
         <div className="mb-5 space-y-4">
@@ -307,6 +475,74 @@ export default function ProjectPage() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* ── QuickBooks Financial Panel ────────────────────────────────────────── */}
+      <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-4 sm:p-6 mb-6">
+        <div className="flex items-center gap-2 mb-4">
+          <Link2 className="w-4 h-4 text-[#2CA01C]" />
+          <h2 className="text-sm font-semibold text-slate-900">QuickBooks Class</h2>
+          {(project as any).last_qb_sync && (
+            <span className="ml-auto text-xs text-slate-400">
+              Last synced {new Date((project as any).last_qb_sync).toLocaleDateString('en-AE')}
+            </span>
+          )}
+        </div>
+
+        {/* Class picker */}
+        <div className="flex items-center gap-2 mb-4">
+          <select
+            value={qbClassName}
+            onChange={e => setQbClassName(e.target.value)}
+            className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-transparent"
+          >
+            <option value="">— Not linked to QB class —</option>
+            {qbClasses.map(c => (
+              <option key={c.id} value={c.name}>{c.name}</option>
+            ))}
+          </select>
+          <button
+            onClick={saveQbClass}
+            disabled={qbSaving}
+            className="flex items-center gap-1.5 bg-[#2CA01C] hover:bg-[#238016] disabled:opacity-60 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
+          >
+            {qbSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : qbSaved ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
+            {qbSaved ? 'Saved' : 'Save'}
+          </button>
+        </div>
+
+        {/* QB financials — shown only when expenses or received data exists */}
+        {((project as any).total_expenses > 0 || (project as any).received_amount > 0) && (project as any).qb_class_name && (
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-emerald-50 rounded-lg px-4 py-3">
+              <div className="flex items-center gap-1 mb-1">
+                <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
+                <p className="text-xs text-slate-600 font-medium">QB Income</p>
+              </div>
+              <p className="font-bold text-emerald-700">{((project as any).received_amount ?? 0).toLocaleString('en-AE', { style: 'currency', currency: 'AED', maximumFractionDigits: 0 })}</p>
+              <p className="text-xs text-slate-400 mt-0.5">Deposits received</p>
+            </div>
+            <div className="bg-red-50 rounded-lg px-4 py-3">
+              <div className="flex items-center gap-1 mb-1">
+                <TrendingDown className="w-3.5 h-3.5 text-red-600" />
+                <p className="text-xs text-slate-600 font-medium">QB Expenses</p>
+              </div>
+              <p className="font-bold text-red-700">{((project as any).total_expenses ?? 0).toLocaleString('en-AE', { style: 'currency', currency: 'AED', maximumFractionDigits: 0 })}</p>
+              <p className="text-xs text-slate-400 mt-0.5">Purchases + Bills</p>
+            </div>
+            <div className={`rounded-lg px-4 py-3 ${((project as any).received_amount ?? 0) - ((project as any).total_expenses ?? 0) >= 0 ? 'bg-blue-50' : 'bg-orange-50'}`}>
+              <p className="text-xs text-slate-600 font-medium mb-1">Net Profit</p>
+              <p className={`font-bold ${((project as any).received_amount ?? 0) - ((project as any).total_expenses ?? 0) >= 0 ? 'text-blue-700' : 'text-orange-700'}`}>
+                {(((project as any).received_amount ?? 0) - ((project as any).total_expenses ?? 0)).toLocaleString('en-AE', { style: 'currency', currency: 'AED', maximumFractionDigits: 0 })}
+              </p>
+              <p className="text-xs text-slate-400 mt-0.5">Income − Expenses</p>
+            </div>
+          </div>
+        )}
+
+        {!(project as any).qb_class_name && (
+          <p className="text-xs text-slate-400">Select a QB class above and save to enable automatic payment and expense sync.</p>
+        )}
       </div>
 
       {/* Brief Me */}

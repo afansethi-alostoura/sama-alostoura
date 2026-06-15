@@ -34,6 +34,10 @@ export interface StoredProject {
   expected_completion: string
   created_at:       string
   updated_at:       string
+  // QuickBooks class mapping — set once per project; used for all QB syncs
+  qb_class_name?:   string   // exact QB class name, e.g. "Fahad Bin Rashed Bin Essa Bin Abdullatif Alserkal"
+  total_expenses?:  number   // total project costs pulled from QB (Purchases + Bills)
+  last_qb_sync?:    string   // ISO timestamp of last successful QB sync
   // Optional extended fields
   boq_sections?:        BOQSection[]
   // Extra metadata stored in JSON but not typed strictly

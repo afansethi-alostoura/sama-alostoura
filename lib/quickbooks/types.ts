@@ -217,6 +217,27 @@ export interface QBClassGroup {
   transactions: QBTransactionLine[]      // sorted date desc
 }
 
+// ── Deposit (income received directly to bank, NOT via Invoice/Payment) ──────
+export interface QBDepositLine {
+  Id?:          string
+  Amount:       number
+  DetailType:   string   // 'DepositLineDetail'
+  DepositLineDetail?: {
+    AccountRef:  { value: string; name: string }  // e.g. "Project Income"
+    ClassRef?:   { value: string; name: string }  // project class tag
+    EntityRef?:  { value: string; name: string }  // customer / vendor
+  }
+}
+
+export interface QBDeposit {
+  Id:                   string
+  TxnDate:              string   // YYYY-MM-DD
+  TotalAmt:             number
+  DepositToAccountRef?: { value: string; name: string }  // e.g. "RAK Bank"
+  PrivateNote?:         string
+  Line:                 QBDepositLine[]
+}
+
 // ── Chart of Accounts entry ───────────────────────────────────────────────────
 export interface QBAccount {
   Id:                  string

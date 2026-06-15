@@ -160,9 +160,10 @@ export default function ProjectsPage() {
               <th className="text-left text-xs font-semibold text-slate-500 px-3 py-3 hidden sm:table-cell">Client</th>
               <th className="text-left text-xs font-semibold text-slate-500 px-3 py-3">Contract</th>
               <th className="text-left text-xs font-semibold text-slate-500 px-3 py-3 hidden lg:table-cell">Received</th>
+              <th className="text-left text-xs font-semibold text-slate-500 px-3 py-3 hidden xl:table-cell">Expenses</th>
+              <th className="text-left text-xs font-semibold text-slate-500 px-3 py-3 hidden xl:table-cell">Profit</th>
               <th className="text-left text-xs font-semibold text-slate-500 px-3 py-3 hidden md:table-cell">Progress</th>
               <th className="text-left text-xs font-semibold text-slate-500 px-3 py-3">Status</th>
-              <th className="text-left text-xs font-semibold text-slate-500 px-3 py-3 hidden xl:table-cell">Stage</th>
               <th className="px-3 py-3"></th>
             </tr>
           </thead>
@@ -185,9 +186,11 @@ export default function ProjectsPage() {
               </tr>
             ) : (
               filtered.map(project => {
-                const pct  = project.progress_percent
-                const barC = pct >= 70 ? 'bg-emerald-500' : pct >= 40 ? 'bg-amber-400' : 'bg-red-400'
+                const pct        = project.progress_percent
+                const barC       = pct >= 70 ? 'bg-emerald-500' : pct >= 40 ? 'bg-amber-400' : 'bg-red-400'
                 const outstanding = project.contract_value - project.received_amount
+                const expenses   = (project.total_expenses as number | undefined) ?? 0
+                const profit     = project.received_amount - expenses
                 return (
                   <tr key={project.id} className="hover:bg-slate-50/70 transition-colors group">
                     <td className="px-3 py-3 max-w-[180px]">
@@ -195,9 +198,14 @@ export default function ProjectsPage() {
                         <div className="w-7 h-7 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
                           <Building2 className="w-3.5 h-3.5 text-blue-600" />
                         </div>
-                        <span className="text-sm font-semibold text-slate-800 group-hover:text-blue-600 transition-colors truncate">
-                          {project.name}
-                        </span>
+                        <div className="min-w-0">
+                          <span className="text-sm font-semibold text-slate-800 group-hover:text-blue-600 transition-colors truncate block">
+                            {project.name}
+                          </span>
+                          {(project.qb_class_name as string | undefined) && (
+                            <span className="text-[10px] text-[#2CA01C] font-medium">QB linked</span>
+                          )}
+                        </div>
                       </div>
                     </td>
                     <td className="px-3 py-3 hidden sm:table-cell max-w-[140px]">
@@ -214,6 +222,18 @@ export default function ProjectsPage() {
                         )}
                       </div>
                     </td>
+                    <td className="px-3 py-3 hidden xl:table-cell">
+                      {expenses > 0
+                        ? <span className="text-sm font-medium text-red-600 whitespace-nowrap">{formatCurrency(expenses)}</span>
+                        : <span className="text-xs text-slate-300">—</span>
+                      }
+                    </td>
+                    <td className="px-3 py-3 hidden xl:table-cell">
+                      {expenses > 0
+                        ? <span className={`text-sm font-medium whitespace-nowrap ${profit >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>{formatCurrency(profit)}</span>
+                        : <span className="text-xs text-slate-300">—</span>
+                      }
+                    </td>
                     <td className="px-3 py-3 w-28 hidden md:table-cell">
                       <div className="flex items-center gap-2">
                         <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
@@ -224,9 +244,6 @@ export default function ProjectsPage() {
                     </td>
                     <td className="px-3 py-3">
                       <StatusBadge status={project.status} />
-                    </td>
-                    <td className="px-3 py-3 hidden xl:table-cell">
-                      <span className="text-xs text-slate-500 truncate max-w-[120px] block">{project.current_stage ?? '—'}</span>
                     </td>
                     <td className="px-3 py-3">
                       <Link

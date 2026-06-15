@@ -29,6 +29,10 @@ export interface ProjectRow {
   updated_at:       string
   notes?:           string
   boq_sections?:    unknown[]
+  // QuickBooks sync
+  qb_class_name?:   string
+  total_expenses?:  number
+  last_qb_sync?:    string
   // MBHRE / extra metadata
   mbhre_approved_amount?:   number
   mbhre_approved_progress?: number
@@ -61,8 +65,9 @@ export function useAllProjects() {
   // Derived helpers
   const activeProjects    = projects.filter(p => p.status === 'active')
   const completedProjects = projects.filter(p => p.status === 'completed')
-  const totalContract     = projects.reduce((s, p) => s + p.contract_value,  0)
-  const totalReceived     = projects.reduce((s, p) => s + p.received_amount, 0)
+  const totalContract     = projects.reduce((s, p) => s + p.contract_value,    0)
+  const totalReceived     = projects.reduce((s, p) => s + p.received_amount,   0)
+  const totalExpenses     = projects.reduce((s, p) => s + (p.total_expenses ?? 0), 0)
   const totalOutstanding  = totalContract - totalReceived
 
   return {
@@ -74,6 +79,7 @@ export function useAllProjects() {
     completedProjects,
     totalContract,
     totalReceived,
+    totalExpenses,
     totalOutstanding,
   }
 }

@@ -1,6 +1,6 @@
 'use client'
-import { useState }    from 'react'
-import { useRouter }   from 'next/navigation'
+import { useState, useEffect } from 'react'
+import { useRouter }           from 'next/navigation'
 import { Building2, ArrowLeft, Loader2, CheckCircle2 } from 'lucide-react'
 
 const STAGES = [
@@ -43,6 +43,18 @@ export default function AddProjectPage() {
   const [success,  setSuccess]  = useState(false)
   const [error,    setError]    = useState('')
 
+  const [qbClasses,     setQbClasses]     = useState<{ id: string; name: string }[]>([])
+  const [qbClassesLoad, setQbClassesLoad] = useState(false)
+
+  useEffect(() => {
+    setQbClassesLoad(true)
+    fetch('/api/quickbooks/class-list')
+      .then(r => r.ok ? r.json() : { classes: [] })
+      .then(d => setQbClasses(d.classes ?? []))
+      .catch(() => {})
+      .finally(() => setQbClassesLoad(false))
+  }, [])
+
   const [form, setForm] = useState({
     name:               '',
     client_name:        '',
@@ -56,6 +68,7 @@ export default function AddProjectPage() {
     notes:              '',
     start_date:         '',
     expected_completion: '',
+    qb_class_name:      '',
   })
 
   function set(key: keyof typeof form, value: string) {
@@ -238,6 +251,22 @@ export default function AddProjectPage() {
             <option value="on-hold">On Hold</option>
             <option value="completed">Completed</option>
           </select>
+        </Field>
+
+        {/* QuickBooks Class */}
+        <Field label="QuickBooks Class">
+          <select
+            className={INPUT}
+            value={form.qb_class_name}
+            onChange={e => set('qb_class_name', e.target.value)}
+            disabled={qbClassesLoad}
+          >
+            <option value="">{qbClassesLoad ? 'Loading QB classes…' : '— Not linked to QB class —'}</option>
+            {qbClasses.map(c => (
+              <option key={c.id} value={c.name}>{c.name}</option>
+            ))}
+          </select>
+          <p className="text-xs text-slate-400 mt-1">Link to a QuickBooks class so payments and expenses sync automatically.</p>
         </Field>
 
         {/* Notes */}
