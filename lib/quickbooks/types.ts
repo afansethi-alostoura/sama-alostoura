@@ -16,8 +16,9 @@ export interface QBInvoice {
   TxnDate: string        // YYYY-MM-DD
   DueDate?: string
   TotalAmt: number
-  Balance: number        // 0 = fully paid
+  Balance: number        // 0 = fully paid; TotalAmt - Balance = amount received
   CustomerRef: { value: string; name: string }
+  ClassRef?: { value: string; name: string }   // project class tag (header level)
   CurrencyRef?: { value: string; name: string }
   PrivateNote?: string
   LinkedTxn?: Array<{ TxnId: string; TxnType: string }>
