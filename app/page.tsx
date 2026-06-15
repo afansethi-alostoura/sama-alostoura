@@ -1,11 +1,11 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   Bot, TrendingUp, AlertCircle, CheckCircle, Clock, RefreshCw, Loader2,
   Building2, Wallet, Calculator, ShoppingCart, Users, Wrench, FileText,
   UserPlus, Shield, Handshake, BarChart3, ArrowUpRight, ArrowDownRight,
-  Plus, Activity,
+  Plus, Activity, DatabaseZap,
 } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import { useAllProjects } from '@/hooks/useAllProjects'
@@ -51,14 +51,33 @@ export default function CEODashboard() {
   const [morningBriefing, setMorningBriefing] = useState('')
   const [morningLoading, setMorningLoading] = useState(true)
   const [mounted, setMounted] = useState(false)
+  const [syncing, setSyncing] = useState(false)
+  const [syncDone, setSyncDone] = useState(false)
+  const autoSynced = useRef(false)
 
-  const { projects, activeProjects, totalContract, totalReceived, totalExpenses, totalOutstanding: outstanding } = useAllProjects()
+  const { projects, activeProjects, totalContract, totalReceived, totalExpenses, totalOutstanding: outstanding, refresh } = useAllProjects()
   const collectionRate = totalContract > 0 ? (totalReceived / totalContract) * 100 : 0
   const netProfit      = totalReceived - totalExpenses
+
+  async function syncAll() {
+    setSyncing(true)
+    try {
+      await fetch('/api/projects/sync-all', { method: 'POST' })
+      await refresh?.()
+      setSyncDone(true)
+      setTimeout(() => setSyncDone(false), 4000)
+    } catch {}
+    finally { setSyncing(false) }
+  }
 
   useEffect(() => {
     setMounted(true)
     fetchMorningBriefing()
+    // Auto-sync once on dashboard load so KPIs are always fresh
+    if (!autoSynced.current) {
+      autoSynced.current = true
+      syncAll()
+    }
   }, [])
 
   async function fetchMorningBriefing() {
@@ -108,6 +127,19 @@ export default function CEODashboard() {
               {label}
             </Link>
           ))}
+          <button
+            onClick={syncAll}
+            disabled={syncing}
+            className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-medium text-slate-700 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 transition-all shadow-card disabled:opacity-60"
+          >
+            {syncing
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />
+              : syncDone
+                ? <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />
+                : <DatabaseZap className="w-3.5 h-3.5 text-slate-500" />
+            }
+            {syncing ? 'Syncing…' : syncDone ? 'Synced!' : 'Sync All'}
+          </button>
         </div>
       </div>
 
