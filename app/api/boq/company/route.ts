@@ -83,18 +83,20 @@ export async function PUT(req: NextRequest) {
   return NextResponse.json(record)
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 // DELETE
 export async function DELETE(req: NextRequest) {
   const id = req.nextUrl.searchParams.get('id')
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
 
-  if (isSupabaseConfigured() && db()) {
+  // Non-UUID ids are file-only records — delete from file store directly
+  if (isSupabaseConfigured() && db() && UUID_RE.test(id)) {
     const { error, count } = await db()!
       .from('company_boq')
       .delete({ count: 'exact' })
       .eq('id', id)
     if (error) return NextResponse.json({ error: error.message, details: error.details }, { status: 500 })
-    // If count is 0 the row didn't exist in Supabase — still remove from file store
     if ((count ?? 0) === 0) deleteCompanyBOQ(id)
     return NextResponse.json({ success: true })
   }
