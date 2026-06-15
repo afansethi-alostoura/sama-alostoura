@@ -142,7 +142,7 @@ export function Sidebar({ collapsed, onToggle, mobileOpen = false, onMobileClose
   return (
     <>
       {/* Desktop sidebar — hidden on mobile */}
-      <div className="hidden md:block fixed left-0 top-0 h-screen z-40 relative">
+      <div className="hidden md:block fixed left-0 top-0 h-screen z-40">
         {navContent(false)}
       </div>
 
