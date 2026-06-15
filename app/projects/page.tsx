@@ -106,11 +106,11 @@ export default function ProjectsPage() {
 
         {/* Table — horizontally scrollable on mobile */}
         <div className="overflow-x-auto">
-        <table className="w-full min-w-[700px]">
+        <table className="w-full min-w-[600px]">
           <thead>
             <tr className="border-b border-slate-100 bg-slate-50/50">
               {['Project', 'Client', 'Contract Value', 'Received', 'Progress', 'Status', 'Stage', ''].map(h => (
-                <th key={h} className="text-left text-xs font-semibold text-slate-500 px-5 py-3">{h}</th>
+                <th key={h} className="text-left text-xs font-semibold text-slate-500 px-3 py-3">{h}</th>
               ))}
             </tr>
           </thead>
@@ -119,7 +119,7 @@ export default function ProjectsPage() {
               Array.from({ length: 4 }).map((_, i) => (
                 <tr key={i}>
                   {Array.from({ length: 8 }).map((_, j) => (
-                    <td key={j} className="px-5 py-4">
+                    <td key={j} className="px-3 py-3">
                       <div className="skeleton h-4 rounded" style={{ width: `${60 + Math.random() * 40}%` }} />
                     </td>
                   ))}
@@ -127,7 +127,7 @@ export default function ProjectsPage() {
               ))
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-5 py-12 text-center text-slate-400 text-sm">
+                <td colSpan={8} className="px-3 py-12 text-center text-slate-400 text-sm">
                   No projects found
                 </td>
               </tr>
@@ -138,23 +138,23 @@ export default function ProjectsPage() {
                 const outstanding = project.contract_value - project.received_amount
                 return (
                   <tr key={project.id} className="hover:bg-slate-50/70 transition-colors group">
-                    <td className="px-5 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                          <Building2 className="w-4 h-4 text-blue-600" />
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                          <Building2 className="w-3.5 h-3.5 text-blue-600" />
                         </div>
                         <span className="text-sm font-semibold text-slate-800 group-hover:text-blue-600 transition-colors">
                           {project.name}
                         </span>
                       </div>
                     </td>
-                    <td className="px-5 py-4">
+                    <td className="px-3 py-3">
                       <span className="text-sm text-slate-600">{project.client_name || '—'}</span>
                     </td>
-                    <td className="px-5 py-4">
+                    <td className="px-3 py-3">
                       <span className="text-sm font-semibold text-slate-900">{formatCurrency(project.contract_value)}</span>
                     </td>
-                    <td className="px-5 py-4">
+                    <td className="px-3 py-3">
                       <div>
                         <span className="text-sm font-medium text-emerald-600">{formatCurrency(project.received_amount)}</span>
                         {outstanding > 0 && (
@@ -162,21 +162,21 @@ export default function ProjectsPage() {
                         )}
                       </div>
                     </td>
-                    <td className="px-5 py-4 w-36">
+                    <td className="px-3 py-3 w-28">
                       <div className="flex items-center gap-2">
                         <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                           <div className={`h-full rounded-full ${barC}`} style={{ width: `${pct}%` }} />
                         </div>
-                        <span className="text-xs text-slate-500 w-8 text-right">{pct}%</span>
+                        <span className="text-xs text-slate-500 w-7 text-right">{pct}%</span>
                       </div>
                     </td>
-                    <td className="px-5 py-4">
+                    <td className="px-3 py-3">
                       <StatusBadge status={project.status} />
                     </td>
-                    <td className="px-5 py-4">
-                      <span className="text-xs text-slate-500 truncate max-w-[160px] block">{project.current_stage ?? '—'}</span>
+                    <td className="px-3 py-3">
+                      <span className="text-xs text-slate-500 truncate max-w-[120px] block">{project.current_stage ?? '—'}</span>
                     </td>
-                    <td className="px-5 py-4">
+                    <td className="px-3 py-3">
                       <Link
                         href={`/projects/${project.id}`}
                         className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-semibold transition-colors"
