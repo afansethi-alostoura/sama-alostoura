@@ -1448,12 +1448,13 @@ export default function AccountingPage() {
                 <th className="text-right px-5 py-3 font-medium">Outstanding</th>
                 <th className="text-right px-5 py-3 font-medium">Retention</th>
                 <th className="text-left px-5 py-3 font-medium">Progress</th>
+                <th className="px-5 py-3 font-medium"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
               {projectsLoading
                 ? Array.from({ length: 4 }).map((_, i) => (
-                    <tr key={i}>{Array.from({ length: 8 }).map((_, j) => (
+                    <tr key={i}>{Array.from({ length: 9 }).map((_, j) => (
                       <td key={j} className="px-5 py-4"><div className="skeleton h-4 rounded" style={{ width: `${60 + (j * 7) % 40}%` }} /></td>
                     ))}</tr>
                   ))
@@ -1478,6 +1479,14 @@ export default function AccountingPage() {
                             </div>
                             <span className="text-xs text-slate-500">{pct}%</span>
                           </div>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <Link
+                            href={`/projects/${p.id}/accounting`}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors whitespace-nowrap"
+                          >
+                            <BarChart2 className="w-3.5 h-3.5" /> Financials
+                          </Link>
                         </td>
                       </tr>
                     )
