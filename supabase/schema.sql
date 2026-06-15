@@ -234,13 +234,24 @@ CREATE TABLE IF NOT EXISTS mbhre_boq (
 -- ── 18. RENOVATION BOQ ───────────────────────────────────────
 CREATE TABLE IF NOT EXISTS renovation_boq (
   id               UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  project_number   TEXT DEFAULT '',
   project_name     TEXT DEFAULT '',
+  area             TEXT DEFAULT '',
+  owner            TEXT DEFAULT '',
+  contractor       TEXT DEFAULT 'SAMA ALOSTOURA BUILDING CONTRACTING L.L.C',
+  -- legacy aliases kept for list-view queries
   project_location TEXT DEFAULT '',
   client_name      TEXT DEFAULT '',
   sections         JSONB NOT NULL DEFAULT '[]'::jsonb,
   created_at       TIMESTAMPTZ DEFAULT NOW(),
   updated_at       TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Safe migrations for existing renovation_boq table
+ALTER TABLE renovation_boq ADD COLUMN IF NOT EXISTS project_number TEXT DEFAULT '';
+ALTER TABLE renovation_boq ADD COLUMN IF NOT EXISTS area           TEXT DEFAULT '';
+ALTER TABLE renovation_boq ADD COLUMN IF NOT EXISTS owner          TEXT DEFAULT '';
+ALTER TABLE renovation_boq ADD COLUMN IF NOT EXISTS contractor     TEXT DEFAULT 'SAMA ALOSTOURA BUILDING CONTRACTING L.L.C';
 
 -- ── INDEXES ─────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_projects_status       ON projects(status);

@@ -24,10 +24,21 @@ export async function POST(req: NextRequest) {
   if (!isSupabaseConfigured() || !db()) {
     return NextResponse.json({ error: 'Supabase not configured' }, { status: 500 })
   }
-  const { project_name, project_location, client_name, sections } = await req.json()
+  const body = await req.json()
+  const { project_number, project_name, area, owner, contractor, client_name, project_location, sections } = body
   const { data, error } = await db()!
     .from('renovation_boq')
-    .insert({ project_name, project_location, client_name, sections })
+    .insert({
+      project_number: project_number ?? '',
+      project_name:   project_name   ?? '',
+      area:           area           ?? project_location ?? '',
+      owner:          owner          ?? client_name      ?? '',
+      contractor:     contractor     ?? 'SAMA ALOSTOURA BUILDING CONTRACTING L.L.C',
+      // legacy fields for list view
+      project_location: area ?? project_location ?? '',
+      client_name:      owner ?? client_name ?? '',
+      sections,
+    })
     .select().single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json(data)
@@ -37,11 +48,22 @@ export async function PUT(req: NextRequest) {
   if (!isSupabaseConfigured() || !db()) {
     return NextResponse.json({ error: 'Supabase not configured' }, { status: 500 })
   }
-  const { id, project_name, project_location, client_name, sections } = await req.json()
+  const body = await req.json()
+  const { id, project_number, project_name, area, owner, contractor, client_name, project_location, sections } = body
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
   const { data, error } = await db()!
     .from('renovation_boq')
-    .update({ project_name, project_location, client_name, sections, updated_at: new Date().toISOString() })
+    .update({
+      project_number: project_number ?? '',
+      project_name:   project_name   ?? '',
+      area:           area           ?? project_location ?? '',
+      owner:          owner          ?? client_name      ?? '',
+      contractor:     contractor     ?? 'SAMA ALOSTOURA BUILDING CONTRACTING L.L.C',
+      project_location: area ?? project_location ?? '',
+      client_name:      owner ?? client_name ?? '',
+      sections,
+      updated_at: new Date().toISOString(),
+    })
     .eq('id', id)
     .select().single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
