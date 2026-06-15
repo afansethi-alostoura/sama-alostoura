@@ -73,7 +73,8 @@ export default function ProjectPage() {
   const [boqRecord,   setBoqRecord]   = useState<any>(null)
   const [boqExpanded,   setBoqExpanded]   = useState(false)
   const [boqCreating,   setBoqCreating]   = useState(false)
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const saveTimer       = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const boqInitSynced   = useRef(false)
 
   // Inline edit
   const [editing,    setEditing]    = useState(false)
@@ -196,6 +197,25 @@ export default function ProjectPage() {
       .finally(() => setBoqLoad(false))
   }, [project?.company_boq_id])
 
+  // ── Auto-sync BOQ progress → project.progress_percent on first load ─────────
+  useEffect(() => {
+    if (boqInitSynced.current || !project || boqItems.length === 0 || !boqRecord) return
+    boqInitSynced.current = true
+    const totalAmt = boqItems.reduce((s, i) => s + (i.qty || 0) * (i.rate || 0), 0)
+    const newPct   = totalAmt > 0
+      ? Math.round(boqItems.reduce((s, i) => s + (i.qty || 0) * (i.rate || 0) * ((i.progress || 0) / 100), 0) / totalAmt * 100)
+      : 0
+    if (newPct === project.progress_percent) return
+    fetch(`/api/projects/${project.id}`, {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ progress_percent: newPct, current_stage: project.current_stage ?? '', boq_sections: [] }),
+    }).then(() => {
+      setProject(prev => prev ? { ...prev, progress_percent: newPct } : prev)
+      broadcastProjectUpdate()
+    }).catch(() => {})
+  }, [boqItems, project, boqRecord])
+
   // ── Load Documents count (for badge on button) ─────────────────────────────
   useEffect(() => {
     if (!project?.id) return
@@ -307,11 +327,12 @@ export default function ProjectPage() {
       const res  = await fetch(`/api/quickbooks/project-financials?class_name=${encodeURIComponent(cls)}`)
       if (!res.ok) return
       const data = await res.json()
-      const received = Math.round((data.summary?.totalIncome ?? 0) * 100) / 100
+      const received = Math.round((data.summary?.totalIncome    ?? 0) * 100) / 100
+      const expenses = Math.round((data.summary?.totalExpenses  ?? 0) * 100) / 100
       await fetch(`/api/projects/${project.id}`, {
         method:  'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ received_amount: received }),
+        body:    JSON.stringify({ received_amount: received, total_expenses: expenses }),
       })
       setProject(prev => prev ? { ...prev, received_amount: received } : prev)
       setQbIncomeSynced(true)
