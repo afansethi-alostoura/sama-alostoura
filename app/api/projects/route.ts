@@ -66,10 +66,23 @@ export async function POST(req: Request) {
     }
 
     // Try local file first (dev), then Supabase (production/Vercel)
+    let saved = false
     try {
       addStoredProject(project)
-    } catch {
-      await saveNewProjectToSupabase(project as any)
+      saved = true
+    } catch { /* read-only on Vercel — fall through to Supabase */ }
+
+    if (!saved) {
+      const { error: sbErr } = await (supabaseAdmin as any)
+        .from('stored_projects')
+        .upsert({ id: project.id, data: (() => { const { id: _, ...rest } = project; return rest })(), created_at: project.created_at, updated_at: project.updated_at }, { onConflict: 'id' })
+      if (sbErr) {
+        console.error('saveNewProject Supabase error:', sbErr.message)
+        return NextResponse.json(
+          { error: 'Could not save project. Ensure stored_projects table exists in Supabase.' },
+          { status: 500 }
+        )
+      }
     }
 
     return NextResponse.json(project, { status: 201 })
