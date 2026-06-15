@@ -89,8 +89,13 @@ export async function DELETE(req: NextRequest) {
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
 
   if (isSupabaseConfigured() && db()) {
-    const { error } = await db()!.from('company_boq').delete().eq('id', id)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    const { error, count } = await db()!
+      .from('company_boq')
+      .delete({ count: 'exact' })
+      .eq('id', id)
+    if (error) return NextResponse.json({ error: error.message, details: error.details }, { status: 500 })
+    // If count is 0 the row didn't exist in Supabase — still remove from file store
+    if ((count ?? 0) === 0) deleteCompanyBOQ(id)
     return NextResponse.json({ success: true })
   }
 

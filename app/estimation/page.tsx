@@ -41,7 +41,8 @@ export default function EstimationPage() {
   const [mbhreBoqs, setMbhreBoqs]         = useState<SavedBOQ[]>([])
   const [breakdownBoqs, setBreakdownBoqs] = useState<SavedBOQ[]>([])
   const [loading, setLoading]             = useState(true)
-  const [deleting, setDeleting]           = useState<string | null>(null)
+  const [deleting,  setDeleting]  = useState<string | null>(null)
+  const [deleteErr, setDeleteErr] = useState('')
 
   useEffect(() => {
     Promise.all([
@@ -57,37 +58,34 @@ export default function EstimationPage() {
     }).finally(() => setLoading(false))
   }, [])
 
-  async function deleteCompany(id: string) {
-    if (!confirm('Delete this BOQ?')) return
+  async function doDelete(
+    id: string,
+    url: string,
+    label: string,
+    onSuccess: () => void,
+  ) {
+    if (!confirm(`Delete this ${label}? This cannot be undone.`)) return
     setDeleting(id)
-    const res = await fetch(`/api/boq/company?id=${id}`, { method: 'DELETE' })
-    if (res.ok) setCompanyBoqs(prev => prev.filter(b => b.id !== id))
-    setDeleting(null)
+    setDeleteErr('')
+    try {
+      const res  = await fetch(url, { method: 'DELETE' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setDeleteErr(data.error || `Delete failed (${res.status})`)
+        return
+      }
+      onSuccess()
+    } catch (e) {
+      setDeleteErr(e instanceof Error ? e.message : 'Network error — please try again')
+    } finally {
+      setDeleting(null)
+    }
   }
 
-  async function deleteMbhre(id: string) {
-    if (!confirm('Delete this BOQ?')) return
-    setDeleting(id)
-    const res = await fetch(`/api/boq/mbhre?id=${id}`, { method: 'DELETE' })
-    if (res.ok) setMbhreBoqs(prev => prev.filter(b => b.id !== id))
-    setDeleting(null)
-  }
-
-  async function deleteBreakdown(id: string) {
-    if (!confirm('Delete this Breakdown?')) return
-    setDeleting(id)
-    const res = await fetch(`/api/boq/mbhre-breakdown?id=${id}`, { method: 'DELETE' })
-    if (res.ok) setBreakdownBoqs(prev => prev.filter(b => b.id !== id))
-    setDeleting(null)
-  }
-
-  async function handleAiDelete(boqId: string) {
-    if (!confirm('Delete this estimation?')) return
-    setDeleting(boqId)
-    const res = await fetch(`/api/boqs?id=${boqId}`, { method: 'DELETE' })
-    if (res.ok) setAiBoqs(prev => prev.filter(b => b.id !== boqId))
-    setDeleting(null)
-  }
+  const deleteCompany  = (id: string) => doDelete(id, `/api/boq/company?id=${id}`,          'Company BOQ',      () => setCompanyBoqs(p  => p.filter(b => b.id !== id)))
+  const deleteMbhre    = (id: string) => doDelete(id, `/api/boq/mbhre?id=${id}`,             'MBHRE BOQ',        () => setMbhreBoqs(p    => p.filter(b => b.id !== id)))
+  const deleteBreakdown = (id: string) => doDelete(id, `/api/boq/mbhre-breakdown?id=${id}`,  'MBHRE Breakdown',  () => setBreakdownBoqs(p => p.filter(b => b.id !== id)))
+  const handleAiDelete  = (id: string) => doDelete(id, `/api/boqs?id=${id}`,                 'AI Estimation',    () => setAiBoqs(p        => p.filter(b => b.id !== id)))
 
   function fmtDate(d: string) {
     return new Date(d).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })
@@ -113,6 +111,14 @@ export default function EstimationPage() {
           <h1 className="text-3xl font-bold text-slate-900 mb-1">Estimation Engineer</h1>
           <p className="text-slate-500 text-sm">Create and manage Bills of Quantities</p>
         </div>
+
+        {/* Delete error banner */}
+        {deleteErr && (
+          <div className="mb-4 flex items-center justify-between gap-3 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
+            <span>⚠️ {deleteErr}</span>
+            <button onClick={() => setDeleteErr('')} className="text-red-400 hover:text-red-600 font-bold text-lg leading-none">×</button>
+          </div>
+        )}
 
         {/* ── New BOQ buttons ── */}
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-6">
