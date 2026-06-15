@@ -82,24 +82,52 @@ export default function AddProjectPage() {
     setError('')
     setSaving(true)
     try {
+      // 1. Create the project
       const res = await fetch('/api/projects', {
-        method: 'POST',
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...form,
-          contract_value:   parseFloat(form.contract_value.replace(/,/g, '')) || 0,
+          contract_value:   parseFloat(form.contract_value.replace(/,/g, ''))  || 0,
           received_amount:  parseFloat(form.received_amount.replace(/,/g, '')) || 0,
           progress_percent: parseFloat(form.progress_percent) || 0,
-          owner_share:      parseFloat(form.owner_share.replace(/,/g, '')) || 0,
-          mbhre_share:      parseFloat(form.mbhre_share.replace(/,/g, '')) || 0,
+          owner_share:      parseFloat(form.owner_share.replace(/,/g, ''))     || 0,
+          mbhre_share:      parseFloat(form.mbhre_share.replace(/,/g, ''))     || 0,
         }),
       })
       if (!res.ok) {
         const d = await res.json()
         throw new Error(d.error || 'Failed to save')
       }
+      const project = await res.json()
+
+      // 2. Auto-create a Company BOQ and link it to the project
+      try {
+        const boqRes = await fetch('/api/boq/company', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            project_number: project.id?.slice(0, 8) ?? '',
+            project_name:   form.name,
+            area:           form.location,
+            owner:          form.client_name || '',
+            contractor:     'SAMA ALOSTOURA BUILDING CONTRACTING L.L.C',
+            items:          [],
+          }),
+        })
+        if (boqRes.ok) {
+          const newBoq = await boqRes.json()
+          await fetch(`/api/projects/${project.id}`, {
+            method:  'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ company_boq_id: newBoq.id }),
+          })
+        }
+      } catch {}
+
       setSuccess(true)
-      setTimeout(() => router.push('/projects'), 1500)
+      // Redirect straight to the new project so everything is ready to use
+      setTimeout(() => router.push(`/projects/${project.id}`), 1200)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save project')
     } finally {
