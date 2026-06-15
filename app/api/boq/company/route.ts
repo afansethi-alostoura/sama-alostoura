@@ -18,10 +18,8 @@ export async function GET(req: NextRequest) {
         .from('company_boq')
         .select('id, project_number, project_name, area, owner, contractor, created_at, updated_at')
         .order('created_at', { ascending: false })
-      // Merge Supabase results with file-based records (handles table-not-found gracefully)
-      const supabaseIds = new Set((data ?? []).map((r: any) => r.id))
-      const fileRecords = listCompanyBOQs().filter(r => !supabaseIds.has(r.id))
-      return NextResponse.json([...(data ?? []), ...fileRecords])
+      // Supabase is the source of truth — don't merge file records (file store is read-only on Vercel)
+      return NextResponse.json(data ?? [])
     }
     const { data } = await db()!.from('company_boq').select('*').eq('id', id).single()
     // Fall back to file store if not found in Supabase (any error: no rows, table missing, etc.)
