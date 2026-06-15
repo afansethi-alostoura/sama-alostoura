@@ -69,7 +69,8 @@ export default function ProjectPage() {
   const [boqSaving,   setBoqSaving]   = useState(false)
   const [boqSaved,    setBoqSaved]    = useState(false)
   const [boqRecord,   setBoqRecord]   = useState<any>(null)
-  const [boqExpanded, setBoqExpanded] = useState(false)
+  const [boqExpanded,   setBoqExpanded]   = useState(false)
+  const [boqCreating,   setBoqCreating]   = useState(false)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Inline edit
@@ -258,6 +259,38 @@ export default function ProjectPage() {
     const updated = boqItems.map((bi, i) => i === globalIdx ? { ...bi, quantity_done: done, progress: pct, done: pct === 100 } : bi)
     setBoqItems(updated)
     if (project && boqRecord) scheduleSave(updated, boqRecord, project)
+  }
+
+  // ── Create Company BOQ ──────────────────────────────────────────────────────
+  async function createCompanyBOQ() {
+    if (!project) return
+    setBoqCreating(true)
+    try {
+      const res = await fetch('/api/boq/company', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_number: project.id.slice(0, 8),
+          project_name:   project.name,
+          area:           project.location,
+          owner:          project.client_name || '',
+          contractor:     'SAMA ALOSTOURA BUILDING CONTRACTING L.L.C',
+          items:          [],
+        }),
+      })
+      const newBoq = await res.json()
+      await fetch(`/api/projects/${project.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...project, company_boq_id: newBoq.id }),
+      })
+      setProject(prev => prev ? { ...prev, company_boq_id: newBoq.id } : prev)
+      setBoqRecord(newBoq)
+      setBoqItems([])
+      setBoqExpanded(true)
+      broadcastProjectUpdate()
+    } catch {}
+    finally { setBoqCreating(false) }
   }
 
   // ── Brief Me ────────────────────────────────────────────────────────────────
@@ -520,9 +553,26 @@ export default function ProjectPage() {
       )}
 
       {/* ── BOQ Progress Tracker ─────────────────────────────────────────────── */}
-      {project.company_boq_id && (
-        <div className="mb-8">
-          {boqLoad ? (
+      <div className="mb-8">
+        {!project.company_boq_id ? (
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 flex flex-col items-center justify-center gap-4 text-center">
+            <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center">
+              <FolderOpen className="w-6 h-6 text-slate-400" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-slate-900 mb-1">No Company BOQ</h3>
+              <p className="text-sm text-slate-500">Create a BOQ to track quantities, progress, and costs for this project.</p>
+            </div>
+            <button
+              onClick={createCompanyBOQ}
+              disabled={boqCreating}
+              className="flex items-center gap-2 bg-brand-500 hover:bg-brand-600 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors disabled:opacity-60"
+            >
+              {boqCreating ? <><Loader2 className="w-4 h-4 animate-spin" /> Creating…</> : '+ Create Company BOQ'}
+            </button>
+          </div>
+        ) : (
+          boqLoad ? (
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-10 flex items-center justify-center gap-3 text-slate-500">
               <Loader2 className="w-5 h-5 animate-spin" /> Loading BOQ…
             </div>
@@ -800,9 +850,9 @@ export default function ProjectPage() {
                 </>
               )}
             </div>
-          )}
-        </div>
-      )}
+          )
+        )}
+      </div>
 
       {/* ── Legacy work lists ────────────────────────────────────────────────── */}
       {!project.company_boq_id && (
