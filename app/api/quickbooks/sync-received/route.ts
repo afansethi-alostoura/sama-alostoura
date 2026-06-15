@@ -8,11 +8,12 @@
  * Updates received_amount, total_expenses, and last_qb_sync on each project.
  * Projects without qb_class_name are skipped (listed in "unlinked").
  */
-import { NextResponse }                              from 'next/server'
-import { loadTokensAsync }                           from '@/lib/quickbooks/tokens'
-import { fetchPurchases, fetchBills }                from '@/lib/quickbooks/client'
-import { getAllStoredProjects, updateStoredProject }  from '@/lib/projects-store'
-import type { QBDeposit, QBPurchase, QBBill }        from '@/lib/quickbooks/types'
+import { NextResponse }                from 'next/server'
+import { loadTokensAsync }             from '@/lib/quickbooks/tokens'
+import { fetchPurchases, fetchBills }  from '@/lib/quickbooks/client'
+import { getAllStoredProjects, updateStoredProject } from '@/lib/projects-store'
+import { getAllOverrides, saveOverride } from '@/lib/project-overrides'
+import type { QBDeposit, QBPurchase, QBBill } from '@/lib/quickbooks/types'
 
 export const dynamic     = 'force-dynamic'
 export const maxDuration = 60
@@ -111,15 +112,18 @@ export async function POST() {
     }
 
     // ── Match projects by exact qb_class_name ─────────────────────────────────
-    const projects = getAllStoredProjects()
-    const now      = new Date().toISOString()
+    const projects  = getAllStoredProjects()
+    const overrides = await getAllOverrides()
+    const now       = new Date().toISOString()
 
     const updated:  Array<{ project: string; class: string; received: number; expenses: number }> = []
     const skipped:  Array<{ project: string; reason: string }> = []
     const unlinked: string[] = []
 
     for (const project of projects) {
-      const cls = project.qb_class_name?.trim()
+      // qb_class_name may be in file store or in Supabase overrides
+      const over = overrides[project.id] ?? {}
+      const cls  = ((over.qb_class_name ?? project.qb_class_name) as string | undefined)?.trim()
       if (!cls) {
         unlinked.push(project.name)
         continue
@@ -128,20 +132,17 @@ export async function POST() {
       const received = Math.round((incomeByClass.get(cls) ?? 0) * 100) / 100
       const expenses = Math.round((expensesByClass.get(cls) ?? 0) * 100) / 100
 
-      const noChange =
-        received === project.received_amount &&
-        expenses === (project.total_expenses ?? 0)
+      const currentReceived = (over.received_amount as number | undefined) ?? project.received_amount
+      const currentExpenses = (over.total_expenses  as number | undefined) ?? project.total_expenses ?? 0
 
-      if (noChange) {
+      if (received === currentReceived && expenses === currentExpenses) {
         skipped.push({ project: project.name, reason: 'no change' })
         continue
       }
 
-      updateStoredProject(project.id, {
-        received_amount: received,
-        total_expenses:  expenses,
-        last_qb_sync:    now,
-      })
+      // Save to Supabase (Vercel-safe); also try file in dev
+      await saveOverride(project.id, { received_amount: received, total_expenses: expenses, last_qb_sync: now })
+      try { updateStoredProject(project.id, { received_amount: received, total_expenses: expenses, last_qb_sync: now }) } catch {}
 
       updated.push({ project: project.name, class: cls, received, expenses })
     }

@@ -1,19 +1,25 @@
 import { NextResponse }       from 'next/server'
 import { getAllStoredProjects, addStoredProject } from '@/lib/projects-store'
 import { getAllProgress } from '@/lib/project-progress'
+import { getAllOverrides } from '@/lib/project-overrides'
 
 export async function GET() {
-  // Load real projects from file + merge Supabase progress overrides
+  // Load real projects from file + merge Supabase progress + field overrides
   const stored    = getAllStoredProjects()
-  const overrides = await getAllProgress()
+  const [progressMap, overridesMap] = await Promise.all([
+    getAllProgress(),
+    getAllOverrides(),
+  ])
 
   const projects = stored.map(p => {
-    const prog = overrides[p.id]
+    const prog = progressMap[p.id]
+    const over = overridesMap[p.id] ?? {}
     return {
       ...p,
-      status:           p.status.replace('-', '_'),   // normalise on-hold → on_hold
-      progress_percent: prog?.progress_percent ?? p.progress_percent,
-      current_stage:    prog?.current_stage    ?? p.current_stage,
+      ...over,                                        // apply field edits saved in Supabase
+      status:           ((over.status ?? p.status) as string).replace('-', '_'),
+      progress_percent: prog?.progress_percent ?? (over.progress_percent as number | undefined) ?? p.progress_percent,
+      current_stage:    prog?.current_stage    ?? (over.current_stage    as string | undefined) ?? p.current_stage,
       boq_sections:     prog?.boq_sections     ?? (p as any).boq_sections ?? [],
     }
   })
