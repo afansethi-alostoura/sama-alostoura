@@ -1,7 +1,7 @@
 'use client'
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import Link from 'next/link'
-import { Building2, Plus, Search, ExternalLink } from 'lucide-react'
+import { Building2, Plus, Search, ExternalLink, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import { useAllProjects, type ProjectRow } from '@/hooks/useAllProjects'
 
@@ -24,9 +24,30 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function ProjectsPage() {
-  const { projects: allProjects, loading, activeProjects, completedProjects, totalContract: totalValue } = useAllProjects()
+  const { projects: allProjects, loading, activeProjects, completedProjects, totalContract: totalValue, refresh } = useAllProjects()
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<string>('all')
+  const [syncing, setSyncing]   = useState(false)
+  const [syncMsg, setSyncMsg]   = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
+
+  const syncFromQB = useCallback(async () => {
+    setSyncing(true)
+    setSyncMsg(null)
+    try {
+      const res  = await fetch('/api/quickbooks/sync-received', { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Sync failed')
+      const u = data.counts.updated
+      const n = data.counts.unchanged
+      const x = data.counts.unmatched
+      setSyncMsg({ type: 'ok', text: `QB sync done — ${u} updated, ${n} already correct, ${x} unmatched` })
+      if (u > 0) refresh()
+    } catch (e: unknown) {
+      setSyncMsg({ type: 'err', text: e instanceof Error ? e.message : 'Sync failed' })
+    } finally {
+      setSyncing(false)
+    }
+  }, [refresh])
 
   const filtered = allProjects
     .filter(p => filter === 'all' || p.status === filter)
@@ -50,14 +71,40 @@ export default function ProjectsPage() {
             {loading ? 'Loading...' : `${allProjects.length} projects · ${activeCount} active · ${completedCount} completed`}
           </p>
         </div>
-        <Link
-          href="/projects/add"
-          className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-colors shadow-sm flex-shrink-0"
-        >
-          <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-          <span className="hidden xs:inline">New </span>Project
-        </Link>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <button
+            onClick={syncFromQB}
+            disabled={syncing}
+            title="Pull received amounts from QuickBooks"
+            className="inline-flex items-center gap-1.5 bg-[#2CA01C] hover:bg-[#238016] disabled:opacity-60 text-white px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-colors shadow-sm"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+            <span className="hidden sm:inline">{syncing ? 'Syncing…' : 'Sync QB'}</span>
+          </button>
+          <Link
+            href="/projects/add"
+            className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3 sm:px-4 py-2 sm:py-2.5 rounded-lg text-xs sm:text-sm font-semibold transition-colors shadow-sm"
+          >
+            <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+            <span className="hidden xs:inline">New </span>Project
+          </Link>
+        </div>
       </div>
+
+      {/* QB sync result banner */}
+      {syncMsg && (
+        <div className={`mb-4 flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-medium ${
+          syncMsg.type === 'ok'
+            ? 'bg-emerald-50 border border-emerald-200 text-emerald-800'
+            : 'bg-red-50 border border-red-200 text-red-800'
+        }`}>
+          {syncMsg.type === 'ok'
+            ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+            : <AlertCircle  className="w-4 h-4 flex-shrink-0" />}
+          {syncMsg.text}
+          <button onClick={() => setSyncMsg(null)} className="ml-auto text-xs opacity-60 hover:opacity-100">✕</button>
+        </div>
+      )}
 
       {/* Stats row */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
