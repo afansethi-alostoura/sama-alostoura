@@ -440,7 +440,7 @@ function ClassExpensesSection({
   aiLoading:     boolean
   debugInfo?:    QBDebugInfo
 }) {
-  const [expanded,   setExpanded]   = useState(true)
+  const [expanded,   setExpanded]   = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [expandAll,  setExpandAll]  = useState(false)
   const [showDebug,  setShowDebug]  = useState(false)
