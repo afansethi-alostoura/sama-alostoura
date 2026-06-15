@@ -1369,13 +1369,11 @@ export default function AccountingPage() {
     }
   }
 
-  // Financial stats
-  const totalBilled      = snapshot?.invoices.reduce((s, i) => s + i.TotalAmt, 0)
-    ?? allProjects.reduce((s, p) => s + p.contract_value, 0)
-  const totalOutstanding = snapshot?.invoices.reduce((s, i) => s + i.Balance, 0)
-    ?? allProjects.reduce((s, p) => s + (p.contract_value - p.received_amount), 0)
-  const totalReceived    = snapshot?.payments.reduce((s, p) => s + p.TotalAmt, 0)
-    ?? allProjects.reduce((s, p) => s + p.received_amount, 0)
+  // Financial stats — always use project database figures for Received/Outstanding
+  // (received_amount is synced from QB Deposits per-project, more accurate than QB payments)
+  const totalBilled      = allProjects.reduce((s, p) => s + p.contract_value, 0)
+  const totalReceived    = allProjects.reduce((s, p) => s + p.received_amount, 0)
+  const totalOutstanding = allProjects.reduce((s, p) => s + Math.max(0, p.contract_value - p.received_amount), 0)
   const overdueCount     = snapshot?.invoices.filter(
     i => i.Balance > 0 && i.DueDate && new Date(i.DueDate) < new Date()
   ).length ?? 0
