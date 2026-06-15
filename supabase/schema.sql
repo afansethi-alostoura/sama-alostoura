@@ -231,6 +231,17 @@ CREATE TABLE IF NOT EXISTS mbhre_boq (
   updated_at           TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- ── 18. RENOVATION BOQ ───────────────────────────────────────
+CREATE TABLE IF NOT EXISTS renovation_boq (
+  id               UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  project_name     TEXT DEFAULT '',
+  project_location TEXT DEFAULT '',
+  client_name      TEXT DEFAULT '',
+  sections         JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at       TIMESTAMPTZ DEFAULT NOW(),
+  updated_at       TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ── INDEXES ─────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_projects_status       ON projects(status);
 CREATE INDEX IF NOT EXISTS idx_projects_client        ON projects(client_id);

@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic'
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, Trash2, AlertCircle, FileText, ExternalLink, HardHat, Calculator, MessageSquare } from 'lucide-react'
+import { Plus, Trash2, AlertCircle, FileText, ExternalLink, HardHat, Calculator, MessageSquare, Hammer } from 'lucide-react'
 import Link from 'next/link'
 
 interface AIBOQItem {
@@ -40,6 +40,7 @@ export default function EstimationPage() {
   const [companyBoqs, setCompanyBoqs]     = useState<SavedBOQ[]>([])
   const [mbhreBoqs, setMbhreBoqs]         = useState<SavedBOQ[]>([])
   const [breakdownBoqs, setBreakdownBoqs] = useState<SavedBOQ[]>([])
+  const [renovationBoqs, setRenovationBoqs] = useState<SavedBOQ[]>([])
   const [loading, setLoading]             = useState(true)
   const [deleting,  setDeleting]  = useState<string | null>(null)
   const [deleteErr, setDeleteErr] = useState('')
@@ -50,11 +51,13 @@ export default function EstimationPage() {
       fetch('/api/boq/company').then(r => r.json()).catch(() => []),
       fetch('/api/boq/mbhre').then(r => r.json()).catch(() => []),
       fetch('/api/boq/mbhre-breakdown').then(r => r.json()).catch(() => []),
-    ]).then(([ai, company, mbhre, breakdown]) => {
+      fetch('/api/boq/renovation').then(r => r.json()).catch(() => []),
+    ]).then(([ai, company, mbhre, breakdown, renovation]) => {
       setAiBoqs(ai.boqs || [])
       setCompanyBoqs(Array.isArray(company) ? company : [])
       setMbhreBoqs(Array.isArray(mbhre) ? mbhre : [])
       setBreakdownBoqs(Array.isArray(breakdown) ? breakdown : [])
+      setRenovationBoqs(Array.isArray(renovation) ? renovation : [])
     }).finally(() => setLoading(false))
   }, [])
 
@@ -82,10 +85,11 @@ export default function EstimationPage() {
     }
   }
 
-  const deleteCompany  = (id: string) => doDelete(id, `/api/boq/company?id=${id}`,          'Company BOQ',      () => setCompanyBoqs(p  => p.filter(b => b.id !== id)))
-  const deleteMbhre    = (id: string) => doDelete(id, `/api/boq/mbhre?id=${id}`,             'MBHRE BOQ',        () => setMbhreBoqs(p    => p.filter(b => b.id !== id)))
-  const deleteBreakdown = (id: string) => doDelete(id, `/api/boq/mbhre-breakdown?id=${id}`,  'MBHRE Breakdown',  () => setBreakdownBoqs(p => p.filter(b => b.id !== id)))
-  const handleAiDelete  = (id: string) => doDelete(id, `/api/boqs?id=${id}`,                 'AI Estimation',    () => setAiBoqs(p        => p.filter(b => b.id !== id)))
+  const deleteCompany    = (id: string) => doDelete(id, `/api/boq/company?id=${id}`,          'Company BOQ',      () => setCompanyBoqs(p    => p.filter(b => b.id !== id)))
+  const deleteMbhre      = (id: string) => doDelete(id, `/api/boq/mbhre?id=${id}`,             'MBHRE BOQ',        () => setMbhreBoqs(p      => p.filter(b => b.id !== id)))
+  const deleteBreakdown  = (id: string) => doDelete(id, `/api/boq/mbhre-breakdown?id=${id}`,  'MBHRE Breakdown',  () => setBreakdownBoqs(p  => p.filter(b => b.id !== id)))
+  const deleteRenovation = (id: string) => doDelete(id, `/api/boq/renovation?id=${id}`,       'Renovation BOQ',   () => setRenovationBoqs(p => p.filter(b => b.id !== id)))
+  const handleAiDelete   = (id: string) => doDelete(id, `/api/boqs?id=${id}`,                 'AI Estimation',    () => setAiBoqs(p         => p.filter(b => b.id !== id)))
 
   function fmtDate(d: string) {
     return new Date(d).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })
@@ -135,6 +139,10 @@ export default function EstimationPage() {
             <Link href="/estimation/boq/mbhre-breakdown"
               className="inline-flex items-center gap-2 px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold rounded-lg transition-colors">
               <FileText className="w-4 h-4" /> MBHRE Breakdown
+            </Link>
+            <Link href="/estimation/boq/renovation"
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-lg transition-colors">
+              <Hammer className="w-4 h-4" /> Renovation BOQ
             </Link>
           </div>
         </div>
@@ -236,6 +244,45 @@ export default function EstimationPage() {
                         <ExternalLink className="w-3.5 h-3.5" /> Open
                       </Link>
                       <button onClick={() => deleteBreakdown(boq.id)} disabled={deleting === boq.id}
+                        className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-40">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* ── Renovation BOQs ── */}
+        <section className="mb-6">
+          <h2 className="text-base font-semibold text-slate-800 mb-3 flex items-center gap-2">
+            <span className="w-3 h-3 rounded-full bg-emerald-500 inline-block" />
+            Renovation BOQs
+            <span className="text-xs font-normal text-slate-400 ml-1">({renovationBoqs.length})</span>
+          </h2>
+          {renovationBoqs.length === 0 ? (
+            <div className="bg-white rounded-xl border border-slate-100 p-6 text-center text-slate-400 text-sm">No Renovation BOQs saved yet</div>
+          ) : (
+            <div className="grid gap-3">
+              {renovationBoqs.map(boq => (
+                <div key={boq.id} className="bg-white rounded-xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
+                  <div className="p-5 flex items-center justify-between gap-4">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-slate-900 truncate">{boq.project_name || 'Untitled'}</p>
+                      <p className="text-sm text-slate-500 truncate">
+                        {(boq as any).client_name || ''}
+                        {(boq as any).project_location ? ` — ${(boq as any).project_location}` : ''}
+                      </p>
+                      <p className="text-xs text-slate-400 mt-0.5">Saved {fmtDate(boq.updated_at || boq.created_at)}</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Link href={`/estimation/boq/renovation?id=${boq.id}`}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-sm font-medium rounded-lg transition-colors">
+                        <ExternalLink className="w-3.5 h-3.5" /> Open
+                      </Link>
+                      <button onClick={() => deleteRenovation(boq.id)} disabled={deleting === boq.id}
                         className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-40">
                         <Trash2 className="w-4 h-4" />
                       </button>
