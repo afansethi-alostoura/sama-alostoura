@@ -106,7 +106,7 @@ export default function EstimationPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 p-6 sm:p-8">
-      <div className="max-w-6xl mx-auto">
+      <div className="w-full">
 
         {/* Header */}
         <div className="mb-8">

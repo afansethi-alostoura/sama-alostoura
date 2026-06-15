@@ -1382,7 +1382,7 @@ export default function AccountingPage() {
   const vatDue           = totalReceived * 0.05
 
   return (
-    <div className="p-4 sm:p-6 max-w-[1400px] mx-auto animate-fade-in">
+    <div className="p-4 sm:p-6 animate-fade-in">
 
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
