@@ -78,8 +78,14 @@ export default function ProjectPage() {
   const boqInitSynced   = useRef(false)
 
   // Renovation BOQ
-  const [renovationBoq, setRenovationBoq] = useState<any>(null)
-  const [renovationBoqLoad, setRenovationBoqLoad] = useState(false)
+  const [renovationBoq,      setRenovationBoq]      = useState<any>(null)
+  const [renovationBoqLoad,  setRenovationBoqLoad]  = useState(false)
+  const [renovationRows,     setRenovationRows]     = useState<any[]>([])
+  const [renovationCols,     setRenovationCols]     = useState<any[]>([])
+  const [renovationExpanded, setRenovationExpanded] = useState(false)
+  const [renovationSaving,   setRenovationSaving]   = useState(false)
+  const [renovationSaved,    setRenovationSaved]    = useState(false)
+  const renovationSaveTimer  = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Inline edit
   const [editing,    setEditing]    = useState(false)
@@ -237,10 +243,86 @@ export default function ProjectPage() {
     setRenovationBoqLoad(true)
     fetch(`/api/boq/renovation?id=${project.renovation_boq_id}`)
       .then(r => r.json())
-      .then(data => { if (data?.id) setRenovationBoq(data) })
+      .then(data => {
+        if (!data?.id) return
+        setRenovationBoq(data)
+        const table = data.sections ?? {}
+        const cols: any[] = Array.isArray(table) ? [] : (table.columns ?? [])
+        const rows: any[] = Array.isArray(table) ? [] : (table.rows ?? [])
+        setRenovationCols(cols)
+        setRenovationRows(rows)
+      })
       .catch(() => {})
       .finally(() => setRenovationBoqLoad(false))
   }, [project?.renovation_boq_id])
+
+  // ── Renovation BOQ: helpers ──────────────────────────────────────────────────
+  function renovAmountCol(cols: any[]) {
+    return cols.find((c: any) => c.type === 'computed' || /amount|total/i.test(c.name))
+  }
+
+  function renovItemAmount(row: any, cols: any[], amtCol: any) {
+    if (!amtCol) return 0
+    // Try stored computed value first
+    const stored = parseFloat(row.cells?.[amtCol.id])
+    if (!isNaN(stored) && stored > 0) return stored
+    // Fallback: first-number × second-number
+    const numCols = cols.filter((c: any) => c.type === 'number' || c.type === 'computed')
+    if (numCols.length >= 2) {
+      const a = parseFloat(row.cells?.[numCols[0].id]) || 0
+      const b = parseFloat(row.cells?.[numCols[1].id]) || 0
+      return a * b
+    }
+    return 0
+  }
+
+  function renovGrandTotal(rows: any[], cols: any[]) {
+    const amtCol = renovAmountCol(cols)
+    return rows.filter(r => r.type === 'item').reduce((s, r) => s + renovItemAmount(r, cols, amtCol), 0)
+  }
+
+  function renovOverallPct(rows: any[], cols: any[]) {
+    const amtCol = renovAmountCol(cols)
+    const items  = rows.filter(r => r.type === 'item')
+    const total  = items.reduce((s, r) => s + renovItemAmount(r, cols, amtCol), 0)
+    if (total === 0) return 0
+    const done = items.reduce((s, r) => s + renovItemAmount(r, cols, amtCol) * ((r.progress || 0) / 100), 0)
+    return Math.round((done / total) * 100)
+  }
+
+  function updateRenovationProgress(rowId: string, pct: number) {
+    const updated = renovationRows.map(r => r.id === rowId ? { ...r, progress: Math.max(0, Math.min(100, pct)) } : r)
+    setRenovationRows(updated)
+    if (renovationSaveTimer.current) clearTimeout(renovationSaveTimer.current)
+    renovationSaveTimer.current = setTimeout(() => saveRenovationProgress(updated), 800)
+  }
+
+  async function saveRenovationProgress(rows: any[]) {
+    if (!renovationBoq || !project) return
+    setRenovationSaving(true)
+    const table = renovationBoq.sections ?? {}
+    const updatedTable = Array.isArray(table) ? table : { ...table, rows }
+    const overallPct = renovOverallPct(rows, renovationCols)
+    try {
+      await Promise.all([
+        fetch('/api/boq/renovation', {
+          method:  'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ id: renovationBoq.id, sections: updatedTable }),
+        }),
+        fetch(`/api/projects/${project.id}`, {
+          method:  'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ progress_percent: overallPct, current_stage: project.current_stage ?? '' }),
+        }),
+      ])
+      setProject(prev => prev ? { ...prev, progress_percent: overallPct } : prev)
+      setRenovationSaved(true)
+      setTimeout(() => setRenovationSaved(false), 3000)
+      broadcastProjectUpdate()
+    } catch {}
+    finally { setRenovationSaving(false) }
+  }
 
   // ── Auto-sync BOQ progress → project.progress_percent on first load ─────────
   useEffect(() => {
@@ -769,84 +851,216 @@ export default function ProjectPage() {
               <Loader2 className="w-5 h-5 animate-spin" /> Loading Renovation BOQ…
             </div>
           ) : renovationBoq ? (() => {
-            // Compute grand total from sections
-            const table = renovationBoq.sections ?? {}
-            const rows: any[] = Array.isArray(table) ? [] : (table.rows ?? [])
-            const cols: any[] = Array.isArray(table) ? [] : (table.columns ?? [])
-            const amountCol = cols.find((c: any) => /amount|total/i.test(c.name))
-            const grandTotal = amountCol
-              ? rows.filter((r: any) => r.type === 'item').reduce((s: number, r: any) => s + (parseFloat(r.cells?.[amountCol.id]) || 0), 0)
-              : 0
-            const sectionRows = rows.filter((r: any) => r.type === 'section')
+            const amtCol     = renovAmountCol(renovationCols)
+            const grandTotal = renovGrandTotal(renovationRows, renovationCols)
+            const overallPct = renovOverallPct(renovationRows, renovationCols)
+            const descCol    = renovationCols.find((c: any) => /desc/i.test(c.name)) ?? renovationCols[1]
+            const itemCount  = renovationRows.filter(r => r.type === 'item').length
+
+            // Group rows into sections
+            const sections: { sec: any; items: any[] }[] = []
+            let cur: any[] = []
+            let curSec: any = null
+            for (const row of renovationRows) {
+              if (row.type === 'section') {
+                if (curSec || cur.length) sections.push({ sec: curSec, items: cur })
+                curSec = row; cur = []
+              } else if (row.type === 'item') {
+                cur.push(row)
+              }
+            }
+            if (curSec || cur.length) sections.push({ sec: curSec, items: cur })
+
             return (
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                {/* Header */}
-                <div className="flex items-center justify-between px-5 py-4 bg-slate-800 text-white">
+
+                {/* Collapsible header */}
+                <button
+                  onClick={() => setRenovationExpanded(e => !e)}
+                  className="w-full flex items-center justify-between px-5 py-4 bg-slate-800 text-white hover:bg-slate-700 transition-colors"
+                >
                   <div className="flex items-center gap-3">
-                    <span className="font-bold text-sm tracking-wide uppercase">Renovation BOQ</span>
-                    <span className="text-slate-400 text-xs">{renovationBoq.project_name || renovationBoq.project_location || ''}</span>
+                    <span className="font-bold text-sm tracking-wide uppercase">Renovation BOQ Progress</span>
+                    <span className="text-slate-400 text-xs">{itemCount} items</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${overallPct === 100 ? 'bg-emerald-600' : overallPct > 0 ? 'bg-amber-500' : 'bg-slate-600'}`}>
+                      {overallPct}% complete
+                    </span>
                   </div>
-                  <Link
-                    href={`/estimation/boq/renovation?id=${project.renovation_boq_id}`}
-                    className="flex items-center gap-1.5 text-xs font-semibold bg-white/10 hover:bg-white/20 border border-white/20 px-3 py-1.5 rounded-lg transition-colors"
-                  >
-                    <Link2 className="w-3.5 h-3.5" /> Open BOQ
-                  </Link>
-                </div>
+                  <div className="flex items-center gap-3">
+                    {renovationSaving && <Loader2 className="w-4 h-4 animate-spin text-slate-300" />}
+                    {renovationSaved && !renovationSaving && <span className="text-xs text-emerald-400 font-semibold">Saved ✓</span>}
+                    <Link
+                      href={`/estimation/boq/renovation?id=${project.renovation_boq_id}`}
+                      onClick={e => e.stopPropagation()}
+                      className="flex items-center gap-1.5 text-xs font-semibold bg-white/10 hover:bg-white/20 border border-white/20 px-3 py-1.5 rounded-lg transition-colors"
+                    >
+                      <Link2 className="w-3.5 h-3.5" /> Edit BOQ
+                    </Link>
+                    <ChevronDown className={`w-5 h-5 transition-transform duration-200 ${renovationExpanded ? 'rotate-180' : ''}`} />
+                  </div>
+                </button>
 
                 {/* Summary cards */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-0 border-b border-slate-100 divide-x divide-slate-100">
                   <div className="px-5 py-4">
-                    <p className="text-xs text-slate-500 mb-0.5">Project</p>
-                    <p className="font-bold text-slate-900 text-sm truncate">{renovationBoq.project_name || '—'}</p>
+                    <p className="text-xs text-slate-500 mb-0.5">Contract BOQ</p>
+                    <p className="font-bold text-slate-900">{grandTotal > 0 ? `AED ${grandTotal.toLocaleString('en-AE', { maximumFractionDigits: 0 })}` : '—'}</p>
                   </div>
                   <div className="px-5 py-4">
-                    <p className="text-xs text-slate-500 mb-0.5">Owner</p>
-                    <p className="font-bold text-slate-900 text-sm truncate">{renovationBoq.owner || renovationBoq.client_name || '—'}</p>
+                    <p className="text-xs text-slate-500 mb-0.5">Value Completed</p>
+                    <p className="font-bold text-emerald-700">AED {Math.round(grandTotal * overallPct / 100).toLocaleString('en-AE')}</p>
                   </div>
                   <div className="px-5 py-4">
-                    <p className="text-xs text-slate-500 mb-0.5">Sections</p>
-                    <p className="font-bold text-slate-900 text-sm">{sectionRows.length} sections</p>
+                    <p className="text-xs text-slate-500 mb-0.5">Value Remaining</p>
+                    <p className="font-bold text-amber-700">AED {Math.round(grandTotal * (100 - overallPct) / 100).toLocaleString('en-AE')}</p>
                   </div>
                   <div className="px-5 py-4">
-                    <p className="text-xs text-slate-500 mb-0.5">Grand Total</p>
-                    <p className="font-bold text-emerald-700 text-sm">
-                      {grandTotal > 0 ? `AED ${grandTotal.toLocaleString('en-AE', { minimumFractionDigits: 2 })}` : '—'}
+                    <p className="text-xs text-slate-500 mb-0.5">Items Complete</p>
+                    <p className="font-bold text-slate-900">
+                      {renovationRows.filter(r => r.type === 'item' && (r.progress || 0) === 100).length}
+                      <span className="text-slate-400 font-normal"> / {itemCount}</span>
                     </p>
                   </div>
                 </div>
 
-                {/* Section list */}
-                {sectionRows.length > 0 && (
-                  <div className="divide-y divide-slate-100">
-                    {sectionRows.map((r: any) => (
-                      <div key={r.id} className="px-5 py-3 flex items-center justify-between">
-                        <span className="text-sm font-semibold text-blue-800">{r.label}</span>
-                        {amountCol && (() => {
-                          const secItems = rows.filter((row: any) => {
-                            const sIdx = rows.indexOf(r)
-                            const rowIdx = rows.indexOf(row)
-                            const nextSec = rows.findIndex((rr: any, i: number) => i > sIdx && rr.type === 'section')
-                            return row.type === 'item' && rowIdx > sIdx && (nextSec === -1 || rowIdx < nextSec)
-                          })
-                          const secTotal = secItems.reduce((s: number, row: any) => s + (parseFloat(row.cells?.[amountCol.id]) || 0), 0)
-                          return secTotal > 0 ? (
-                            <span className="text-sm font-bold text-slate-700">
-                              AED {secTotal.toLocaleString('en-AE', { minimumFractionDigits: 2 })}
-                            </span>
-                          ) : null
-                        })()}
-                      </div>
-                    ))}
+                {/* Overall progress bar */}
+                <div className="px-5 py-3 border-b border-slate-100">
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${overallPct === 100 ? 'bg-emerald-500' : overallPct > 0 ? 'bg-amber-400' : 'bg-slate-300'}`}
+                        style={{ width: `${overallPct}%` }}
+                      />
+                    </div>
+                    <span className="text-sm font-bold text-slate-700 w-10 text-right">{overallPct}%</span>
                   </div>
-                )}
+                </div>
 
-                {/* Footer */}
-                {grandTotal > 0 && (
-                  <div className="bg-slate-800 text-white px-5 py-3 flex justify-between items-center">
-                    <span className="font-bold text-sm tracking-wide">GRAND TOTAL</span>
-                    <span className="font-bold text-lg">AED {grandTotal.toLocaleString('en-AE', { minimumFractionDigits: 2 })}</span>
-                  </div>
+                {/* Expanded detail */}
+                {renovationExpanded && (
+                  <>
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[800px] text-sm border-collapse">
+                        <thead>
+                          <tr className="bg-slate-800 text-white">
+                            <th className="px-3 py-2.5 text-left font-semibold border border-slate-600">DESCRIPTION</th>
+                            <th className="px-3 py-2.5 text-right font-semibold border border-slate-600 w-36">VALUE (AED)</th>
+                            <th className="px-3 py-2.5 text-center font-semibold border border-slate-600 w-40">PROGRESS %</th>
+                            <th className="px-3 py-2.5 text-center font-semibold border border-slate-600 w-28">STATUS</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {sections.map(({ sec, items }, sIdx) => {
+                            if (!items.length && !sec) return null
+                            const secTotal = items.reduce((s, r) => s + renovItemAmount(r, renovationCols, amtCol), 0)
+                            const secPct   = (() => {
+                              if (secTotal === 0) return 0
+                              const done = items.reduce((s, r) => s + renovItemAmount(r, renovationCols, amtCol) * ((r.progress || 0) / 100), 0)
+                              return Math.round((done / secTotal) * 100)
+                            })()
+                            const allDone    = secPct === 100
+                            const anyStarted = secPct > 0
+                            return (
+                              <React.Fragment key={sec?.id ?? `sec-${sIdx}`}>
+                                {sec && (
+                                  <tr className="bg-blue-50 border-t-2 border-blue-200">
+                                    <td colSpan={2} className="px-3 py-2 font-bold text-blue-800 uppercase tracking-wide border border-blue-200 text-sm">{sec.label}</td>
+                                    <td className="px-3 py-2 border border-blue-200">
+                                      <div className="flex items-center gap-2">
+                                        <div className="flex-1 h-2 bg-blue-100 rounded-full overflow-hidden">
+                                          <div className={`h-full rounded-full transition-all ${allDone ? 'bg-emerald-500' : anyStarted ? 'bg-amber-400' : 'bg-slate-300'}`} style={{ width: `${secPct}%` }} />
+                                        </div>
+                                        <span className={`text-xs font-bold w-8 text-right ${allDone ? 'text-emerald-600' : anyStarted ? 'text-amber-600' : 'text-slate-400'}`}>{secPct}%</span>
+                                      </div>
+                                    </td>
+                                    <td className="px-3 py-2 border border-blue-200 text-center">
+                                      <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${allDone ? 'bg-emerald-100 text-emerald-700' : anyStarted ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
+                                        {allDone ? 'Completed' : anyStarted ? 'In Progress' : 'Not Started'}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                )}
+                                {items.map((row, rIdx) => {
+                                  const pct       = row.progress || 0
+                                  const isDone    = pct === 100
+                                  const isStarted = pct > 0
+                                  const amt       = renovItemAmount(row, renovationCols, amtCol)
+                                  const desc      = descCol ? (row.cells?.[descCol.id] ?? '') : Object.values(row.cells ?? {})[0] ?? ''
+                                  const statusClass = isDone ? 'bg-emerald-100 text-emerald-700' : isStarted ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'
+                                  return (
+                                    <tr key={row.id} className={`${isDone ? 'bg-emerald-50/40' : rIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} hover:bg-blue-50/20 transition-colors`}>
+                                      <td className="px-3 py-1.5 border border-slate-100 text-slate-800 text-xs">{desc}</td>
+                                      <td className="px-3 py-1.5 border border-slate-100 text-right font-medium text-slate-700 text-xs">
+                                        {amt > 0 ? amt.toLocaleString('en-AE', { minimumFractionDigits: 2 }) : '—'}
+                                      </td>
+                                      <td className="px-2 py-1 border border-slate-100">
+                                        <div className="flex items-center gap-1.5">
+                                          <div className="flex-1 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                                            <div className={`h-full rounded-full transition-all ${isDone ? 'bg-emerald-500' : isStarted ? 'bg-amber-400' : 'bg-slate-300'}`} style={{ width: `${pct}%` }} />
+                                          </div>
+                                          <div className="relative flex-shrink-0">
+                                            <input
+                                              type="number" min="0" max="100" value={pct}
+                                              onChange={e => updateRenovationProgress(row.id, Number(e.target.value) || 0)}
+                                              onFocus={e => e.target.select()}
+                                              className={`w-14 text-right pr-4 pl-1 py-0.5 text-xs font-semibold rounded border outline-none focus:ring-1 focus:ring-blue-400 transition-colors
+                                                ${isDone ? 'bg-emerald-100 border-emerald-300 text-emerald-700' : isStarted ? 'bg-amber-50 border-amber-300 text-amber-700' : 'bg-blue-50/50 border-blue-100 text-slate-600'}`}
+                                            />
+                                            <span className="absolute right-1 top-1/2 -translate-y-1/2 text-xs pointer-events-none text-slate-400">%</span>
+                                          </div>
+                                        </div>
+                                      </td>
+                                      <td className="px-2 py-1 border border-slate-100 text-center">
+                                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${statusClass}`}>
+                                          {isDone ? 'Completed' : isStarted ? 'In Progress' : 'Not Started'}
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  )
+                                })}
+                                {/* Section subtotal */}
+                                <tr className="bg-slate-100">
+                                  <td className="px-3 py-1.5 text-right text-xs font-semibold text-slate-600 border border-slate-200 uppercase tracking-wide">
+                                    {sec?.label ?? 'General'} — Total
+                                  </td>
+                                  <td className="px-3 py-1.5 text-right font-bold text-slate-900 border border-slate-200 text-xs">
+                                    {secTotal > 0 ? secTotal.toLocaleString('en-AE', { minimumFractionDigits: 2 }) : '—'}
+                                  </td>
+                                  <td className="px-3 py-1.5 border border-slate-200 text-center text-xs font-bold text-slate-600">{secPct}%</td>
+                                  <td className="px-3 py-1.5 border border-slate-200" />
+                                </tr>
+                              </React.Fragment>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Grand total bar */}
+                    <div className="border-t-2 border-slate-800 bg-slate-800 text-white px-5 py-3 flex justify-between items-center">
+                      <div className="flex items-center gap-4">
+                        <span className="font-bold text-sm tracking-wide">GRAND TOTAL</span>
+                        <button
+                          onClick={() => saveRenovationProgress(renovationRows)}
+                          disabled={renovationSaving}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-60
+                            ${renovationSaved ? 'bg-emerald-500 text-white' : 'bg-white/10 hover:bg-white/20 text-white border border-white/20'}`}
+                        >
+                          {renovationSaving ? <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving…</> : renovationSaved ? <><CheckCircle className="w-3.5 h-3.5" /> Saved</> : <><Save className="w-3.5 h-3.5" /> Save Progress</>}
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-8">
+                        <div className="text-right">
+                          <p className="text-xs text-slate-400">Overall Progress</p>
+                          <p className="text-lg font-bold">{overallPct}%</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-slate-400">Contract BOQ</p>
+                          <p className="text-lg font-bold">AED {grandTotal.toLocaleString('en-AE', { maximumFractionDigits: 0 })}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </>
                 )}
               </div>
             )
