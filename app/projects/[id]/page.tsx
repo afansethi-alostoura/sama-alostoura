@@ -763,7 +763,7 @@ export default function ProjectPage() {
       {/* ── BOQ Progress Tracker ─────────────────────────────────────────────── */}
       <div className="mb-8">
         {/* ── Renovation BOQ panel ─────────────────────────────────────────── */}
-        {project.renovation_boq_id && !project.company_boq_id ? (
+        {project.renovation_boq_id ? (
           renovationBoqLoad ? (
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-10 flex items-center justify-center gap-3 text-slate-500">
               <Loader2 className="w-5 h-5 animate-spin" /> Loading Renovation BOQ…
