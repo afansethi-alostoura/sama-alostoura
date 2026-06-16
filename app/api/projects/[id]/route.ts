@@ -34,7 +34,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const { id } = await params
   try {
     const body = await req.json()
-    const { progress_percent, current_stage, boq_sections, qb_class_name, company_boq_id, received_amount, total_expenses, mbhre_approved_progress } = body
+    const { progress_percent, current_stage, boq_sections, qb_class_name, company_boq_id, renovation_boq_id, received_amount, total_expenses, mbhre_approved_progress } = body
 
     const base = await findBase(id)
     if (!base) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
@@ -47,6 +47,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (company_boq_id !== undefined) {
       await saveOverride(id, { company_boq_id })
       try { updateStoredProject(id, { company_boq_id } as any) } catch {}
+    }
+
+    if (renovation_boq_id !== undefined) {
+      await saveOverride(id, { renovation_boq_id })
+      try { updateStoredProject(id, { renovation_boq_id } as any) } catch {}
     }
 
     if (received_amount !== undefined) {

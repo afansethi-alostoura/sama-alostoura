@@ -35,6 +35,7 @@ interface ProjectData {
   mbhre_approved_progress?: number
   plot_number?: string
   company_boq_id?: string
+  renovation_boq_id?: string
 }
 
 interface BOQItem {
@@ -75,6 +76,10 @@ export default function ProjectPage() {
   const [boqCreating,   setBoqCreating]   = useState(false)
   const saveTimer       = useRef<ReturnType<typeof setTimeout> | null>(null)
   const boqInitSynced   = useRef(false)
+
+  // Renovation BOQ
+  const [renovationBoq, setRenovationBoq] = useState<any>(null)
+  const [renovationBoqLoad, setRenovationBoqLoad] = useState(false)
 
   // Inline edit
   const [editing,    setEditing]    = useState(false)
@@ -225,6 +230,17 @@ export default function ProjectPage() {
       .catch(() => {})
       .finally(() => setBoqLoad(false))
   }, [project?.company_boq_id])
+
+  // ── Load Renovation BOQ ─────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!project?.renovation_boq_id) return
+    setRenovationBoqLoad(true)
+    fetch(`/api/boq/renovation?id=${project.renovation_boq_id}`)
+      .then(r => r.json())
+      .then(data => { if (data?.id) setRenovationBoq(data) })
+      .catch(() => {})
+      .finally(() => setRenovationBoqLoad(false))
+  }, [project?.renovation_boq_id])
 
   // ── Auto-sync BOQ progress → project.progress_percent on first load ─────────
   useEffect(() => {
@@ -746,7 +762,107 @@ export default function ProjectPage() {
 
       {/* ── BOQ Progress Tracker ─────────────────────────────────────────────── */}
       <div className="mb-8">
-        {!project.company_boq_id ? (
+        {/* ── Renovation BOQ panel ─────────────────────────────────────────── */}
+        {project.renovation_boq_id && !project.company_boq_id ? (
+          renovationBoqLoad ? (
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-10 flex items-center justify-center gap-3 text-slate-500">
+              <Loader2 className="w-5 h-5 animate-spin" /> Loading Renovation BOQ…
+            </div>
+          ) : renovationBoq ? (() => {
+            // Compute grand total from sections
+            const table = renovationBoq.sections ?? {}
+            const rows: any[] = Array.isArray(table) ? [] : (table.rows ?? [])
+            const cols: any[] = Array.isArray(table) ? [] : (table.columns ?? [])
+            const amountCol = cols.find((c: any) => /amount|total/i.test(c.name))
+            const grandTotal = amountCol
+              ? rows.filter((r: any) => r.type === 'item').reduce((s: number, r: any) => s + (parseFloat(r.cells?.[amountCol.id]) || 0), 0)
+              : 0
+            const sectionRows = rows.filter((r: any) => r.type === 'section')
+            return (
+              <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                {/* Header */}
+                <div className="flex items-center justify-between px-5 py-4 bg-slate-800 text-white">
+                  <div className="flex items-center gap-3">
+                    <span className="font-bold text-sm tracking-wide uppercase">Renovation BOQ</span>
+                    <span className="text-slate-400 text-xs">{renovationBoq.project_name || renovationBoq.project_location || ''}</span>
+                  </div>
+                  <Link
+                    href={`/estimation/boq/renovation?id=${project.renovation_boq_id}`}
+                    className="flex items-center gap-1.5 text-xs font-semibold bg-white/10 hover:bg-white/20 border border-white/20 px-3 py-1.5 rounded-lg transition-colors"
+                  >
+                    <Link2 className="w-3.5 h-3.5" /> Open BOQ
+                  </Link>
+                </div>
+
+                {/* Summary cards */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-0 border-b border-slate-100 divide-x divide-slate-100">
+                  <div className="px-5 py-4">
+                    <p className="text-xs text-slate-500 mb-0.5">Project</p>
+                    <p className="font-bold text-slate-900 text-sm truncate">{renovationBoq.project_name || '—'}</p>
+                  </div>
+                  <div className="px-5 py-4">
+                    <p className="text-xs text-slate-500 mb-0.5">Owner</p>
+                    <p className="font-bold text-slate-900 text-sm truncate">{renovationBoq.owner || renovationBoq.client_name || '—'}</p>
+                  </div>
+                  <div className="px-5 py-4">
+                    <p className="text-xs text-slate-500 mb-0.5">Sections</p>
+                    <p className="font-bold text-slate-900 text-sm">{sectionRows.length} sections</p>
+                  </div>
+                  <div className="px-5 py-4">
+                    <p className="text-xs text-slate-500 mb-0.5">Grand Total</p>
+                    <p className="font-bold text-emerald-700 text-sm">
+                      {grandTotal > 0 ? `AED ${grandTotal.toLocaleString('en-AE', { minimumFractionDigits: 2 })}` : '—'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Section list */}
+                {sectionRows.length > 0 && (
+                  <div className="divide-y divide-slate-100">
+                    {sectionRows.map((r: any) => (
+                      <div key={r.id} className="px-5 py-3 flex items-center justify-between">
+                        <span className="text-sm font-semibold text-blue-800">{r.label}</span>
+                        {amountCol && (() => {
+                          const secItems = rows.filter((row: any) => {
+                            const sIdx = rows.indexOf(r)
+                            const rowIdx = rows.indexOf(row)
+                            const nextSec = rows.findIndex((rr: any, i: number) => i > sIdx && rr.type === 'section')
+                            return row.type === 'item' && rowIdx > sIdx && (nextSec === -1 || rowIdx < nextSec)
+                          })
+                          const secTotal = secItems.reduce((s: number, row: any) => s + (parseFloat(row.cells?.[amountCol.id]) || 0), 0)
+                          return secTotal > 0 ? (
+                            <span className="text-sm font-bold text-slate-700">
+                              AED {secTotal.toLocaleString('en-AE', { minimumFractionDigits: 2 })}
+                            </span>
+                          ) : null
+                        })()}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Footer */}
+                {grandTotal > 0 && (
+                  <div className="bg-slate-800 text-white px-5 py-3 flex justify-between items-center">
+                    <span className="font-bold text-sm tracking-wide">GRAND TOTAL</span>
+                    <span className="font-bold text-lg">AED {grandTotal.toLocaleString('en-AE', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                )}
+              </div>
+            )
+          })() : (
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 flex flex-col items-center justify-center gap-4 text-center">
+              <AlertCircle className="w-8 h-8 text-slate-300" />
+              <p className="text-sm text-slate-500">Renovation BOQ could not be loaded.</p>
+              <Link
+                href={`/estimation/boq/renovation?id=${project.renovation_boq_id}`}
+                className="text-sm text-blue-600 hover:underline"
+              >
+                Open in Estimation →
+              </Link>
+            </div>
+          )
+        ) : !project.company_boq_id ? (
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 flex flex-col items-center justify-center gap-4 text-center">
             <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center">
               <FolderOpen className="w-6 h-6 text-slate-400" />
@@ -1057,7 +1173,7 @@ export default function ProjectPage() {
       </div>
 
       {/* ── Legacy work lists ────────────────────────────────────────────────── */}
-      {!project.company_boq_id && (
+      {!project.company_boq_id && !project.renovation_boq_id && (
         <div className="space-y-6 mb-8">
           {project.completed_works && project.completed_works.length > 0 && (
             <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
