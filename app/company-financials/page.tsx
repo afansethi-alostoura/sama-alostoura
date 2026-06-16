@@ -296,7 +296,7 @@ export default function CompanyFinancialsPage() {
               <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false}
                 tickFormatter={v => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v)} />
               <Tooltip
-                formatter={(v: number) => [fmtFull(v), 'Expenses']}
+                formatter={(v) => [fmtFull(Number(v ?? 0)), 'Expenses']}
                 contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e2e8f0' }}
               />
               <Bar dataKey="amount" radius={[4, 4, 0, 0]}>
@@ -371,14 +371,14 @@ export default function CompanyFinancialsPage() {
                   innerRadius={60} outerRadius={100}
                   paddingAngle={2}
                   dataKey="value"
-                  onClick={(d) => setSelectedCat(selectedCat === d.name ? null : d.name)}
+                  onClick={(d) => setSelectedCat(selectedCat === d.name ? null : (d.name ?? null))}
                   style={{ cursor: 'pointer' }}
                 >
                   {categories.slice(0, 8).map((_, i) => (
                     <Cell key={i} fill={CATEGORY_COLORS[i % CATEGORY_COLORS.length]} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(v: number) => [fmtFull(v), 'Amount']} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                <Tooltip formatter={(v) => [fmtFull(Number(v ?? 0)), 'Amount']} contentStyle={{ fontSize: 12, borderRadius: 8 }} />
                 <Legend formatter={(v) => <span style={{ fontSize: 11 }}>{v.length > 22 ? v.slice(0, 22) + '…' : v}</span>} />
               </PieChart>
             </ResponsiveContainer>
