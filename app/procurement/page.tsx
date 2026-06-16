@@ -455,11 +455,12 @@ export default function ProcurementPage() {
 
                 {/* Setup Steps */}
                 <div>
-                  <p className="text-xs font-bold text-green-800 mb-2">Setup Steps</p>
+                  <p className="text-xs font-bold text-green-800 mb-2">Setup Steps (Meta WhatsApp Business)</p>
                   <ol className="space-y-1.5 text-xs text-green-800">
-                    <li className="flex items-start gap-2"><span className="w-4 h-4 bg-green-200 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">1</span>Go to <strong>twilio.com</strong> → Messaging → WhatsApp Senders → configure your number</li>
-                    <li className="flex items-start gap-2"><span className="w-4 h-4 bg-green-200 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">2</span>Set <strong>Webhook URL</strong> above as the "When a message comes in" URL (HTTP POST)</li>
-                    <li className="flex items-start gap-2"><span className="w-4 h-4 bg-green-200 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">3</span>Staff WhatsApp the number — AI auto-creates the PR and replies with confirmation</li>
+                    <li className="flex items-start gap-2"><span className="w-4 h-4 bg-green-200 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">1</span>Go to <strong>developers.facebook.com</strong> → your App → WhatsApp → Configuration</li>
+                    <li className="flex items-start gap-2"><span className="w-4 h-4 bg-green-200 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">2</span>Paste the webhook URL above. Set Verify Token to: <code className="bg-green-100 px-1 rounded font-mono">sama-procurement</code></li>
+                    <li className="flex items-start gap-2"><span className="w-4 h-4 bg-green-200 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">3</span>Add env vars in Vercel: <code className="bg-green-100 px-1 rounded font-mono">WHATSAPP_ACCESS_TOKEN</code>, <code className="bg-green-100 px-1 rounded font-mono">WHATSAPP_PHONE_NUMBER_ID</code></li>
+                    <li className="flex items-start gap-2"><span className="w-4 h-4 bg-green-200 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">4</span>Subscribe to <strong>messages</strong> webhook field — staff WhatsApp the number and PRs appear instantly</li>
                   </ol>
                 </div>
 
