@@ -266,10 +266,14 @@ CREATE TABLE IF NOT EXISTS procurement_prs (
   date_needed    DATE,
   status         TEXT DEFAULT 'requested' CHECK (status IN ('requested','approved','ordered','delivered')),
   items          JSONB NOT NULL DEFAULT '[]'::jsonb,
+  source         TEXT DEFAULT 'manual',
+  whatsapp_from  TEXT DEFAULT '',
   notes          TEXT DEFAULT '',
   created_at     TIMESTAMPTZ DEFAULT NOW(),
   updated_at     TIMESTAMPTZ DEFAULT NOW()
 );
+ALTER TABLE procurement_prs ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'manual';
+ALTER TABLE procurement_prs ADD COLUMN IF NOT EXISTS whatsapp_from TEXT DEFAULT '';
 
 -- ── 20. PROCUREMENT — SUPPLIERS ──────────────────────────────
 CREATE TABLE IF NOT EXISTS procurement_suppliers (

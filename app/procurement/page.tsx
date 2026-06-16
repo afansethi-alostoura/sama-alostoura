@@ -5,6 +5,7 @@ import {
   Package, Truck, Users, ClipboardList, CheckCircle2, Clock,
   Star, Phone, Mail, Building2, AlertCircle, Save, ArrowRight,
   Search, ChevronDown, ChevronUp, History, Tag,
+  MessageSquare, Webhook, Copy, CheckCheck,
 } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -16,7 +17,7 @@ interface PR {
   id: string; pr_number: string; project_id: string; project_name: string
   title: string; description: string; requested_by: string
   date_requested: string; date_needed: string; status: PRStatus
-  items: PRItem[]; notes: string; created_at: string
+  items: PRItem[]; source?: string; whatsapp_from?: string; notes: string; created_at: string
 }
 
 interface Supplier {
@@ -237,6 +238,8 @@ export default function ProcurementPage() {
     items: [{ description: '', qty_ordered: '', qty_delivered: '', unit: '' }], notes: '',
   })
   const [delForm, setDelForm] = useState(blankDel())
+  const [copied, setCopied] = useState(false)
+  const [showWASetup, setShowWASetup] = useState(false)
 
   // ── Load all data ──────────────────────────────────────────────────────────
   const loadAll = useCallback(async () => {
@@ -397,13 +400,96 @@ export default function ProcurementPage() {
         <div>
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-bold text-slate-800">Purchase Requests</h2>
-            <button
-              onClick={() => { setPrForm(blankPR()); setPrModal('new') }}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
-            >
-              <Plus className="w-4 h-4" /> New PR
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowWASetup(v => !v)}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold border transition-colors
+                  ${showWASetup ? 'bg-green-600 text-white border-green-600' : 'bg-white text-green-700 border-green-300 hover:bg-green-50'}`}
+              >
+                <MessageSquare className="w-4 h-4" /> WhatsApp
+              </button>
+              <button
+                onClick={() => { setPrForm(blankPR()); setPrModal('new') }}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
+              >
+                <Plus className="w-4 h-4" /> New PR
+              </button>
+            </div>
           </div>
+
+          {/* ── WhatsApp Integration Setup Card ─────────────────────────────── */}
+          {showWASetup && (
+            <div className="mb-6 bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 rounded-2xl p-5">
+              <div className="flex items-start gap-3 mb-4">
+                <div className="w-10 h-10 bg-green-500 rounded-xl flex items-center justify-center flex-shrink-0">
+                  <MessageSquare className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <p className="font-bold text-green-900">WhatsApp → Purchase Request</p>
+                  <p className="text-xs text-green-700 mt-0.5">Site staff send a WhatsApp message → AI parses it → PR created automatically</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                {/* Webhook URL */}
+                <div>
+                  <p className="text-xs font-bold text-green-800 mb-1.5 flex items-center gap-1.5"><Webhook className="w-3.5 h-3.5" /> Webhook URL (paste into Twilio)</p>
+                  <div className="flex items-center gap-2 bg-white border border-green-200 rounded-lg px-3 py-2">
+                    <code className="text-xs text-slate-700 flex-1 truncate">
+                      {typeof window !== 'undefined' ? window.location.origin : 'https://your-domain.com'}/api/procurement/pr/whatsapp
+                    </code>
+                    <button
+                      onClick={() => {
+                        const url = `${window.location.origin}/api/procurement/pr/whatsapp`
+                        navigator.clipboard.writeText(url)
+                        setCopied(true)
+                        setTimeout(() => setCopied(false), 2000)
+                      }}
+                      className="flex items-center gap-1 text-xs font-semibold text-green-700 hover:text-green-900 flex-shrink-0"
+                    >
+                      {copied ? <CheckCheck className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                      {copied ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Setup Steps */}
+                <div>
+                  <p className="text-xs font-bold text-green-800 mb-2">Setup Steps</p>
+                  <ol className="space-y-1.5 text-xs text-green-800">
+                    <li className="flex items-start gap-2"><span className="w-4 h-4 bg-green-200 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">1</span>Go to <strong>twilio.com</strong> → Messaging → WhatsApp Senders → configure your number</li>
+                    <li className="flex items-start gap-2"><span className="w-4 h-4 bg-green-200 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">2</span>Set <strong>Webhook URL</strong> above as the "When a message comes in" URL (HTTP POST)</li>
+                    <li className="flex items-start gap-2"><span className="w-4 h-4 bg-green-200 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 mt-0.5">3</span>Staff WhatsApp the number — AI auto-creates the PR and replies with confirmation</li>
+                  </ol>
+                </div>
+
+                {/* Message Format */}
+                <div>
+                  <p className="text-xs font-bold text-green-800 mb-2">Message Formats (both work)</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div className="bg-white border border-green-200 rounded-lg p-3">
+                      <p className="text-[10px] font-bold text-green-600 mb-1">FREE FORM</p>
+                      <p className="text-xs text-slate-600 italic">"Need 50 bags of cement for FAHAD project by next Tuesday"</p>
+                    </div>
+                    <div className="bg-white border border-green-200 rounded-lg p-3">
+                      <p className="text-[10px] font-bold text-green-600 mb-1">STRUCTURED</p>
+                      <p className="text-xs text-slate-600 font-mono">Project: FAHAD<br/>Material: Cement<br/>Qty: 50 bags<br/>Date: 2026-07-15</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* WA PR count */}
+                {prs.filter(p => p.source === 'whatsapp').length > 0 && (
+                  <div className="bg-white border border-green-200 rounded-lg px-3 py-2 flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4 text-green-600" />
+                    <span className="text-xs text-green-800 font-semibold">
+                      {prs.filter(p => p.source === 'whatsapp').length} PR{prs.filter(p => p.source === 'whatsapp').length !== 1 ? 's' : ''} received via WhatsApp so far
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {prs.length === 0
             ? <EmptyState icon={ClipboardList} label="Create your first purchase request" action={() => { setPrForm(blankPR()); setPrModal('new') }} />
@@ -418,6 +504,11 @@ export default function ProcurementPage() {
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-xs font-mono text-slate-400 bg-slate-100 px-2 py-0.5 rounded">{pr.pr_number}</span>
                             <StatusBadge status={pr.status} />
+                            {pr.source === 'whatsapp' && (
+                              <span className="inline-flex items-center gap-1 text-xs bg-green-100 text-green-700 border border-green-200 px-2 py-0.5 rounded-full font-semibold">
+                                <MessageSquare className="w-3 h-3" /> WhatsApp
+                              </span>
+                            )}
                           </div>
                           <p className="font-semibold text-slate-900 mt-1">{pr.title}</p>
                           <div className="flex items-center gap-3 mt-1 text-xs text-slate-500 flex-wrap">
@@ -425,6 +516,7 @@ export default function ProcurementPage() {
                             <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{pr.date_requested}</span>
                             {pr.requested_by && <span>By: {pr.requested_by}</span>}
                             {pr.date_needed && <span className="text-amber-600">Needed: {pr.date_needed}</span>}
+                            {pr.whatsapp_from && <span className="text-green-600 flex items-center gap-1"><MessageSquare className="w-3 h-3" />{pr.whatsapp_from.replace('whatsapp:', '')}</span>}
                           </div>
                           <div className="mt-2">
                             <StatusFlow status={pr.status} />
@@ -449,13 +541,13 @@ export default function ProcurementPage() {
                       </div>
                       {pr.items?.length > 0 && (
                         <div className="mt-3 pt-3 border-t border-slate-100">
-                          <p className="text-xs font-semibold text-slate-500 mb-2">ITEMS ({pr.items.length})</p>
+                          <p className="text-xs font-semibold text-slate-500 mb-2">MATERIALS ({pr.items.length})</p>
                           <div className="space-y-1">
                             {pr.items.map((item, i) => (
                               <div key={i} className="flex items-center gap-2 text-xs text-slate-700">
                                 <span className="w-5 h-5 bg-slate-100 rounded text-center leading-5 text-slate-500 flex-shrink-0">{i + 1}</span>
-                                <span className="flex-1">{item.description}</span>
-                                {item.qty && <span className="text-slate-400">{item.qty} {item.unit}</span>}
+                                <span className="flex-1 font-medium">{item.description}</span>
+                                {item.qty && <span className="text-slate-500 bg-slate-50 px-2 py-0.5 rounded">{item.qty} {item.unit}</span>}
                               </div>
                             ))}
                           </div>
