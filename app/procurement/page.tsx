@@ -4,6 +4,7 @@ import {
   ShoppingCart, Plus, X, ChevronRight, Loader2, Trash2, Pencil,
   Package, Truck, Users, ClipboardList, CheckCircle2, Clock,
   Star, Phone, Mail, Building2, AlertCircle, Save, ArrowRight,
+  Search, ChevronDown, ChevronUp, History, Tag,
 } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -20,7 +21,8 @@ interface PR {
 
 interface Supplier {
   id: string; name: string; contact_person: string; phone: string; email: string
-  category: string; address: string; payment_terms: string; rating: number; notes: string
+  category: string; address: string; payment_terms: string; rating: number
+  materials: string[]; notes: string
 }
 
 interface POItem { description: string; qty: string; unit: string; unit_price: string; total: string }
@@ -208,9 +210,12 @@ export default function ProcurementPage() {
   // Supplier form
   const blankSup = (): Omit<Supplier, 'id'> => ({
     name: '', contact_person: '', phone: '', email: '',
-    category: '', address: '', payment_terms: '', rating: 0, notes: '',
+    category: '', address: '', payment_terms: '', rating: 0, materials: [], notes: '',
   })
   const [supForm, setSupForm] = useState(blankSup())
+  const [matInput, setMatInput] = useState('')
+  const [supSearch, setSupSearch] = useState('')
+  const [expandedSup, setExpandedSup] = useState<string | null>(null)
 
   // PO form
   const blankPO = (): Omit<PO, 'id' | 'created_at'> => ({
@@ -468,54 +473,164 @@ export default function ProcurementPage() {
       {/* ── SUPPLIERS ───────────────────────────────────────────────────────── */}
       {tab === 'suppliers' && (
         <div>
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center justify-between mb-4">
             <h2 className="font-bold text-slate-800">Suppliers</h2>
             <button
-              onClick={() => { setSupForm(blankSup()); setSupplierModal('new') }}
+              onClick={() => { setSupForm(blankSup()); setMatInput(''); setSupplierModal('new') }}
               className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors"
             >
               <Plus className="w-4 h-4" /> Add Supplier
             </button>
           </div>
 
+          {/* Search Bar */}
+          <div className="relative mb-6">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white"
+              placeholder="Search by name, phone, category, or material…"
+              value={supSearch}
+              onChange={e => setSupSearch(e.target.value)}
+            />
+          </div>
+
           {suppliers.length === 0
-            ? <EmptyState icon={Users} label="Add your first supplier" action={() => { setSupForm(blankSup()); setSupplierModal('new') }} />
-            : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {suppliers.map(sup => (
-                  <div key={sup.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center flex-shrink-0">
-                        <Building2 className="w-5 h-5 text-blue-600" />
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button onClick={() => { setSelSup(sup); setSupForm({ ...sup }); setSupplierModal('edit') }} className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg">
-                          <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                        <button onClick={() => deleteSupplier(sup.id)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                    <p className="font-bold text-slate-900">{sup.name}</p>
-                    {sup.category && <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">{sup.category}</span>}
-                    <div className="mt-3 space-y-1.5">
-                      {sup.contact_person && <p className="text-xs text-slate-600"><span className="text-slate-400">Contact:</span> {sup.contact_person}</p>}
-                      {sup.phone && <p className="text-xs text-slate-600 flex items-center gap-1"><Phone className="w-3 h-3 text-slate-400" />{sup.phone}</p>}
-                      {sup.email && <p className="text-xs text-slate-600 flex items-center gap-1"><Mail className="w-3 h-3 text-slate-400" />{sup.email}</p>}
-                      {sup.payment_terms && <p className="text-xs text-slate-500">Terms: {sup.payment_terms}</p>}
-                    </div>
-                    {sup.rating > 0 && (
-                      <div className="flex items-center gap-0.5 mt-3">
-                        {[1,2,3,4,5].map(i => (
-                          <Star key={i} className={`w-3.5 h-3.5 ${i <= sup.rating ? 'text-amber-400 fill-amber-400' : 'text-slate-200'}`} />
-                        ))}
-                      </div>
-                    )}
+            ? <EmptyState icon={Users} label="Add your first supplier" action={() => { setSupForm(blankSup()); setMatInput(''); setSupplierModal('new') }} />
+            : (() => {
+                const q = supSearch.toLowerCase()
+                const filtered = suppliers.filter(s =>
+                  !q ||
+                  s.name.toLowerCase().includes(q) ||
+                  s.phone.toLowerCase().includes(q) ||
+                  s.category.toLowerCase().includes(q) ||
+                  (s.materials ?? []).some(m => m.toLowerCase().includes(q)) ||
+                  s.contact_person.toLowerCase().includes(q)
+                )
+                if (filtered.length === 0) return (
+                  <div className="text-center py-12 text-slate-400 text-sm">No suppliers match "{supSearch}"</div>
+                )
+                return (
+                  <div className="space-y-4">
+                    {filtered.map(sup => {
+                      const supPOs = pos.filter(po => po.supplier_id === sup.id)
+                      const supPRs = prs.filter(pr => supPOs.some(po => po.pr_id === pr.id))
+                      const totalSpend = supPOs.reduce((s, po) => s + (po.total_amount || 0), 0)
+                      const isExpanded = expandedSup === sup.id
+                      return (
+                        <div key={sup.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                          {/* Card Header */}
+                          <div className="p-5">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-start gap-3 flex-1 min-w-0">
+                                <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center flex-shrink-0">
+                                  <Building2 className="w-5 h-5 text-blue-600" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <p className="font-bold text-slate-900">{sup.name}</p>
+                                    {sup.category && (
+                                      <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">{sup.category}</span>
+                                    )}
+                                    {sup.rating > 0 && (
+                                      <div className="flex items-center gap-0.5">
+                                        {[1,2,3,4,5].map(i => (
+                                          <Star key={i} className={`w-3 h-3 ${i <= sup.rating ? 'text-amber-400 fill-amber-400' : 'text-slate-200'}`} />
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5">
+                                    {sup.contact_person && <span className="text-xs text-slate-500">{sup.contact_person}</span>}
+                                    {sup.phone && (
+                                      <span className="text-xs text-slate-600 flex items-center gap-1">
+                                        <Phone className="w-3 h-3 text-slate-400" />{sup.phone}
+                                      </span>
+                                    )}
+                                    {sup.email && (
+                                      <span className="text-xs text-slate-600 flex items-center gap-1">
+                                        <Mail className="w-3 h-3 text-slate-400" />{sup.email}
+                                      </span>
+                                    )}
+                                    {sup.payment_terms && <span className="text-xs text-slate-400">Terms: {sup.payment_terms}</span>}
+                                  </div>
+
+                                  {/* Materials Tags */}
+                                  {(sup.materials ?? []).length > 0 && (
+                                    <div className="flex flex-wrap gap-1.5 mt-2">
+                                      {(sup.materials ?? []).map((m, i) => (
+                                        <span key={i} className="inline-flex items-center gap-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                          <Tag className="w-2.5 h-2.5" />{m}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+
+                                  {sup.notes && <p className="text-xs text-slate-400 italic mt-1.5">{sup.notes}</p>}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1 flex-shrink-0">
+                                <button
+                                  onClick={() => setExpandedSup(isExpanded ? null : sup.id)}
+                                  className="flex items-center gap-1 text-xs font-semibold bg-slate-50 hover:bg-slate-100 text-slate-600 px-2.5 py-1.5 rounded-lg transition-colors"
+                                >
+                                  <History className="w-3.5 h-3.5" />
+                                  {supPOs.length} PO{supPOs.length !== 1 ? 's' : ''}
+                                  {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                </button>
+                                <button onClick={() => { setSelSup(sup); setSupForm({ ...sup, materials: sup.materials ?? [] }); setMatInput(''); setSupplierModal('edit') }} className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg">
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                                <button onClick={() => deleteSupplier(sup.id)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg">
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Order History — expanded */}
+                          {isExpanded && (
+                            <div className="border-t border-slate-100 bg-slate-50 px-5 py-4">
+                              <div className="flex items-center justify-between mb-3">
+                                <p className="text-xs font-bold text-slate-600 uppercase tracking-wide">Order History</p>
+                                {totalSpend > 0 && (
+                                  <span className="text-xs font-bold text-slate-900">Total Spend: {fmt(totalSpend)}</span>
+                                )}
+                              </div>
+                              {supPOs.length === 0 ? (
+                                <p className="text-xs text-slate-400 italic">No purchase orders yet for this supplier.</p>
+                              ) : (
+                                <div className="space-y-2">
+                                  {supPOs.map(po => (
+                                    <div key={po.id} className="bg-white rounded-lg border border-slate-200 px-3 py-2.5 flex items-center gap-3">
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <span className="text-xs font-mono text-slate-500">{po.po_number}</span>
+                                          <StatusBadge status={po.status} />
+                                          {po.project_name && (
+                                            <span className="text-xs text-slate-400 flex items-center gap-0.5">
+                                              <Building2 className="w-3 h-3" />{po.project_name}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center gap-3 mt-0.5 text-xs text-slate-400">
+                                          <span>{po.date_issued}</span>
+                                          {po.date_expected && <span>→ {po.date_expected}</span>}
+                                          {po.items?.length > 0 && <span>{po.items.length} item{po.items.length !== 1 ? 's' : ''}</span>}
+                                        </div>
+                                      </div>
+                                      <span className="text-sm font-bold text-slate-800 flex-shrink-0">{fmt(po.total_amount)}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
-                ))}
-              </div>
-            )
+                )
+              })()
           }
         </div>
       )}
@@ -817,6 +932,41 @@ export default function ProcurementPage() {
             <Field label="Address">
               <input className={inp} value={supForm.address} onChange={e => setSupForm(p => ({ ...p, address: e.target.value }))} />
             </Field>
+
+            {/* Materials Tag Input */}
+            <Field label="Materials Supplied">
+              <div className="border border-slate-200 rounded-lg p-2 min-h-[44px] flex flex-wrap gap-1.5 cursor-text focus-within:ring-2 focus-within:ring-blue-400"
+                onClick={e => (e.currentTarget.querySelector('input') as HTMLInputElement)?.focus()}>
+                {(supForm.materials ?? []).map((m, i) => (
+                  <span key={i} className="inline-flex items-center gap-1 text-xs bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">
+                    <Tag className="w-2.5 h-2.5" />{m}
+                    <button onClick={() => setSupForm(p => ({ ...p, materials: p.materials.filter((_, j) => j !== i) }))} className="hover:text-red-500 ml-0.5">
+                      <X className="w-2.5 h-2.5" />
+                    </button>
+                  </span>
+                ))}
+                <input
+                  className="text-sm outline-none flex-1 min-w-[120px] bg-transparent"
+                  placeholder={supForm.materials?.length ? 'Add another…' : 'Type material and press Enter…'}
+                  value={matInput}
+                  onChange={e => setMatInput(e.target.value)}
+                  onKeyDown={e => {
+                    if ((e.key === 'Enter' || e.key === ',') && matInput.trim()) {
+                      e.preventDefault()
+                      const val = matInput.trim().replace(/,$/, '')
+                      if (val && !supForm.materials?.includes(val)) {
+                        setSupForm(p => ({ ...p, materials: [...(p.materials ?? []), val] }))
+                      }
+                      setMatInput('')
+                    } else if (e.key === 'Backspace' && !matInput && (supForm.materials ?? []).length > 0) {
+                      setSupForm(p => ({ ...p, materials: p.materials.slice(0, -1) }))
+                    }
+                  }}
+                />
+              </div>
+              <p className="text-xs text-slate-400 mt-1">Press Enter or comma to add each material (e.g. Steel, Rebar, Tiles…)</p>
+            </Field>
+
             <Field label="Rating (0–5)">
               <div className="flex items-center gap-2">
                 {[1,2,3,4,5].map(i => (

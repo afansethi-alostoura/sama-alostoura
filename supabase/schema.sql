@@ -253,6 +253,85 @@ ALTER TABLE renovation_boq ADD COLUMN IF NOT EXISTS area           TEXT DEFAULT 
 ALTER TABLE renovation_boq ADD COLUMN IF NOT EXISTS owner          TEXT DEFAULT '';
 ALTER TABLE renovation_boq ADD COLUMN IF NOT EXISTS contractor     TEXT DEFAULT 'SAMA ALOSTOURA BUILDING CONTRACTING L.L.C';
 
+-- ── 19. PROCUREMENT — PURCHASE REQUESTS ─────────────────────
+CREATE TABLE IF NOT EXISTS procurement_prs (
+  id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  pr_number      TEXT NOT NULL,
+  project_id     TEXT DEFAULT '',
+  project_name   TEXT DEFAULT '',
+  title          TEXT NOT NULL,
+  description    TEXT DEFAULT '',
+  requested_by   TEXT DEFAULT '',
+  date_requested DATE NOT NULL DEFAULT CURRENT_DATE,
+  date_needed    DATE,
+  status         TEXT DEFAULT 'requested' CHECK (status IN ('requested','approved','ordered','delivered')),
+  items          JSONB NOT NULL DEFAULT '[]'::jsonb,
+  notes          TEXT DEFAULT '',
+  created_at     TIMESTAMPTZ DEFAULT NOW(),
+  updated_at     TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ── 20. PROCUREMENT — SUPPLIERS ──────────────────────────────
+CREATE TABLE IF NOT EXISTS procurement_suppliers (
+  id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name           TEXT NOT NULL,
+  contact_person TEXT DEFAULT '',
+  phone          TEXT DEFAULT '',
+  email          TEXT DEFAULT '',
+  category       TEXT DEFAULT '',
+  address        TEXT DEFAULT '',
+  payment_terms  TEXT DEFAULT '',
+  rating         INTEGER DEFAULT 0 CHECK (rating BETWEEN 0 AND 5),
+  materials      JSONB NOT NULL DEFAULT '[]'::jsonb,
+  notes          TEXT DEFAULT '',
+  created_at     TIMESTAMPTZ DEFAULT NOW(),
+  updated_at     TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE procurement_suppliers ADD COLUMN IF NOT EXISTS materials JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+-- ── 21. PROCUREMENT — PURCHASE ORDERS ────────────────────────
+CREATE TABLE IF NOT EXISTS procurement_pos (
+  id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  po_number      TEXT NOT NULL,
+  pr_id          UUID REFERENCES procurement_prs(id) ON DELETE SET NULL,
+  project_id     TEXT DEFAULT '',
+  project_name   TEXT DEFAULT '',
+  supplier_id    UUID REFERENCES procurement_suppliers(id) ON DELETE SET NULL,
+  supplier_name  TEXT DEFAULT '',
+  date_issued    DATE NOT NULL DEFAULT CURRENT_DATE,
+  date_expected  DATE,
+  status         TEXT DEFAULT 'requested' CHECK (status IN ('requested','approved','ordered','delivered')),
+  items          JSONB NOT NULL DEFAULT '[]'::jsonb,
+  total_amount   NUMERIC(12,2) DEFAULT 0,
+  notes          TEXT DEFAULT '',
+  created_at     TIMESTAMPTZ DEFAULT NOW(),
+  updated_at     TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ── 22. PROCUREMENT — MATERIAL DELIVERIES ────────────────────
+CREATE TABLE IF NOT EXISTS procurement_deliveries (
+  id             UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  po_id          UUID REFERENCES procurement_pos(id) ON DELETE SET NULL,
+  po_number      TEXT DEFAULT '',
+  project_id     TEXT DEFAULT '',
+  project_name   TEXT DEFAULT '',
+  delivery_date  DATE NOT NULL DEFAULT CURRENT_DATE,
+  delivered_by   TEXT DEFAULT '',
+  received_by    TEXT DEFAULT '',
+  status         TEXT DEFAULT 'requested' CHECK (status IN ('requested','approved','ordered','delivered')),
+  items          JSONB NOT NULL DEFAULT '[]'::jsonb,
+  notes          TEXT DEFAULT '',
+  created_at     TIMESTAMPTZ DEFAULT NOW(),
+  updated_at     TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_prs_project    ON procurement_prs(project_id);
+CREATE INDEX IF NOT EXISTS idx_prs_status     ON procurement_prs(status);
+CREATE INDEX IF NOT EXISTS idx_pos_project    ON procurement_pos(project_id);
+CREATE INDEX IF NOT EXISTS idx_pos_status     ON procurement_pos(status);
+CREATE INDEX IF NOT EXISTS idx_del_project    ON procurement_deliveries(project_id);
+CREATE INDEX IF NOT EXISTS idx_del_status     ON procurement_deliveries(status);
+
 -- ── INDEXES ─────────────────────────────────────────────────
 CREATE INDEX IF NOT EXISTS idx_projects_status       ON projects(status);
 CREATE INDEX IF NOT EXISTS idx_projects_client        ON projects(client_id);
