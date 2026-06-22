@@ -3,12 +3,14 @@ import { NextResponse, type NextRequest } from 'next/server'
 // Routes that never require auth (login, webhooks, QB OAuth callback)
 const PUBLIC_PATHS = new Set([
   '/login',
+  '/setup-totp',
   '/terms',
   '/privacy',
   '/api/auth/login',
   '/api/auth/logout',
   '/api/auth/request-otp',
   '/api/auth/verify-otp',
+  '/api/auth/setup-totp',
   '/api/auth/test-wa',
   '/api/webhooks/whatsapp',
   '/api/meta/whatsapp/webhook',
