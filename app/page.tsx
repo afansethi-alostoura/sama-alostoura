@@ -5,7 +5,7 @@ import {
   Bot, TrendingUp, AlertCircle, CheckCircle, Clock, RefreshCw, Loader2,
   Building2, Wallet, Calculator, ShoppingCart, Users, Wrench, FileText,
   UserPlus, Shield, Handshake, BarChart3, ArrowUpRight, ArrowDownRight,
-  Plus, Activity, DatabaseZap,
+  Plus, Activity, DatabaseZap, HardHat,
 } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import { useAllProjects } from '@/hooks/useAllProjects'
@@ -21,6 +21,7 @@ const AGENTS = [
   { id: 'quality-assurance',     name: 'QA Inspector',       desc: 'Quality & compliance checks',    icon: CheckCircle,  color: 'green'  },
   { id: 'safety-officer',        name: 'Safety Officer',     desc: 'Site safety & incidents',        icon: AlertCircle,  color: 'red'    },
   { id: 'client-relations',      name: 'Client Relations',   desc: 'Stakeholder communications',     icon: Handshake,    color: 'pink'   },
+  { id: 'construction-ops',      name: 'Construction Ops',   desc: 'Next actions · sequence · risks', icon: HardHat,      color: 'amber'  },
 ]
 
 const COLOR_MAP: Record<string, { bg: string; text: string; badge: string }> = {
@@ -34,6 +35,7 @@ const COLOR_MAP: Record<string, { bg: string; text: string; badge: string }> = {
   green:   { bg: 'bg-green-50',   text: 'text-green-600',   badge: 'bg-green-100 text-green-700'  },
   red:     { bg: 'bg-red-50',     text: 'text-red-600',     badge: 'bg-red-100 text-red-700'      },
   pink:    { bg: 'bg-pink-50',    text: 'text-pink-600',    badge: 'bg-pink-100 text-pink-700'    },
+  amber:   { bg: 'bg-amber-50',  text: 'text-amber-600',   badge: 'bg-amber-100 text-amber-700'  },
 }
 
 interface AgentState { briefing: string; loading: boolean; time: string }
