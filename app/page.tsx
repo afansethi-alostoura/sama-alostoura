@@ -96,7 +96,11 @@ export default function CEODashboard() {
   async function briefAgent(id: string) {
     setAgents(p => ({ ...p, [id]: { briefing: '', loading: true, time: '' } }))
     try {
-      const r = await fetch(`/api/agents/${id}`, { method: 'POST' })
+      const r = await fetch(`/api/agents/${id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projects }),
+      })
       const d = await r.json()
       setAgents(p => ({
         ...p,
