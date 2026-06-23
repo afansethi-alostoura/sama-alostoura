@@ -59,6 +59,20 @@ function fmtDate(d: string) {
 function todayStr()    { return new Date().toISOString().slice(0, 10) }
 function yearStartStr(){ return `${new Date().getFullYear()}-01-01`   }
 
+function datePresets() {
+  const today = new Date()
+  const pad   = (n: number) => String(n).padStart(2, '0')
+  const fmt   = (d: Date)   => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`
+  const weekStart = new Date(today); weekStart.setDate(today.getDate() - today.getDay())
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1)
+  return {
+    today: { from: fmt(today),      to: fmt(today),   label: 'Today'     },
+    week:  { from: fmt(weekStart),   to: fmt(today),   label: 'This Week' },
+    month: { from: fmt(monthStart),  to: fmt(today),   label: 'This Month'},
+    year:  { from: yearStartStr(),   to: fmt(today),   label: 'This Year' },
+  }
+}
+
 // ── Payment type badge ────────────────────────────────────────────────────────
 function TypeBadge({ type, paymentType }: { type: 'purchase' | 'bill' | 'vendor_credit'; paymentType: string }) {
   if (type === 'vendor_credit') {
@@ -509,7 +523,30 @@ function ClassExpensesSection({
 
         {/* Controls */}
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Date range */}
+          {/* Quick presets */}
+          {(() => {
+            const presets = datePresets()
+            return (
+              <div className="flex items-center bg-slate-100 rounded-lg p-0.5 gap-0.5">
+                {(Object.entries(presets) as [string, { from: string; to: string; label: string }][]).map(([key, p]) => {
+                  const active = dateRange.from === p.from && dateRange.to === p.to
+                  return (
+                    <button
+                      key={key}
+                      onClick={() => onDateChange({ from: p.from, to: p.to })}
+                      className={`px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${
+                        active ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  )
+                })}
+              </div>
+            )
+          })()}
+
+          {/* Custom date range */}
           <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5">
             <CalendarRange className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
             <input
@@ -1331,7 +1368,7 @@ export default function AccountingPage() {
   const [classesSource,   setClassesSource]   = useState<'live' | 'snapshot' | undefined>()
   const [classesDebug,    setClassesDebug]    = useState<QBDebugInfo | undefined>()
   const [classesLoading,  setClassesLoading]  = useState(false)
-  const [dateRange,       setDateRange]       = useState({ from: yearStartStr(), to: todayStr() })
+  const [dateRange,       setDateRange]       = useState({ from: todayStr(), to: todayStr() })
 
   const [findings,  setFindings]  = useState<Finding[] | null>(null)
   const [aiLoading, setAiLoading] = useState(false)
