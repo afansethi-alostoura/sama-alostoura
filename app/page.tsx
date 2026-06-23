@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import {
   Bot, TrendingUp, AlertCircle, CheckCircle, Clock, RefreshCw, Loader2,
   Building2, Wallet, Calculator, ShoppingCart, Users, Wrench, FileText,
@@ -49,6 +50,7 @@ const QUICK_ACTIONS = [
 ]
 
 export default function CEODashboard() {
+  const router = useRouter()
   const [agents, setAgents] = useState<Record<string, AgentState>>({})
   const [morningBriefing, setMorningBriefing] = useState('')
   const [morningLoading, setMorningLoading] = useState(true)
@@ -363,22 +365,11 @@ export default function CEODashboard() {
                 <p className="text-sm font-semibold text-slate-800 leading-tight">{agent.name}</p>
                 <p className="text-xs text-slate-400 mt-0.5 mb-3 leading-relaxed">{agent.desc}</p>
 
-                {state?.briefing && !state.loading && (
-                  <div className="bg-slate-50 rounded-lg p-2.5 mb-3 max-h-24 overflow-y-auto">
-                    <p className="text-xs text-slate-600 leading-relaxed">{state.briefing}</p>
-                    {state.time && <p className="text-xs text-slate-400 mt-1">{state.time}</p>}
-                  </div>
-                )}
-
                 <button
-                  onClick={() => briefAgent(agent.id)}
-                  disabled={state?.loading}
-                  className="w-full flex items-center justify-center gap-1.5 bg-white border border-slate-200 hover:border-blue-400 hover:bg-blue-50 hover:text-blue-600 text-slate-600 text-xs font-medium py-2 rounded-lg transition-all disabled:opacity-50"
+                  onClick={() => router.push(`/agents/${agent.id}`)}
+                  className="w-full flex items-center justify-center gap-1.5 bg-white border border-slate-200 hover:border-blue-400 hover:bg-blue-50 hover:text-blue-600 text-slate-600 text-xs font-medium py-2 rounded-lg transition-all"
                 >
-                  {state?.loading
-                    ? <><Loader2 className="w-3 h-3 animate-spin" />Analysing...</>
-                    : <><Bot className="w-3 h-3" />Brief Me</>
-                  }
+                  <Bot className="w-3 h-3" />Brief Me
                 </button>
               </div>
             )
