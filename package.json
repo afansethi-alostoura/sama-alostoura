@@ -20,6 +20,7 @@
     "react-dom": "^18",
     "react-markdown": "^10.1.0",
     "recharts": "^3.8.1",
+    "remark-gfm": "^4.0.1",
     "tailwind-merge": "^2.3.0",
     "twilio": "^5.13.1"
   },
