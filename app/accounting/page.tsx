@@ -959,10 +959,31 @@ function AlostouraSection({
   const [expanded,     setExpanded]     = useState(false)
   const [showTxns,     setShowTxns]     = useState(false)
   const [txnPage,      setTxnPage]      = useState(0)
+  const [chartView,    setChartView]    = useState<'daily' | 'monthly'>('daily')
   const PAGE = 50
 
   const pagedTxns = transactions.slice(txnPage * PAGE, (txnPage + 1) * PAGE)
   const totalPages = Math.ceil(transactions.length / PAGE)
+
+  // ── Daily aggregation from raw transactions ──────────────────────────────────
+  const dailyData = (() => {
+    const map: Record<string, { credits: number; debits: number }> = {}
+    for (const tx of transactions) {
+      if (!tx.txnDate) continue
+      if (!map[tx.txnDate]) map[tx.txnDate] = { credits: 0, debits: 0 }
+      if (tx.amount >= 0) map[tx.txnDate].credits += tx.amount
+      else                map[tx.txnDate].debits  += Math.abs(tx.amount)
+    }
+    return Object.entries(map)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, { credits, debits }]) => ({
+        date,
+        label: fmtDate(date),
+        credits: Math.round(credits),
+        debits:  Math.round(debits),
+        net:     Math.round(credits - debits),
+      }))
+  })()
 
   // Grouped bar chart tooltip
   function MonthTooltip({ active, payload, label }: any) {
@@ -1070,25 +1091,58 @@ function AlostouraSection({
             ))}
           </div>
 
-          {/* ── Monthly bar chart ── */}
-          {monthly.length > 0 && (
+          {/* ── Chart view toggle + chart ── */}
+          {(monthly.length > 0 || dailyData.length > 0) && (
             <div className="px-5 pt-5 pb-4 border-b border-slate-100">
-              <p className="text-xs font-semibold text-slate-700 mb-3 flex items-center gap-1.5">
-                <BarChart2 className="w-3.5 h-3.5 text-slate-400" />
-                Monthly Income vs Expenses
-              </p>
+              {/* Toggle */}
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                  <BarChart2 className="w-3.5 h-3.5 text-slate-400" />
+                  {chartView === 'daily' ? 'Daily' : 'Monthly'} Income vs Expenses
+                </p>
+                <div className="flex items-center bg-slate-100 rounded-lg p-0.5">
+                  {(['daily', 'monthly'] as const).map(v => (
+                    <button
+                      key={v}
+                      onClick={() => setChartView(v)}
+                      className={`px-3 py-1 text-xs font-semibold rounded-md transition-all ${
+                        chartView === v
+                          ? 'bg-white text-slate-900 shadow-sm'
+                          : 'text-slate-500 hover:text-slate-700'
+                      }`}
+                    >
+                      {v === 'daily' ? 'Daily' : 'Monthly'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Chart */}
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart
-                  data={monthly.map(m => ({ label: m.label, credits: m.credits, debits: m.debits, net: m.netChange }))}
+                  data={chartView === 'daily'
+                    ? dailyData
+                    : monthly.map(m => ({ label: m.label, credits: m.credits, debits: m.debits, net: m.netChange }))
+                  }
                   margin={{ top: 4, right: 16, left: 0, bottom: 4 }}
                   barGap={2}
                   barCategoryGap="25%"
                 >
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={false}
-                    interval={monthly.length > 12 ? Math.floor(monthly.length / 8) : 0} />
-                  <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={false}
-                    tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(0)}K` : `${v}`} width={44} />
+                  <XAxis
+                    dataKey="label"
+                    tick={{ fontSize: 10, fill: '#94a3b8' }}
+                    tickLine={false}
+                    axisLine={false}
+                    interval={chartView === 'daily'
+                      ? (dailyData.length > 14 ? Math.floor(dailyData.length / 10) : 0)
+                      : (monthly.length > 12 ? Math.floor(monthly.length / 8) : 0)
+                    }
+                  />
+                  <YAxis
+                    tick={{ fontSize: 10, fill: '#94a3b8' }} tickLine={false} axisLine={false}
+                    tickFormatter={(v: number) => v >= 1000 ? `${(v / 1000).toFixed(0)}K` : `${v}`} width={44}
+                  />
                   <Tooltip content={<MonthTooltip />} cursor={{ fill: '#f8fafc' }} />
                   <Legend iconType="square" iconSize={8} wrapperStyle={{ fontSize: 11 }}
                     formatter={(val: string) => val === 'credits' ? 'Money In' : 'Money Out'} />
@@ -1099,8 +1153,46 @@ function AlostouraSection({
             </div>
           )}
 
+          {/* ── Daily summary table ── */}
+          {chartView === 'daily' && dailyData.length > 0 && (
+            <div className="border-b border-slate-100 overflow-x-auto">
+              <table className="w-full text-xs min-w-[560px]">
+                <thead>
+                  <tr className="bg-slate-50 text-left">
+                    <th className="px-5 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wide">Date</th>
+                    <th className="px-4 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wide text-right">Money In</th>
+                    <th className="px-4 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wide text-right">Money Out</th>
+                    <th className="px-5 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wide text-right">Net</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {[...dailyData].reverse().map(d => (
+                    <tr key={d.date} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-5 py-2.5 font-medium text-slate-800 font-mono">{d.label}</td>
+                      <td className="px-4 py-2.5 text-right text-emerald-700 font-semibold">{d.credits > 0 ? aed(d.credits) : '—'}</td>
+                      <td className="px-4 py-2.5 text-right text-red-600   font-semibold">{d.debits  > 0 ? aed(d.debits)  : '—'}</td>
+                      <td className={`px-5 py-2.5 text-right font-bold ${d.net >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                        {d.net >= 0 ? '+' : ''}{aed(d.net)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-indigo-50 border-t-2 border-slate-200">
+                    <td className="px-5 py-2.5 text-xs font-bold text-indigo-700">Total ({dailyData.length} days)</td>
+                    <td className="px-4 py-2.5 text-right font-bold text-emerald-700">{aed(dailyData.reduce((s, d) => s + d.credits, 0))}</td>
+                    <td className="px-4 py-2.5 text-right font-bold text-red-600">{aed(dailyData.reduce((s, d) => s + d.debits, 0))}</td>
+                    <td className={`px-5 py-2.5 text-right font-bold ${dailyData.reduce((s, d) => s + d.net, 0) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                      {aed(dailyData.reduce((s, d) => s + d.net, 0))}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+
           {/* ── Monthly summary table ── */}
-          {monthly.length > 0 && (
+          {chartView === 'monthly' && monthly.length > 0 && (
             <div className="border-b border-slate-100 overflow-x-auto">
               <table className="w-full text-xs min-w-[600px]">
                 <thead>
