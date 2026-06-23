@@ -2,6 +2,8 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import {
   Bot, TrendingUp, AlertCircle, CheckCircle, Clock, RefreshCw, Loader2,
   Building2, Wallet, Calculator, ShoppingCart, Users, Wrench, FileText,
@@ -234,7 +236,37 @@ export default function CEODashboard() {
                   <div className="skeleton h-4 w-4/6 rounded" />
                 </div>
               ) : (
-                <p className="text-sm text-slate-600 leading-relaxed">{morningBriefing}</p>
+                <div className="text-sm text-slate-700 space-y-2 leading-relaxed">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      h1: ({ children }) => <h1 className="text-base font-bold text-slate-900 mt-3 mb-1 border-b border-slate-200 pb-1">{children}</h1>,
+                      h2: ({ children }) => <h2 className="text-sm font-bold text-slate-900 mt-3 mb-1">{children}</h2>,
+                      h3: ({ children }) => <h3 className="text-sm font-semibold text-slate-800 mt-2 mb-0.5">{children}</h3>,
+                      p:  ({ children }) => <p className="text-sm text-slate-700 leading-relaxed mb-1">{children}</p>,
+                      ul: ({ children }) => <ul className="list-disc list-inside space-y-0.5 pl-1 mb-1">{children}</ul>,
+                      ol: ({ children }) => <ol className="list-decimal list-inside space-y-0.5 pl-1 mb-1">{children}</ol>,
+                      li: ({ children }) => <li className="text-sm text-slate-700 leading-relaxed">{children}</li>,
+                      strong: ({ children }) => <strong className="font-semibold text-slate-900">{children}</strong>,
+                      em: ({ children }) => <em className="italic text-slate-600">{children}</em>,
+                      code: ({ children }) => <code className="bg-slate-100 text-slate-800 px-1 py-0.5 rounded text-xs font-mono">{children}</code>,
+                      blockquote: ({ children }) => <blockquote className="border-l-4 border-blue-300 pl-3 py-0.5 bg-blue-50 rounded-r text-slate-600 italic text-xs my-1">{children}</blockquote>,
+                      hr: () => <hr className="border-slate-200 my-2" />,
+                      table: ({ children }) => (
+                        <div className="overflow-x-auto my-2 rounded-lg border border-slate-200">
+                          <table className="w-full text-xs border-collapse">{children}</table>
+                        </div>
+                      ),
+                      thead: ({ children }) => <thead className="bg-slate-100">{children}</thead>,
+                      tbody: ({ children }) => <tbody className="divide-y divide-slate-100">{children}</tbody>,
+                      tr: ({ children }) => <tr className="hover:bg-slate-50">{children}</tr>,
+                      th: ({ children }) => <th className="px-3 py-2 text-left font-semibold text-slate-700 border-b border-slate-200">{children}</th>,
+                      td: ({ children }) => <td className="px-3 py-2 text-slate-600">{children}</td>,
+                    }}
+                  >
+                    {morningBriefing}
+                  </ReactMarkdown>
+                </div>
               )}
             </div>
           </div>
