@@ -336,7 +336,24 @@ CREATE INDEX IF NOT EXISTS idx_pos_status     ON procurement_pos(status);
 CREATE INDEX IF NOT EXISTS idx_del_project    ON procurement_deliveries(project_id);
 CREATE INDEX IF NOT EXISTS idx_del_status     ON procurement_deliveries(status);
 
+-- ── DAILY EXPENSES ──────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS daily_expenses (
+  id              UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  expense_date    DATE        NOT NULL DEFAULT CURRENT_DATE,
+  project_id      UUID        REFERENCES projects(id) ON DELETE SET NULL,
+  project_name    TEXT        NOT NULL DEFAULT '',
+  category        TEXT        NOT NULL DEFAULT '',
+  vendor          TEXT        NOT NULL DEFAULT '',
+  description     TEXT        NOT NULL DEFAULT '',
+  amount          NUMERIC(12,2) NOT NULL DEFAULT 0,
+  payment_method  TEXT        NOT NULL DEFAULT 'cash',
+  created_at      TIMESTAMPTZ DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ── INDEXES ─────────────────────────────────────────────────
+CREATE INDEX IF NOT EXISTS idx_daily_expenses_date    ON daily_expenses(expense_date);
+CREATE INDEX IF NOT EXISTS idx_daily_expenses_project ON daily_expenses(project_id);
 CREATE INDEX IF NOT EXISTS idx_projects_status       ON projects(status);
 CREATE INDEX IF NOT EXISTS idx_projects_client        ON projects(client_id);
 CREATE INDEX IF NOT EXISTS idx_payment_project        ON payment_schedule(project_id);
