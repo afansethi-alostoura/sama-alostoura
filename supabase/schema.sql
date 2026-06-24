@@ -336,24 +336,7 @@ CREATE INDEX IF NOT EXISTS idx_pos_status     ON procurement_pos(status);
 CREATE INDEX IF NOT EXISTS idx_del_project    ON procurement_deliveries(project_id);
 CREATE INDEX IF NOT EXISTS idx_del_status     ON procurement_deliveries(status);
 
--- ── SITE LABOUR EXPENSES ────────────────────────────────────
-CREATE TABLE IF NOT EXISTS site_labour (
-  id              UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
-  expense_date    DATE          NOT NULL DEFAULT CURRENT_DATE,
-  project_id      UUID          REFERENCES projects(id) ON DELETE SET NULL,
-  project_name    TEXT          NOT NULL DEFAULT '',
-  trade           TEXT          NOT NULL DEFAULT '',
-  worker_count    INTEGER       NOT NULL DEFAULT 1,
-  daily_rate      NUMERIC(10,2) NOT NULL DEFAULT 0,
-  total_amount    NUMERIC(12,2) NOT NULL DEFAULT 0,
-  payment_method  TEXT          NOT NULL DEFAULT 'cash',
-  notes           TEXT          NOT NULL DEFAULT '',
-  created_at      TIMESTAMPTZ   DEFAULT NOW()
-);
-
 -- ── INDEXES ─────────────────────────────────────────────────
-CREATE INDEX IF NOT EXISTS idx_site_labour_date    ON site_labour(expense_date);
-CREATE INDEX IF NOT EXISTS idx_site_labour_project ON site_labour(project_id);
 CREATE INDEX IF NOT EXISTS idx_projects_status       ON projects(status);
 CREATE INDEX IF NOT EXISTS idx_projects_client        ON projects(client_id);
 CREATE INDEX IF NOT EXISTS idx_payment_project        ON payment_schedule(project_id);
