@@ -577,9 +577,10 @@ export default function ProjectPage() {
               {[
                 { label: 'Project Name',    key: 'name',           type: 'text'   },
                 { label: 'Client Name',     key: 'client_name',    type: 'text'   },
-                { label: 'Location',        key: 'location',       type: 'text'   },
-                { label: 'Contract Value',  key: 'contract_value', type: 'number' },
-                { label: 'Start Date',      key: 'start_date',     type: 'date'   },
+                { label: 'Location',        key: 'location',         type: 'text'   },
+                { label: 'Contract Value',  key: 'contract_value',   type: 'number' },
+                { label: 'Amount Received', key: 'received_amount',  type: 'number' },
+                { label: 'Start Date',      key: 'start_date',       type: 'date'   },
                 { label: 'Expected Completion', key: 'expected_completion', type: 'date' },
               ].map(({ label, key, type }) => (
                 <div key={key}>
