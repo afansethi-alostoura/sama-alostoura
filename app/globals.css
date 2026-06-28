@@ -178,12 +178,13 @@ body {
   thead { display: table-header-group; }
   tfoot { display: table-footer-group; }
 
-  /* Each BOQ section stays together — no orphan section headers */
+  /* Let sections flow continuously — no forced gaps at page bottoms */
   tbody.section-group {
-    page-break-inside: avoid;
-    break-inside: avoid;
+    page-break-inside: auto;
+    break-inside: auto;
   }
 
+  /* Only prevent individual rows from splitting mid-row */
   tr {
     page-break-inside: avoid;
     break-inside: avoid;
