@@ -385,7 +385,7 @@ function CompanyBOQInner() {
                   <th className="px-3 py-2.5 text-center border border-slate-600 w-24">RATE</th>
                   <th className="px-3 py-2.5 text-right border border-slate-600 w-28">SUB TOTAL</th>
                   <th className="px-3 py-2.5 text-right border border-slate-600 w-28">TOTAL</th>
-                  <th className="px-3 py-2.5 text-left border border-slate-600 print:hidden">REMARKS</th>
+                  <th className="px-3 py-2.5 text-left border border-slate-600 remarks-col-header"><span>REMARKS</span></th>
                 </tr>
               </thead>
               {sections.map(([sectionNo, { name, items: si }]) => {
@@ -395,7 +395,7 @@ function CompanyBOQInner() {
                     <tr className="bg-blue-50 border-t-2 border-blue-200">
                       <td className="px-3 py-2 font-bold text-blue-800 border border-blue-200">{sectionNo}</td>
                       <td colSpan={7} className="px-3 py-2 font-bold text-blue-800 uppercase tracking-wide border border-blue-200">{name}</td>
-                      <td className="border border-blue-200 print:hidden" />
+                      <td className="border border-blue-200" />
                     </tr>
                     {si.map((item, idx) => {
                       const subTotal = item.qty * item.rate
@@ -413,7 +413,7 @@ function CompanyBOQInner() {
                           </td>
                           <td className="px-3 py-1.5 border border-slate-100 text-right font-medium text-slate-700">{fmt(subTotal)}</td>
                           <td className="px-3 py-1.5 border border-slate-100 text-right font-bold text-slate-900">{idx === 0 && sectionTotal > 0 ? fmt(sectionTotal) : ''}</td>
-                          <td className="px-1 py-1 border border-slate-100 print:hidden">
+                          <td className="px-1 py-1 border border-slate-100">
                             <input type="text" value={item.remarks} placeholder="Notes…" onChange={e => updateItem(item.item_code, 'remarks', e.target.value)} className="w-full text-xs bg-transparent outline-none placeholder:text-slate-300" />
                           </td>
                         </tr>
@@ -422,7 +422,7 @@ function CompanyBOQInner() {
                     <tr className="bg-slate-100">
                       <td colSpan={7} className="px-3 py-1.5 text-right text-xs font-semibold text-slate-600 border border-slate-200">{name} — SECTION TOTAL</td>
                       <td className="px-3 py-1.5 text-right font-bold text-slate-900 border border-slate-200">{fmt(sectionTotal)}</td>
-                      <td className="px-3 py-1.5 border border-slate-200 print:hidden" />
+                      <td className="px-3 py-1.5 border border-slate-200" />
                     </tr>
                   </tbody>
                 )

@@ -86,7 +86,7 @@ body {
 @media print {
 
   @page {
-    size: A4 portrait;
+    size: A4 landscape;
     margin: 6mm 10mm;
   }
 
@@ -149,6 +149,27 @@ body {
     page-break-inside: avoid;
     break-inside: avoid;
     word-break: break-word;
+  }
+
+  /* REMARKS column header — angled/slanted shape:
+     cell is compact-width with bottom-aligned rotated text */
+  .remarks-col-header {
+    width: 42px !important;
+    max-width: 42px !important;
+    padding: 34px 2px 3px 2px !important;
+    vertical-align: bottom !important;
+    overflow: visible !important;
+    text-align: left !important;
+  }
+  .remarks-col-header > span {
+    display: inline-block;
+    transform: rotate(-45deg);
+    transform-origin: 0% 100%;
+    white-space: nowrap;
+    font-size: 7.5px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.3px;
+    margin-left: 10px;
   }
 
   /* ── PAGE BREAK CONTROLS ──────────────────────────────────────────────── */
