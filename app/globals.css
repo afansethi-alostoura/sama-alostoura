@@ -220,4 +220,10 @@ body {
     text-overflow: clip !important;
     white-space: nowrap !important;
   }
+
+  /* Hide placeholder text — only real values should print */
+  input::placeholder,
+  textarea::placeholder {
+    color: transparent !important;
+  }
 }
