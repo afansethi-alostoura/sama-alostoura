@@ -314,14 +314,14 @@ function CompanyBOQInner() {
         </div>
       </div>
 
-      <div className="max-w-[1200px] mx-auto p-4 sm:p-6">
+      <div className="max-w-[1200px] mx-auto p-4 sm:p-6 print:p-0 print:max-w-none">
         {/* Header */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-6">
-          <div className="text-center mb-5">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-6 print:p-2 print:mb-1">
+          <div className="text-center mb-5 print:mb-1">
             <h1 className="text-xl font-bold text-slate-900 uppercase tracking-wide">SAMA ALOSTOURA BUILDING CONTRACTING L.L.C</h1>
             <h2 className="text-base font-semibold text-slate-600 mt-1">Bill of Quantities</h2>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 print:gap-y-0.5">
             {([
               { label: 'PROJECT NUMBER', field: 'project_number' as const, placeholder: 'e.g. 036' },
               { label: 'PROJECT',        field: 'project_name'   as const, placeholder: 'e.g. PROPOSED G + 1 + R VILLA' },
@@ -329,7 +329,7 @@ function CompanyBOQInner() {
               { label: 'OWNER',          field: 'owner'          as const, placeholder: 'Owner full name' },
               { label: 'CONTRACTOR',     field: 'contractor'     as const, placeholder: 'Contractor name' },
             ] as const).map(({ label, field, placeholder }) => (
-              <div key={field} className="flex items-center gap-2 border-b border-slate-100 pb-2">
+              <div key={field} className="flex items-center gap-2 border-b border-slate-100 pb-2 print:pb-0">
                 <span className="text-xs font-bold text-slate-500 w-32 flex-shrink-0">{label}:</span>
                 <input className="flex-1 text-sm text-slate-900 font-medium bg-transparent outline-none placeholder:text-slate-300" value={header[field]} onChange={e => { setHeader(h => ({ ...h, [field]: e.target.value })); setSaved(false) }} placeholder={placeholder} />
               </div>
@@ -429,15 +429,15 @@ function CompanyBOQInner() {
               })}
             </table>
           </div>
-          <div className="border-t-2 border-slate-800 bg-slate-800 text-white px-5 py-3 flex justify-between items-center">
+          <div className="border-t-2 border-slate-800 bg-slate-800 text-white px-5 py-3 flex justify-between items-center print:py-1 print:px-2">
             <span className="font-bold text-sm tracking-wide">GRAND TOTAL</span>
-            <span className="text-xl font-bold">AED {grandTotal.toLocaleString('en-AE', { minimumFractionDigits: 2 })}</span>
+            <span className="text-xl font-bold print:text-sm">AED {grandTotal.toLocaleString('en-AE', { minimumFractionDigits: 2 })}</span>
           </div>
         </div>
 
         {/* Summary Schedule */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mt-6">
-          <div className="bg-slate-800 text-white px-5 py-2.5"><h3 className="font-bold text-sm tracking-wide">SUMMARY SCHEDULE</h3></div>
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mt-6 print:mt-1">
+          <div className="bg-slate-800 text-white px-5 py-2.5 print:py-1 print:px-2"><h3 className="font-bold text-sm tracking-wide">SUMMARY SCHEDULE</h3></div>
           <table className="w-full text-sm border-collapse">
             <thead><tr className="bg-slate-100"><th className="px-4 py-2 text-left border border-slate-200 w-10">N</th><th className="px-4 py-2 text-left border border-slate-200">DESCRIPTION</th><th className="px-4 py-2 text-right border border-slate-200 w-40">TOTAL AMOUNT (AED)</th></tr></thead>
             <tbody>
@@ -451,10 +451,10 @@ function CompanyBOQInner() {
         </div>
 
         {/* Signatures */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mt-6">
-          <div className="grid grid-cols-2 gap-12 mt-8">
-            <div className="text-center"><div className="border-t border-slate-400 pt-2 mt-8"><p className="text-sm font-semibold text-slate-700">OWNER</p><p className="text-xs text-slate-400 mt-0.5">{header.owner || '___________________________'}</p></div></div>
-            <div className="text-center"><div className="border-t border-slate-400 pt-2 mt-8"><p className="text-sm font-semibold text-slate-700">CONTRACTOR</p><p className="text-xs text-slate-400 mt-0.5">{header.contractor}</p></div></div>
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mt-6 print:p-2 print:mt-1">
+          <div className="grid grid-cols-2 gap-12 mt-8 print:mt-2 print:gap-6">
+            <div className="text-center"><div className="border-t border-slate-400 pt-2 mt-8 print:mt-3"><p className="text-sm font-semibold text-slate-700">OWNER</p><p className="text-xs text-slate-400 mt-0.5">{header.owner || '___________________________'}</p></div></div>
+            <div className="text-center"><div className="border-t border-slate-400 pt-2 mt-8 print:mt-3"><p className="text-sm font-semibold text-slate-700">CONTRACTOR</p><p className="text-xs text-slate-400 mt-0.5">{header.contractor}</p></div></div>
           </div>
         </div>
       </div>
