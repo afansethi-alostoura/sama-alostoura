@@ -151,11 +151,10 @@ body {
     word-break: break-word;
   }
 
-  /* REMARKS column header — angled/slanted shape:
-     cell is compact-width with bottom-aligned rotated text */
+  /* REMARKS column header — angled/slanted shape */
   .remarks-col-header {
-    width: 42px !important;
-    max-width: 42px !important;
+    width: 100px !important;
+    max-width: 100px !important;
     padding: 34px 2px 3px 2px !important;
     vertical-align: bottom !important;
     overflow: visible !important;
@@ -206,7 +205,7 @@ body {
     overflow: visible !important;
   }
 
-  /* Input fields — render as plain text, never clip */
+  /* Input fields — render as plain text */
   input[type="number"],
   input[type="text"],
   textarea {
@@ -217,8 +216,17 @@ body {
     -webkit-appearance: none;
     appearance: none;
     overflow: visible !important;
-    text-overflow: clip !important;
+  }
+
+  /* Numbers stay on one line; remarks text wraps fully */
+  input[type="number"] {
     white-space: nowrap !important;
+    text-overflow: clip !important;
+  }
+  input[type="text"] {
+    white-space: normal !important;
+    word-break: break-word !important;
+    overflow-wrap: break-word !important;
   }
 
   /* Hide placeholder text — only real values should print */
