@@ -338,7 +338,7 @@ function CompanyBOQInner() {
         </div>
 
         {/* Project Link */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-6">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-6 print:hidden">
           <div className="flex items-center gap-2 mb-4">
             <Link2 className="w-4 h-4 text-brand-500" />
             <h3 className="font-semibold text-slate-900 text-sm">Link to Project</h3>
@@ -388,54 +388,45 @@ function CompanyBOQInner() {
                   <th className="px-3 py-2.5 text-left border border-slate-600 print:hidden">REMARKS</th>
                 </tr>
               </thead>
-              <tbody>
-                {sections.map(([sectionNo, { name, items: si }]) => {
-                  const sectionTotal = si.reduce((s, it) => s + it.qty * it.rate, 0)
-                  return (
-                    <tr key={`g-${sectionNo}`} className="contents">
-                      {/* section header */}
-                      {(() => {
-                        const rows = [
-                          <tr key={`sh-${sectionNo}`} className="bg-blue-50 border-t-2 border-blue-200">
-                            <td className="px-3 py-2 font-bold text-blue-800 border border-blue-200">{sectionNo}</td>
-                            <td colSpan={7} className="px-3 py-2 font-bold text-blue-800 uppercase tracking-wide border border-blue-200">{name}</td>
-                            <td className="border border-blue-200 print:hidden" />
-                          </tr>,
-                          ...si.map((item, idx) => {
-                            const subTotal = item.qty * item.rate
-                            return (
-                              <tr key={item.item_code} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
-                                <td className="px-3 py-1.5 border border-slate-100 text-slate-300" />
-                                <td className="px-3 py-1.5 border border-slate-100 font-mono text-xs text-slate-500">{item.item_code}</td>
-                                <td className="px-3 py-1.5 border border-slate-100 text-slate-800">{item.description}</td>
-                                <td className="px-3 py-1.5 border border-slate-100 text-center font-mono text-xs text-slate-500">{item.unit}</td>
-                                <td className="px-1 py-1 border border-slate-100">
-                                  <input type="number" min="0" step="any" value={item.qty || ''} placeholder="0" onChange={e => updateItem(item.item_code, 'qty', e.target.value)} className="w-full text-center text-sm font-medium bg-blue-50/60 border border-blue-100 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400 print:bg-transparent print:border-0" />
-                                </td>
-                                <td className="px-1 py-1 border border-slate-100">
-                                  <input type="number" min="0" step="any" value={item.rate || ''} placeholder="0" onChange={e => updateItem(item.item_code, 'rate', e.target.value)} className="w-full text-center text-sm font-medium bg-blue-50/60 border border-blue-100 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400 print:bg-transparent print:border-0" />
-                                </td>
-                                <td className="px-3 py-1.5 border border-slate-100 text-right font-medium text-slate-700">{fmt(subTotal)}</td>
-                                <td className="px-3 py-1.5 border border-slate-100 text-right font-bold text-slate-900">{idx === 0 && sectionTotal > 0 ? fmt(sectionTotal) : ''}</td>
-                                <td className="px-1 py-1 border border-slate-100 print:hidden">
-                                  <input type="text" value={item.remarks} placeholder="Notes…" onChange={e => updateItem(item.item_code, 'remarks', e.target.value)} className="w-full text-xs bg-transparent outline-none placeholder:text-slate-300" />
-                                </td>
-                              </tr>
-                            )
-                          }),
-                          <tr key={`st-${sectionNo}`} className="bg-slate-100">
-                            <td colSpan={6} className="px-3 py-1.5 text-right text-xs font-semibold text-slate-600 border border-slate-200">{name} — SECTION TOTAL</td>
-                            <td className="px-3 py-1.5 text-right font-bold text-slate-900 border border-slate-200">{fmt(sectionTotal)}</td>
-                            <td className="px-3 py-1.5 border border-slate-200" />
-                            <td className="px-3 py-1.5 border border-slate-200 print:hidden" />
-                          </tr>,
-                        ]
-                        return rows
-                      })()}
+              {sections.map(([sectionNo, { name, items: si }]) => {
+                const sectionTotal = si.reduce((s, it) => s + it.qty * it.rate, 0)
+                return (
+                  <tbody key={`g-${sectionNo}`} className="section-group">
+                    <tr className="bg-blue-50 border-t-2 border-blue-200">
+                      <td className="px-3 py-2 font-bold text-blue-800 border border-blue-200">{sectionNo}</td>
+                      <td colSpan={7} className="px-3 py-2 font-bold text-blue-800 uppercase tracking-wide border border-blue-200">{name}</td>
+                      <td className="border border-blue-200 print:hidden" />
                     </tr>
-                  )
-                })}
-              </tbody>
+                    {si.map((item, idx) => {
+                      const subTotal = item.qty * item.rate
+                      return (
+                        <tr key={item.item_code} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                          <td className="px-3 py-1.5 border border-slate-100 text-slate-300" />
+                          <td className="px-3 py-1.5 border border-slate-100 font-mono text-xs text-slate-500">{item.item_code}</td>
+                          <td className="px-3 py-1.5 border border-slate-100 text-slate-800">{item.description}</td>
+                          <td className="px-3 py-1.5 border border-slate-100 text-center font-mono text-xs text-slate-500">{item.unit}</td>
+                          <td className="px-1 py-1 border border-slate-100">
+                            <input type="number" min="0" step="any" value={item.qty || ''} placeholder="0" onChange={e => updateItem(item.item_code, 'qty', e.target.value)} className="w-full text-center text-sm font-medium bg-blue-50/60 border border-blue-100 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400 print:bg-transparent print:border-0" />
+                          </td>
+                          <td className="px-1 py-1 border border-slate-100">
+                            <input type="number" min="0" step="any" value={item.rate || ''} placeholder="0" onChange={e => updateItem(item.item_code, 'rate', e.target.value)} className="w-full text-center text-sm font-medium bg-blue-50/60 border border-blue-100 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400 print:bg-transparent print:border-0" />
+                          </td>
+                          <td className="px-3 py-1.5 border border-slate-100 text-right font-medium text-slate-700">{fmt(subTotal)}</td>
+                          <td className="px-3 py-1.5 border border-slate-100 text-right font-bold text-slate-900">{idx === 0 && sectionTotal > 0 ? fmt(sectionTotal) : ''}</td>
+                          <td className="px-1 py-1 border border-slate-100 print:hidden">
+                            <input type="text" value={item.remarks} placeholder="Notes…" onChange={e => updateItem(item.item_code, 'remarks', e.target.value)} className="w-full text-xs bg-transparent outline-none placeholder:text-slate-300" />
+                          </td>
+                        </tr>
+                      )
+                    })}
+                    <tr className="bg-slate-100">
+                      <td colSpan={7} className="px-3 py-1.5 text-right text-xs font-semibold text-slate-600 border border-slate-200">{name} — SECTION TOTAL</td>
+                      <td className="px-3 py-1.5 text-right font-bold text-slate-900 border border-slate-200">{fmt(sectionTotal)}</td>
+                      <td className="px-3 py-1.5 border border-slate-200 print:hidden" />
+                    </tr>
+                  </tbody>
+                )
+              })}
             </table>
           </div>
           <div className="border-t-2 border-slate-800 bg-slate-800 text-white px-5 py-3 flex justify-between items-center">

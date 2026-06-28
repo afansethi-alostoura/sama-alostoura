@@ -84,13 +84,13 @@ body {
    ─────────────────────────────────────────────────────────────────────────── */
 @media print {
 
-  /* Page setup — A4 with 15mm margins */
+  /* 6mm margin: too small for Chrome to render its URL/date header+footer,
+     but gives consistent spacing on every page of a multi-page doc. */
   @page {
     size: A4 portrait;
-    margin: 15mm 12mm 15mm 12mm;
+    margin: 6mm 11mm;
   }
 
-  /* Reset background colours */
   * {
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
@@ -126,8 +126,9 @@ body {
     padding-right: 0 !important;
   }
 
-  /* Tables — prevent individual rows being cut across pages */
+  /* FIX missing columns: remove min-width so table fits within A4 body padding */
   table {
+    min-width: 0 !important;
     width: 100% !important;
     border-collapse: collapse !important;
     page-break-inside: auto;
@@ -148,10 +149,10 @@ body {
     display: table-footer-group;
   }
 
-  /* Section headers — keep with the first row below them */
-  tr.section-header,
-  tr[data-section] {
-    page-break-after: avoid;
+  /* Keep each BOQ section (header + items + total) together — no orphan rows */
+  tbody.section-group {
+    page-break-inside: avoid;
+    break-inside: avoid;
   }
 
   /* Prevent a section title from appearing alone at bottom of page */
@@ -180,7 +181,7 @@ body {
     position: static !important;
   }
 
-  /* Input fields in BOQ — show as plain text */
+  /* Input fields in BOQ — show as plain text, never clip content */
   input[type="number"],
   input[type="text"],
   textarea {
@@ -190,6 +191,9 @@ body {
     padding: 0 !important;
     -webkit-appearance: none;
     appearance: none;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    white-space: nowrap !important;
   }
 
   /* Remove scrollbars */
