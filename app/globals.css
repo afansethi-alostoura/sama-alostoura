@@ -77,3 +77,134 @@ body {
 .progress-bar {
   animation: progress-fill 1s ease-out forwards;
 }
+
+/* ── PRINT STYLES ────────────────────────────────────────────────────────────
+   Clean A4 document output for BOQ / estimation pages.
+   Hides sidebar, header, and all interactive chrome.
+   ─────────────────────────────────────────────────────────────────────────── */
+@media print {
+
+  /* Page setup — A4 with 15mm margins */
+  @page {
+    size: A4 portrait;
+    margin: 15mm 12mm 15mm 12mm;
+  }
+
+  /* Reset background colours */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  body {
+    background: white !important;
+    font-size: 11px !important;
+  }
+
+  /* Hide sidebar, header, and navigation entirely */
+  aside,
+  header,
+  nav,
+  [data-sidebar],
+  .sidebar-transition {
+    display: none !important;
+  }
+
+  /* Remove the sidebar offset from main — take full page width */
+  main {
+    margin-left: 0 !important;
+    padding-top: 0 !important;
+    width: 100% !important;
+    min-height: unset !important;
+  }
+
+  /* Remove outer padding so table uses full page width */
+  .print\:p-0,
+  main > div {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+
+  /* Tables — prevent individual rows being cut across pages */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    page-break-inside: auto;
+    font-size: 10px !important;
+  }
+
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+
+  /* Repeat table headers on every printed page */
+  thead {
+    display: table-header-group;
+  }
+
+  tfoot {
+    display: table-footer-group;
+  }
+
+  /* Section headers — keep with the first row below them */
+  tr.section-header,
+  tr[data-section] {
+    page-break-after: avoid;
+  }
+
+  /* Prevent a section title from appearing alone at bottom of page */
+  h1, h2, h3, h4 {
+    page-break-after: avoid;
+  }
+
+  /* Force page break before each BOQ section if needed */
+  .print-page-break {
+    page-break-before: always;
+  }
+
+  /* Avoid breaking inside cells */
+  td, th {
+    page-break-inside: avoid;
+  }
+
+  /* Remove box shadows and rounded corners for cleaner print */
+  * {
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+
+  /* Remove sticky positioning so header rows scroll naturally */
+  .sticky {
+    position: static !important;
+  }
+
+  /* Input fields in BOQ — show as plain text */
+  input[type="number"],
+  input[type="text"],
+  textarea {
+    border: none !important;
+    background: transparent !important;
+    outline: none !important;
+    padding: 0 !important;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  /* Remove scrollbars */
+  ::-webkit-scrollbar { display: none !important; }
+
+  /* Ensure overflow visible so nothing is clipped */
+  .overflow-x-auto,
+  .overflow-y-auto,
+  .overflow-auto {
+    overflow: visible !important;
+  }
+
+  /* Animations off */
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
