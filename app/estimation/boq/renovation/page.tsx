@@ -218,7 +218,7 @@ function RenovationBOQInner() {
           contractor:     data.contractor      ?? 'SAMA ALOSTOURA BUILDING CONTRACTING L.L.C',
         })
         const stored = data.sections
-        if (stored?.columns) {
+        if (stored && !Array.isArray(stored) && stored.columns) {
           setTable({
             columns: stored.columns,
             rows:    (stored.rows || []).map((r: BOQRow) => ({ ...r, id: r.id || uid() })),
@@ -294,7 +294,7 @@ function RenovationBOQInner() {
 
   // ── Save ──────────────────────────────────────────────────────────────────────
   async function handleSave() {
-    if (!header.project_name.trim() && !header.owner.trim()) {
+    if (!header.project_name.trim()) {
       alert('Please enter a project name.')
       return
     }
@@ -328,6 +328,14 @@ function RenovationBOQInner() {
           const data = await res.json()
           savedId = data.id
           setBoqDbId(data.id)
+          // Immediately sync table state from the POST response so state survives
+          // the useEffect re-fetch triggered by boqId changing after router.replace
+          if (data.sections && !Array.isArray(data.sections) && data.sections.columns) {
+            setTable({
+              columns: data.sections.columns,
+              rows:    (data.sections.rows || []).map((r: BOQRow) => ({ ...r, id: r.id || uid() })),
+            })
+          }
           router.replace(`/estimation/boq/renovation?id=${data.id}`, { scroll: false })
         }
       }
