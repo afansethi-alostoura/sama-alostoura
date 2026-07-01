@@ -194,40 +194,31 @@ export async function POST(req: NextRequest) {
       }
 
       // ── Call Claude ──────────────────────────────────────────────────────────
-      // Prefill the assistant turn with `{"results":[` to force raw JSON output
-      // and prevent Claude from wrapping the response in markdown fences.
       const msg = await anthropic.messages.create({
         model:      'claude-sonnet-4-6',
         max_tokens: 16000,
         system:     SYSTEM_PROMPT,
-        messages: [
-          { role: 'user',      content: userContent as any },
-          { role: 'assistant', content: '{"results":[' },
-        ],
+        messages:   [{ role: 'user', content: userContent as any }],
       })
 
       const rawText = ((msg.content ?? []).find((b: any) => b.type === 'text') as any)?.text as string ?? ''
 
-      // Claude continues from the prefill, so we reconstruct the full JSON
-      const fullJson = '{"results":[' + rawText
+      // Strip markdown fences if Claude wrapped the JSON (```json ... ``` or ``` ... ```)
+      const stripped = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
 
-      // Strip any trailing markdown fence or stray text after the last `}`
-      const stripped = fullJson.slice(0, fullJson.lastIndexOf('}') + 1)
+      // Extract the outermost JSON object
+      const start = stripped.indexOf('{')
+      const end   = stripped.lastIndexOf('}')
+      if (start === -1 || end === -1) {
+        throw new Error('Claude did not return a valid reconciliation. Please try again.')
+      }
+      const jsonStr = stripped.slice(start, end + 1)
 
       let parsed: { results: MatchResult[] }
       try {
-        parsed = JSON.parse(stripped)
+        parsed = JSON.parse(jsonStr)
       } catch {
-        // Fallback: try to extract the JSON object if reconstruction failed
-        const jsonMatch = fullJson.match(/\{[\s\S]*\}/)
-        if (!jsonMatch) {
-          throw new Error('Claude did not return a valid reconciliation. Please try again.')
-        }
-        try {
-          parsed = JSON.parse(jsonMatch[0])
-        } catch {
-          throw new Error('Claude returned malformed JSON. Please try again.')
-        }
+        throw new Error('Claude returned malformed JSON. Please try again.')
       }
 
       const results = parsed.results ?? []
