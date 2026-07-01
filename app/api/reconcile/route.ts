@@ -10,7 +10,7 @@
 import { NextRequest, NextResponse }          from 'next/server'
 import { fetchGLReport, parseGLReport }       from '@/lib/quickbooks/client'
 import { loadTokensAsync }                    from '@/lib/quickbooks/tokens'
-import Anthropic                              from '@anthropic-ai/sdk'
+import { anthropic }                          from '@/lib/anthropic'
 
 export const dynamic    = 'force-dynamic'
 export const maxDuration = 60
@@ -149,12 +149,7 @@ async function parseXLSX(buffer: ArrayBuffer): Promise<NormalizedTxn[]> {
 async function parsePDF(buffer: ArrayBuffer): Promise<NormalizedTxn[]> {
   const base64 = Buffer.from(buffer).toString('base64')
 
-  const pdfClient = new Anthropic({
-    apiKey:         process.env.SAMA_AI_KEY || '',
-    defaultHeaders: { 'anthropic-beta': 'pdfs-2024-09-25' },
-  })
-
-  const msg = await pdfClient.messages.create({
+  const msg = await anthropic.messages.create({
     model:      'claude-sonnet-4-6',
     max_tokens: 4096,
     messages: [{
