@@ -7,8 +7,9 @@ import {
 import {
   TrendingUp, TrendingDown, DollarSign, AlertCircle,
   Loader2, RefreshCw, X, ChevronRight, ChevronDown, Calendar,
-  BarChart2, ArrowUpRight, ArrowDownRight, Minus,
+  BarChart2, ArrowUpRight, ArrowDownRight, Minus, SlidersHorizontal,
 } from 'lucide-react'
+import ReconcileModal from './ReconcileModal'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -67,6 +68,7 @@ export default function CompanyFinancialsPage() {
   const [expandedCat,  setExpandedCat]  = useState<string | null>(null)
   const [dateRange,    setDateRange]    = useState<'ytd' | '3m' | '6m' | '12m' | 'all'>('ytd')
   const [refreshing,   setRefreshing]   = useState(false)
+  const [reconciling,  setReconciling]  = useState(false)
 
   function dateParams(range: typeof dateRange) {
     const now   = new Date()
@@ -223,8 +225,17 @@ export default function CompanyFinancialsPage() {
             <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
             Refresh
           </button>
+          <button
+            onClick={() => setReconciling(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+          >
+            <SlidersHorizontal className="w-3.5 h-3.5" />
+            Reconcile
+          </button>
         </div>
       </div>
+
+      {reconciling && <ReconcileModal onClose={() => setReconciling(false)} />}
 
       {/* ── KPI Cards ────────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
