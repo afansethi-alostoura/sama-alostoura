@@ -310,6 +310,7 @@ function matchTransactions(
 // ── Route handler ──────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
+  try {
   const tokens = await loadTokensAsync()
   if (!tokens) {
     return NextResponse.json({ error: 'QuickBooks not connected' }, { status: 401 })
@@ -400,7 +401,12 @@ export async function POST(req: NextRequest) {
     })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Reconciliation failed'
-    console.error('[Reconcile]', msg)
+    console.error('[Reconcile] inner:', msg)
+    return NextResponse.json({ error: msg }, { status: 500 })
+  }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'Unexpected server error'
+    console.error('[Reconcile] outer:', msg)
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 }

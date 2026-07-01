@@ -148,13 +148,24 @@ export default function ReconcileModal({ onClose }: { onClose: () => void }) {
   const [runError,  setRunError]  = useState('')
   const [activeTab, setActiveTab] = useState<typeof TABS[0]['key']>('issues')
 
+  // ── Safe JSON helper ──────────────────────────────────────────────────────
+
+  async function safeJson(res: Response): Promise<any> {
+    const ct = res.headers.get('content-type') ?? ''
+    if (!ct.includes('json')) {
+      const text = await res.text()
+      throw new Error(text.replace(/<[^>]*>/g, '').trim().slice(0, 300) || `Server error (${res.status})`)
+    }
+    return res.json()
+  }
+
   // ── Load QB bank accounts ─────────────────────────────────────────────────
 
   async function loadAccounts() {
     setAccLoading(true); setAccError('')
     try {
       const res  = await fetch('/api/reconcile/accounts')
-      const data = await res.json()
+      const data = await safeJson(res)
       if (!res.ok) throw new Error(data.error ?? 'Failed')
       setAccounts(data.accounts)
       if (data.accounts.length === 1) setSelectedAcc(data.accounts[0])
@@ -207,7 +218,7 @@ export default function ReconcileModal({ onClose }: { onClose: () => void }) {
       fd.append('file', file)
 
       const res  = await fetch('/api/reconcile', { method: 'POST', body: fd })
-      const data = await res.json()
+      const data = await safeJson(res)
       if (!res.ok) throw new Error(data.error ?? 'Reconciliation failed')
       setResult(data)
       setActiveTab('issues')
