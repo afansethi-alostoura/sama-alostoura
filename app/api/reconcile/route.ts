@@ -10,7 +10,7 @@
 import { NextRequest, NextResponse }          from 'next/server'
 import { fetchGLReport, parseGLReport }       from '@/lib/quickbooks/client'
 import { loadTokensAsync }                    from '@/lib/quickbooks/tokens'
-import { anthropic }                          from '@/lib/anthropic'
+import Anthropic                              from '@anthropic-ai/sdk'
 
 export const dynamic    = 'force-dynamic'
 export const maxDuration = 60
@@ -149,17 +149,21 @@ async function parseXLSX(buffer: ArrayBuffer): Promise<NormalizedTxn[]> {
 async function parsePDF(buffer: ArrayBuffer): Promise<NormalizedTxn[]> {
   const base64 = Buffer.from(buffer).toString('base64')
 
-  const msg = await (anthropic as any).messages.create({
+  const pdfClient = new Anthropic({
+    apiKey:         process.env.SAMA_AI_KEY || '',
+    defaultHeaders: { 'anthropic-beta': 'pdfs-2024-09-25' },
+  })
+
+  const msg = await pdfClient.messages.create({
     model:      'claude-sonnet-4-6',
     max_tokens: 4096,
-    betas:      ['pdfs-2024-09-25'],
     messages: [{
       role:    'user',
       content: [
         {
           type:   'document',
           source: { type: 'base64', media_type: 'application/pdf', data: base64 },
-        },
+        } as any,
         {
           type: 'text',
           text: `Extract every bank transaction from this statement.
@@ -178,7 +182,7 @@ Rules:
     }],
   })
 
-  const text  = (msg.content ?? []).find((b: any) => b.type === 'text')?.text ?? ''
+  const text  = ((msg.content ?? []).find((b: any) => b.type === 'text') as any)?.text as string ?? ''
   const match = text.match(/\[[\s\S]*?\]/)
   if (!match) return []
 
