@@ -149,14 +149,17 @@ export default function ReconcileModal({ onClose }: { onClose: () => void }) {
   const [activeTab, setActiveTab] = useState<typeof TABS[0]['key']>('issues')
 
   // ── Safe JSON helper ──────────────────────────────────────────────────────
+  // Always reads as text first, then parses. Avoids the "Unexpected token"
+  // crash when a server returns Content-Type: json with a non-JSON body.
 
   async function safeJson(res: Response): Promise<any> {
-    const ct = res.headers.get('content-type') ?? ''
-    if (!ct.includes('json')) {
-      const text = await res.text()
-      throw new Error(text.replace(/<[^>]*>/g, '').trim().slice(0, 300) || `Server error (${res.status})`)
+    const text = await res.text()
+    try {
+      return JSON.parse(text)
+    } catch {
+      const clean = text.replace(/<[^>]*>/g, '').trim().slice(0, 300)
+      throw new Error(clean || `Server error (${res.status})`)
     }
-    return res.json()
   }
 
   // ── Load QB bank accounts ─────────────────────────────────────────────────
@@ -210,12 +213,29 @@ export default function ReconcileModal({ onClose }: { onClose: () => void }) {
     const tick = setInterval(() => { si = Math.min(si + 1, steps.length - 1); setProcMsg(steps[si]) }, 1800)
 
     try {
+      // Convert XLSX to CSV in the browser before upload to avoid serverless
+      // dynamic import issues with the xlsx package in Vercel's runtime.
+      let uploadFile: File = file
+      const ext = file.name.toLowerCase().split('.').pop() ?? ''
+      if (ext === 'xlsx' || ext === 'xls') {
+        try {
+          const XLSX   = await import('xlsx')
+          const buffer = await file.arrayBuffer()
+          const wb  = XLSX.read(new Uint8Array(buffer), { type: 'array', cellDates: true })
+          const ws  = wb.Sheets[wb.SheetNames[0]]
+          const csv = XLSX.utils.sheet_to_csv(ws)
+          uploadFile = new File([csv], file.name.replace(/\.xlsx?$/i, '.csv'), { type: 'text/csv' })
+        } catch {
+          throw new Error('Could not read the Excel file. Please export it as CSV from your banking portal and try again.')
+        }
+      }
+
       const fd = new FormData()
       fd.append('accountId',   selectedAcc.id)
       fd.append('accountName', selectedAcc.name)
       fd.append('from', from)
       fd.append('to', to)
-      fd.append('file', file)
+      fd.append('file', uploadFile)
 
       const res  = await fetch('/api/reconcile', { method: 'POST', body: fd })
       const data = await safeJson(res)

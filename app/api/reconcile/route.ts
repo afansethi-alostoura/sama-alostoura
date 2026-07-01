@@ -1,21 +1,21 @@
 /**
  * POST /api/reconcile
  *
- * Accepts a bank statement file (CSV / XLSX / PDF) + QB bank account ID + date range.
- * Fetches the QB General Ledger for that account, parses the bank file, runs the
- * matching engine, and returns categorised results.
+ * Uploads a bank statement (CSV / XLSX / PDF) + QB bank account + date range.
+ * Claude reads BOTH the bank statement and QuickBooks GL data, then performs
+ * intelligent reconciliation and returns categorised results.
  *
  * READ-ONLY — never writes to QuickBooks or modifies any data.
  */
-import { NextRequest, NextResponse }          from 'next/server'
-import { fetchGLReport, parseGLReport }       from '@/lib/quickbooks/client'
-import { loadTokensAsync }                    from '@/lib/quickbooks/tokens'
-import { anthropic }                          from '@/lib/anthropic'
+import { NextRequest, NextResponse }    from 'next/server'
+import { fetchGLReport, parseGLReport } from '@/lib/quickbooks/client'
+import { loadTokensAsync }              from '@/lib/quickbooks/tokens'
+import { anthropic }                    from '@/lib/anthropic'
 
-export const dynamic    = 'force-dynamic'
-export const maxDuration = 60
+export const dynamic     = 'force-dynamic'
+export const maxDuration = 300
 
-// ── Shared types ──────────────────────────────────────────────────────────────
+// ── Shared types (used by ReconcileModal.tsx) ─────────────────────────────────
 
 export interface NormalizedTxn {
   id:          string
@@ -41,369 +41,228 @@ export interface MatchResult {
   qbTxn?:   NormalizedTxn
 }
 
-// ── CSV parser ─────────────────────────────────────────────────────────────────
+// ── XLSX → CSV (server-side fallback if client didn't convert) ────────────────
 
-function csvLine(line: string): string[] {
-  const out: string[] = []
-  let cur = '', inQ = false
-  for (const ch of line) {
-    if (ch === '"')          inQ = !inQ
-    else if (ch === ',' && !inQ) { out.push(cur); cur = '' }
-    else                         cur += ch
-  }
-  out.push(cur)
-  return out
-}
-
-function col(headers: string[], candidates: string[]): number {
-  for (const c of candidates) {
-    const i = headers.findIndex(h => h === c || h.includes(c) || c.includes(h))
-    if (i !== -1) return i
-  }
-  return -1
-}
-
-function clean(s: string) { return s.replace(/^["'\s]+|["'\s]+$/g, '').trim() }
-
-function parseAmt(s: string): number {
-  return parseFloat(clean(s).replace(/[^-\d.]/g, '')) || 0
-}
-
-function normalizeDate(s: string): string {
-  s = clean(s)
-  if (!s) return ''
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
-  // DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY
-  const m1 = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/)
-  if (m1) return `${m1[3]}-${m1[2].padStart(2,'0')}-${m1[1].padStart(2,'0')}`
-  // YYYY/MM/DD
-  const m2 = s.match(/^(\d{4})[\/\-\.](\d{2})[\/\-\.](\d{2})$/)
-  if (m2) return `${m2[1]}-${m2[2]}-${m2[3]}`
-  const d = new Date(s)
-  if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10)
-  return ''
-}
-
-function parseCSV(text: string): NormalizedTxn[] {
-  const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').filter(l => l.trim())
-  if (lines.length < 2) return []
-
-  // Find header row (first row that contains date/amount keywords)
-  let headerIdx = 0
-  for (let i = 0; i < Math.min(15, lines.length); i++) {
-    if (/date|amount|credit|debit|narration|description/i.test(lines[i])) { headerIdx = i; break }
-  }
-
-  const headers = csvLine(lines[headerIdx]).map(h => clean(h).toLowerCase())
-
-  const dateIdx = col(headers, ['date','txn date','transaction date','value date','posting date','trans date'])
-  const descIdx = col(headers, ['description','narration','particulars','memo','details','transaction details','remarks'])
-  const refIdx  = col(headers, ['reference','ref','cheque no','cheque number','check number','transaction ref','trans ref','doc number'])
-  const amtIdx  = col(headers, ['amount','transaction amount','net amount','net'])
-  const crIdx   = col(headers, ['credit','credit amount','deposits','cr','money in','in'])
-  const drIdx   = col(headers, ['debit','debit amount','withdrawals','dr','money out','out'])
-
-  if (dateIdx === -1) return []
-
-  const txns: NormalizedTxn[] = []
-  for (let i = headerIdx + 1; i < lines.length; i++) {
-    const parts = csvLine(lines[i])
-    const dateStr = clean(parts[dateIdx] ?? '')
-    if (!dateStr) continue
-    const date = normalizeDate(dateStr)
-    if (!date) continue
-
-    let amount = 0
-    if (amtIdx !== -1) {
-      amount = parseAmt(parts[amtIdx] ?? '0')
-    } else if (crIdx !== -1 || drIdx !== -1) {
-      const cr = crIdx !== -1 ? parseAmt(parts[crIdx] ?? '0') : 0
-      const dr = drIdx !== -1 ? parseAmt(parts[drIdx] ?? '0') : 0
-      amount = cr > 0 ? cr : -dr   // credits positive, debits negative
-    }
-
-    txns.push({
-      id:          `bank_${i}`,
-      date,
-      amount,
-      description: descIdx !== -1 ? clean(parts[descIdx] ?? '') : '',
-      reference:   refIdx  !== -1 ? clean(parts[refIdx]  ?? '') : '',
-    })
-  }
-
-  return txns.filter(t => t.amount !== 0)
-}
-
-// ── XLSX parser ────────────────────────────────────────────────────────────────
-
-async function parseXLSX(buffer: ArrayBuffer): Promise<NormalizedTxn[]> {
+async function xlsxToCsv(buffer: ArrayBuffer): Promise<string> {
   const XLSX = await import('xlsx')
   const wb   = XLSX.read(new Uint8Array(buffer), { type: 'array', cellDates: true })
-  const ws   = wb.Sheets[wb.SheetNames[0]]
-  const csv  = XLSX.utils.sheet_to_csv(ws)
-  return parseCSV(csv)
+  return XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]])
 }
 
-// ── PDF parser (Claude AI) ─────────────────────────────────────────────────────
+// ── Format QB GL as a readable text table for Claude ─────────────────────────
 
-async function parsePDF(buffer: ArrayBuffer): Promise<NormalizedTxn[]> {
-  const base64 = Buffer.from(buffer).toString('base64')
+function formatQBForClaude(
+  glTxns: ReturnType<typeof parseGLReport>,
+  accountName: string,
+  from: string,
+  to:   string,
+): string {
+  const header = `QuickBooks General Ledger — ${accountName} (${from} to ${to})\n` +
+                 `${'Date'.padEnd(12)} ${'Type'.padEnd(20)} ${'Name'.padEnd(30)} ${'Memo'.padEnd(30)} ${'Amount'.padStart(12)} ${'Ref'.padEnd(15)}\n` +
+                 '─'.repeat(120) + '\n'
 
-  const msg = await anthropic.messages.create({
-    model:      'claude-sonnet-4-6',
-    max_tokens: 4096,
-    messages: [{
-      role:    'user',
-      content: [
-        {
-          type:   'document',
-          source: { type: 'base64', media_type: 'application/pdf', data: base64 },
-        } as any,
-        {
-          type: 'text',
-          text: `Extract every bank transaction from this statement.
-Return ONLY a JSON array — no explanation, no markdown fences:
-[{"date":"YYYY-MM-DD","amount":number,"description":"string","reference":"string"}]
+  const rows = glTxns.map((t, i) =>
+    `${t.txnDate.padEnd(12)} ${(t.txnType ?? '').slice(0,20).padEnd(20)} ${(t.name ?? '').slice(0,30).padEnd(30)} ${(t.memo ?? '').slice(0,30).padEnd(30)} ${t.amount.toFixed(2).padStart(12)} ${(t.txnId ?? '').slice(0,15).padEnd(15)}`
+  ).join('\n')
 
-Rules:
-- date: always YYYY-MM-DD format
-- amount: positive for credits/deposits (money coming IN), negative for debits/withdrawals (money going OUT)
-- description: the transaction narration or description line
-- reference: cheque number, reference number, or transaction ID if available, otherwise ""
-- Exclude opening balance, closing balance, and summary rows
-- Exclude column headers`,
-        },
-      ],
-    }],
-  })
-
-  const text  = ((msg.content ?? []).find((b: any) => b.type === 'text') as any)?.text as string ?? ''
-  const match = text.match(/\[[\s\S]*?\]/)
-  if (!match) return []
-
-  try {
-    const rows = JSON.parse(match[0]) as Array<{date:string; amount:number; description:string; reference:string}>
-    return rows
-      .map((r, i) => ({
-        id:          `bank_${i}`,
-        date:        normalizeDate(r.date) || r.date,
-        amount:      Number(r.amount) || 0,
-        description: String(r.description ?? ''),
-        reference:   String(r.reference   ?? ''),
-      }))
-      .filter(t => t.date && t.amount !== 0)
-  } catch {
-    return []
-  }
+  return header + rows + `\n\nTotal QB transactions: ${glTxns.length}`
 }
 
-// ── Matching helpers ───────────────────────────────────────────────────────────
+// ── Claude reconciliation prompt ──────────────────────────────────────────────
 
-function daysDiff(a: string, b: string): number {
-  return Math.abs((Date.parse(a) - Date.parse(b)) / 86_400_000)
+const SYSTEM_PROMPT = `You are an expert bank reconciliation analyst.
+
+You will receive two data sources:
+1. A bank statement — either as a raw CSV/text file or as a PDF document
+2. QuickBooks General Ledger (GL) transactions for the same bank account and date range
+
+STEP 1 — READ THE BANK STATEMENT
+Parse every transaction row from the bank statement. Identify the date, amount, description, and any reference/cheque number columns automatically. Ignore header rows, summary rows, opening/closing balance rows, and blank rows.
+
+STEP 2 — READ THE QUICKBOOKS DATA
+The QB GL is provided as a formatted text table with columns: Date, Type, Name, Memo, Amount, Ref.
+
+STEP 3 — RECONCILE
+Compare every bank transaction against every QB transaction. For each transaction from either source, produce one result entry.
+
+AMOUNT SIGN CONVENTION:
+- Positive = money coming IN (deposit, credit, receipt)
+- Negative = money going OUT (withdrawal, debit, payment)
+If the bank statement uses separate Credit/Debit columns, combine them: credit is positive, debit is negative.
+
+MATCHING RULES (apply in this order):
+1. MATCHED — same amount (within 0.02) AND date within 3 days
+2. MATCHED — matching reference/cheque number even if date differs slightly
+3. POSSIBLE_MATCH — amount within 5% AND similar description words, or date within 7 days
+4. AMOUNT_MISMATCH — same date and similar description but amounts differ by more than 0.02
+5. MISSING_IN_QB — bank transaction with no QB counterpart
+6. MISSING_IN_BANK — QB transaction with no bank counterpart
+7. DUPLICATE — same date+amount appears more than once in the same source
+
+Be thorough: every bank row AND every QB row must appear at least once in the results.
+
+Return ONLY a raw JSON object — no explanation, no markdown code fences, nothing else:
+{
+  "results": [
+    {
+      "id": "r1",
+      "status": "MATCHED" | "POSSIBLE_MATCH" | "MISSING_IN_QB" | "MISSING_IN_BANK" | "AMOUNT_MISMATCH" | "DUPLICATE",
+      "reason": "one-line plain English explanation",
+      "bankTxn": { "id": "b_1", "date": "YYYY-MM-DD", "amount": -1500.00, "description": "VENDOR PAYMENT", "reference": "CHQ001" },
+      "qbTxn":   { "id": "q_1", "date": "YYYY-MM-DD", "amount": -1500.00, "description": "Bill Payment · Vendor Name · Invoice 001", "reference": "CHQ001" }
+    }
+  ]
 }
 
-function amtEq(a: number, b: number): boolean {
-  return Math.abs(Math.abs(a) - Math.abs(b)) < 0.02
-}
-
-function wordSim(a: string, b: string): number {
-  const wa = new Set(a.toLowerCase().split(/\W+/).filter(w => w.length > 2))
-  const wb = new Set(b.toLowerCase().split(/\W+/).filter(w => w.length > 2))
-  if (!wa.size || !wb.size) return 0
-  return [...wa].filter(w => wb.has(w)).length / Math.max(wa.size, wb.size)
-}
-
-// ── Matching engine ────────────────────────────────────────────────────────────
-
-function matchTransactions(
-  bankTxns: NormalizedTxn[],
-  qbTxns:   NormalizedTxn[],
-): MatchResult[] {
-  const results:  MatchResult[] = []
-  const usedQB   = new Set<string>()
-  const usedBank = new Set<string>()
-
-  for (const bank of bankTxns) {
-    // Priority 1 — exact amount + exact date
-    const exact = qbTxns.find(q =>
-      !usedQB.has(q.id) && amtEq(bank.amount, q.amount) && bank.date === q.date
-    )
-    if (exact) {
-      results.push({ id: `m_${bank.id}`, bankTxn: bank, qbTxn: exact, status: 'MATCHED', reason: 'Exact amount + date' })
-      usedQB.add(exact.id); usedBank.add(bank.id); continue
-    }
-
-    // Priority 2 — same amount ±3 days
-    const loose = qbTxns.find(q =>
-      !usedQB.has(q.id) && amtEq(bank.amount, q.amount) && daysDiff(bank.date, q.date) <= 3
-    )
-    if (loose) {
-      const d = Math.round(daysDiff(bank.date, loose.date))
-      results.push({ id: `m_${bank.id}`, bankTxn: bank, qbTxn: loose, status: 'MATCHED', reason: `Amount match, ${d} day(s) apart` })
-      usedQB.add(loose.id); usedBank.add(bank.id); continue
-    }
-
-    // Priority 3 — reference number match
-    if (bank.reference) {
-      const refM = qbTxns.find(q =>
-        !usedQB.has(q.id) && q.reference && bank.reference === q.reference
-      )
-      if (refM) {
-        results.push({ id: `m_${bank.id}`, bankTxn: bank, qbTxn: refM, status: 'MATCHED', reason: 'Reference number match' })
-        usedQB.add(refM.id); usedBank.add(bank.id); continue
-      }
-    }
-
-    // Priority 4 — possible match (close amount within 5% + similar description)
-    const possible = qbTxns.find(q => {
-      if (usedQB.has(q.id)) return false
-      const pct = Math.abs(bank.amount) > 0 ? Math.abs(Math.abs(bank.amount) - Math.abs(q.amount)) / Math.abs(bank.amount) : 1
-      return pct < 0.05 && wordSim(bank.description, q.description) > 0.4
-    })
-    if (possible) {
-      results.push({ id: `m_${bank.id}`, bankTxn: bank, qbTxn: possible, status: 'POSSIBLE_MATCH', reason: 'Similar description, close amount' })
-      usedQB.add(possible.id); usedBank.add(bank.id); continue
-    }
-
-    // Priority 5 — amount mismatch (same date ±1 day, similar description, different amount)
-    const mismatch = qbTxns.find(q =>
-      !usedQB.has(q.id) && daysDiff(bank.date, q.date) <= 1 && wordSim(bank.description, q.description) > 0.35
-    )
-    if (mismatch) {
-      results.push({
-        id: `m_${bank.id}`, bankTxn: bank, qbTxn: mismatch, status: 'AMOUNT_MISMATCH',
-        reason: `Bank AED ${Math.abs(bank.amount).toLocaleString()} vs QB AED ${Math.abs(mismatch.amount).toLocaleString()}`,
-      })
-      usedQB.add(mismatch.id); usedBank.add(bank.id); continue
-    }
-
-    // No match
-    results.push({ id: `miss_${bank.id}`, bankTxn: bank, status: 'MISSING_IN_QB', reason: 'No matching entry in QuickBooks' })
-    usedBank.add(bank.id)
-  }
-
-  // QB transactions with no bank match
-  for (const qb of qbTxns) {
-    if (!usedQB.has(qb.id)) {
-      results.push({ id: `qb_${qb.id}`, qbTxn: qb, status: 'MISSING_IN_BANK', reason: 'No matching entry in bank statement' })
-    }
-  }
-
-  // Flag duplicate bank entries (same amount + date appearing more than once among unmatched)
-  const bankSeen = new Map<string, string>()
-  for (const r of results) {
-    if (!r.bankTxn || r.status === 'MATCHED') continue
-    const key = `${r.bankTxn.date}|${r.bankTxn.amount}`
-    const first = bankSeen.get(key)
-    if (first) {
-      r.status = 'DUPLICATE'
-      r.reason = `Same date+amount already appears in entry ${first}`
-    } else {
-      bankSeen.set(key, r.bankTxn.id)
-    }
-  }
-
-  return results
-}
+For MISSING_IN_QB entries set qbTxn to null.
+For MISSING_IN_BANK entries set bankTxn to null.`
 
 // ── Route handler ──────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
   try {
-  const tokens = await loadTokensAsync()
-  if (!tokens) {
-    return NextResponse.json({ error: 'QuickBooks not connected' }, { status: 401 })
-  }
-
-  try {
-    const form        = await req.formData()
-    const accountId   = form.get('accountId')   as string | null
-    const accountName = form.get('accountName') as string | null
-    const from        = form.get('from')        as string | null
-    const to          = form.get('to')          as string | null
-    const file        = form.get('file')        as File   | null
-
-    if (!accountId || !from || !to || !file) {
-      return NextResponse.json({ error: 'accountId, from, to, and file are required.' }, { status: 400 })
+    const tokens = await loadTokensAsync()
+    if (!tokens) {
+      return NextResponse.json({ error: 'QuickBooks not connected' }, { status: 401 })
     }
 
-    // ── 1. Parse bank statement ──────────────────────────────────────────────
-    const ext    = file.name.toLowerCase().split('.').pop() ?? ''
-    const buffer = await file.arrayBuffer()
-    let bankTxns: NormalizedTxn[] = []
+    try {
+      const form        = await req.formData()
+      const accountId   = form.get('accountId')   as string | null
+      const accountName = form.get('accountName') as string | null
+      const from        = form.get('from')        as string | null
+      const to          = form.get('to')          as string | null
+      const file        = form.get('file')        as File   | null
 
-    if (ext === 'csv' || ext === 'txt') {
-      bankTxns = parseCSV(new TextDecoder().decode(buffer))
-    } else if (ext === 'xlsx' || ext === 'xls') {
-      bankTxns = await parseXLSX(buffer)
-    } else if (ext === 'pdf') {
-      bankTxns = await parsePDF(buffer)
-    } else {
-      return NextResponse.json({ error: `Unsupported file: .${ext}. Please upload CSV, XLSX, or PDF.` }, { status: 400 })
-    }
+      if (!accountId || !from || !to || !file) {
+        return NextResponse.json({ error: 'accountId, from, to, and file are required.' }, { status: 400 })
+      }
 
-    // Filter to selected date range
-    bankTxns = bankTxns.filter(t => t.date >= from && t.date <= to)
+      const ext    = file.name.toLowerCase().split('.').pop() ?? ''
+      const buffer = await file.arrayBuffer()
 
-    if (bankTxns.length === 0) {
+      if (!['csv','txt','xlsx','xls','pdf'].includes(ext)) {
+        return NextResponse.json({ error: `Unsupported file: .${ext}. Please upload CSV, XLSX, or PDF.` }, { status: 400 })
+      }
+
+      // ── Fetch QB GL and prepare bank statement text in parallel ─────────────
+      async function getQBText(): Promise<string> {
+        try {
+          const glRaw  = await fetchGLReport(accountId!, from!, to!)
+          const glTxns = parseGLReport(glRaw)
+          return formatQBForClaude(glTxns, accountName ?? accountId!, from!, to!)
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e)
+          throw new Error(
+            `QuickBooks did not return valid data. Try a different date range. (${msg.slice(0, 120)})`
+          )
+        }
+      }
+
+      async function getBankText(): Promise<string | null> {
+        if (ext === 'pdf') return null  // PDF sent as document block
+        if (ext === 'xlsx' || ext === 'xls') return xlsxToCsv(buffer)
+        return new TextDecoder().decode(buffer)
+      }
+
+      const [qbText, bankText] = await Promise.all([getQBText(), getBankText()])
+
+      // ── Build Claude message ─────────────────────────────────────────────────
+      type ContentBlock = {
+        type: string
+        text?: string
+        source?: { type: string; media_type: string; data: string }
+      }
+
+      const userContent: ContentBlock[] = []
+
+      if (ext === 'pdf') {
+        const base64 = Buffer.from(buffer).toString('base64')
+        userContent.push({
+          type:   'document',
+          source: { type: 'base64', media_type: 'application/pdf', data: base64 },
+        } as any)
+        userContent.push({
+          type: 'text',
+          text: `Above is the bank statement PDF.\n\nBelow is the QuickBooks data:\n\n${qbText}\n\nReconcile these two sources and return the JSON object as instructed.`,
+        })
+      } else {
+        userContent.push({
+          type: 'text',
+          text: `BANK STATEMENT (${file.name}):\n\n${bankText}\n\n---\n\n${qbText}\n\nReconcile these two sources and return the JSON object as instructed.`,
+        })
+      }
+
+      // ── Call Claude ──────────────────────────────────────────────────────────
+      const msg = await anthropic.messages.create({
+        model:      'claude-sonnet-4-6',
+        max_tokens: 8192,
+        system:     SYSTEM_PROMPT,
+        messages:   [{ role: 'user', content: userContent as any }],
+      })
+
+      const rawText = ((msg.content ?? []).find((b: any) => b.type === 'text') as any)?.text as string ?? ''
+
+      // Extract JSON from Claude's response (strip any accidental markdown fences)
+      const jsonMatch = rawText.match(/\{[\s\S]*\}/)
+      if (!jsonMatch) {
+        throw new Error('Claude did not return a valid reconciliation. Please try again.')
+      }
+
+      let parsed: { results: MatchResult[] }
+      try {
+        parsed = JSON.parse(jsonMatch[0])
+      } catch {
+        throw new Error('Claude returned malformed JSON. Please try again.')
+      }
+
+      const results = parsed.results ?? []
+
+      // ── Compute summary ──────────────────────────────────────────────────────
+      const matched      = results.filter(r => r.status === 'MATCHED').length
+      const missingInQB  = results.filter(r => r.status === 'MISSING_IN_QB').length
+      const missingInBnk = results.filter(r => r.status === 'MISSING_IN_BANK').length
+      const mismatch     = results.filter(r => r.status === 'AMOUNT_MISMATCH').length
+      const possible     = results.filter(r => r.status === 'POSSIBLE_MATCH').length
+      const duplicates   = results.filter(r => r.status === 'DUPLICATE').length
+
+      const bankTxns = results.filter(r => r.bankTxn).map(r => r.bankTxn!)
+      const qbTxns   = results.filter(r => r.qbTxn  ).map(r => r.qbTxn!)
+
+      const totalBank = bankTxns.reduce((s, t) => s + (t.amount ?? 0), 0)
+      const totalQB   = qbTxns.reduce((s, t)   => s + (t.amount ?? 0), 0)
+
+      // Unique bank / QB counts (MATCHED results share one bank + one QB txn)
+      const bankCount = new Set(bankTxns.map(t => t.id)).size
+      const qbCount   = new Set(qbTxns.map(t => t.id)).size
+
       return NextResponse.json({
-        error: 'No transactions parsed from the bank statement. Check the date range matches the statement, or that the file has the correct columns (Date, Amount / Credit / Debit, Description).',
-      }, { status: 400 })
+        accountName,
+        from,
+        to,
+        summary: {
+          bankCount,
+          qbCount,
+          matched,
+          unmatched:     results.length - matched,
+          missingInQB,
+          missingInBank: missingInBnk,
+          mismatch,
+          possible,
+          duplicates,
+          accuracy:      Math.round(matched / Math.max(bankCount, qbCount, 1) * 100),
+          totalBankAmt:  Math.round(totalBank * 100) / 100,
+          totalQBAmt:    Math.round(totalQB   * 100) / 100,
+          difference:    Math.round(Math.abs(totalBank - totalQB) * 100) / 100,
+        },
+        results,
+      })
+
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Reconciliation failed'
+      console.error('[Reconcile] inner:', msg)
+      return NextResponse.json({ error: msg }, { status: 500 })
     }
-
-    // ── 2. Fetch QB GL for the selected bank account ─────────────────────────
-    const glRaw  = await fetchGLReport(accountId, from, to)
-    const glTxns = parseGLReport(glRaw)
-
-    const qbTxns: NormalizedTxn[] = glTxns.map((t, i) => ({
-      id:          `qb_${i}_${t.txnId}`,
-      date:        t.txnDate,
-      amount:      t.amount,
-      description: [t.txnType, t.name, t.memo].filter(Boolean).join(' · '),
-      reference:   t.txnId ?? '',
-    }))
-
-    // ── 3. Match ─────────────────────────────────────────────────────────────
-    const results = matchTransactions(bankTxns, qbTxns)
-
-    // ── 4. Summary ───────────────────────────────────────────────────────────
-    const matched      = results.filter(r => r.status === 'MATCHED').length
-    const missingInQB  = results.filter(r => r.status === 'MISSING_IN_QB').length
-    const missingInBnk = results.filter(r => r.status === 'MISSING_IN_BANK').length
-    const mismatch     = results.filter(r => r.status === 'AMOUNT_MISMATCH').length
-    const possible     = results.filter(r => r.status === 'POSSIBLE_MATCH').length
-    const duplicates   = results.filter(r => r.status === 'DUPLICATE').length
-
-    const totalBank = bankTxns.reduce((s, t) => s + t.amount, 0)
-    const totalQB   = qbTxns.reduce((s, t) => s + t.amount, 0)
-
-    return NextResponse.json({
-      accountName,
-      from,
-      to,
-      summary: {
-        bankCount:     bankTxns.length,
-        qbCount:       qbTxns.length,
-        matched,
-        unmatched:     results.length - matched,
-        missingInQB,
-        missingInBank: missingInBnk,
-        mismatch,
-        possible,
-        duplicates,
-        accuracy:      Math.round(matched / Math.max(bankTxns.length, qbTxns.length, 1) * 100),
-        totalBankAmt:  Math.round(totalBank * 100) / 100,
-        totalQBAmt:    Math.round(totalQB   * 100) / 100,
-        difference:    Math.round(Math.abs(totalBank - totalQB) * 100) / 100,
-      },
-      results,
-    })
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : 'Reconciliation failed'
-    console.error('[Reconcile] inner:', msg)
-    return NextResponse.json({ error: msg }, { status: 500 })
-  }
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Unexpected server error'
     console.error('[Reconcile] outer:', msg)
