@@ -194,26 +194,40 @@ export async function POST(req: NextRequest) {
       }
 
       // ── Call Claude ──────────────────────────────────────────────────────────
+      // Prefill the assistant turn with `{"results":[` to force raw JSON output
+      // and prevent Claude from wrapping the response in markdown fences.
       const msg = await anthropic.messages.create({
         model:      'claude-sonnet-4-6',
-        max_tokens: 8192,
+        max_tokens: 16000,
         system:     SYSTEM_PROMPT,
-        messages:   [{ role: 'user', content: userContent as any }],
+        messages: [
+          { role: 'user',      content: userContent as any },
+          { role: 'assistant', content: '{"results":[' },
+        ],
       })
 
       const rawText = ((msg.content ?? []).find((b: any) => b.type === 'text') as any)?.text as string ?? ''
 
-      // Extract JSON from Claude's response (strip any accidental markdown fences)
-      const jsonMatch = rawText.match(/\{[\s\S]*\}/)
-      if (!jsonMatch) {
-        throw new Error('Claude did not return a valid reconciliation. Please try again.')
-      }
+      // Claude continues from the prefill, so we reconstruct the full JSON
+      const fullJson = '{"results":[' + rawText
+
+      // Strip any trailing markdown fence or stray text after the last `}`
+      const stripped = fullJson.slice(0, fullJson.lastIndexOf('}') + 1)
 
       let parsed: { results: MatchResult[] }
       try {
-        parsed = JSON.parse(jsonMatch[0])
+        parsed = JSON.parse(stripped)
       } catch {
-        throw new Error('Claude returned malformed JSON. Please try again.')
+        // Fallback: try to extract the JSON object if reconstruction failed
+        const jsonMatch = fullJson.match(/\{[\s\S]*\}/)
+        if (!jsonMatch) {
+          throw new Error('Claude did not return a valid reconciliation. Please try again.')
+        }
+        try {
+          parsed = JSON.parse(jsonMatch[0])
+        } catch {
+          throw new Error('Claude returned malformed JSON. Please try again.')
+        }
       }
 
       const results = parsed.results ?? []
