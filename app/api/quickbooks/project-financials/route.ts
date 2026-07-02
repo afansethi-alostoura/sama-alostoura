@@ -7,11 +7,12 @@
  */
 import { NextResponse }                                              from 'next/server'
 import { supabaseAdmin, isSupabaseConfigured }                       from '@/lib/supabase'
-import { loadTokensAsync }                                           from '@/lib/quickbooks/tokens'
+import { loadTokensAsync, isAccessTokenFresh }                        from '@/lib/quickbooks/tokens'
 import {
   fetchPurchasesInRange,
   fetchBillsInRange,
   fetchVendorCreditsInRange,
+  refreshAccessToken,
 }                                                                    from '@/lib/quickbooks/client'
 import type { QBClass, QBDeposit, QBPurchase, QBBill, QBVendorCredit } from '@/lib/quickbooks/types'
 
@@ -107,7 +108,9 @@ export async function GET(req: Request) {
     }
   }
 
-  const t = { access_token: tokens.access_token, realm_id: tokens.realm_id }
+  // Refresh access token if expired (fetchDeposits uses raw fetch, not qbFetch)
+  const freshTokens = isAccessTokenFresh(tokens) ? tokens : await refreshAccessToken(tokens)
+  const t = { access_token: freshTokens.access_token, realm_id: freshTokens.realm_id }
 
   // Fetch all transaction types in parallel
   const [deposits, purchases, bills, vendorCredits] = await Promise.all([
