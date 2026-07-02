@@ -139,7 +139,7 @@ function SettingsInner() {
                   { label: 'Environment',      value: status.environment },
                   { label: 'Last Sync',        value: status.synced_at ? new Date(status.synced_at).toLocaleString('en-AE') : 'Not yet synced' },
                   { label: 'Access Token',     value: status.access_token_valid ? '✅ Valid' : '⚠️ Expired (will auto-refresh)' },
-                  { label: 'Refresh Token',    value: status.refresh_token_valid ? '✅ Valid' : '❌ Expired — reconnect required' },
+                  { label: 'Refresh Token',    value: status.refresh_token_valid ? '⚠️ Locally valid (test by syncing)' : '❌ Expired — reconnect required' },
                 ].map(({ label, value }) => (
                   <div key={label} className="bg-slate-50 rounded-lg px-4 py-3">
                     <p className="text-slate-400 text-xs">{label}</p>
