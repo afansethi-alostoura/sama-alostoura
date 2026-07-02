@@ -109,7 +109,13 @@ export default function CompanyFinancialsPage() {
       if (json.error) throw new Error(json.error)
       setData(json)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load data')
+      const msg = e instanceof Error ? e.message : 'Failed to load data'
+      // Detect expired QB token — direct user to reconnect
+      setError(
+        msg.includes('invalid_grant') || msg.includes('refresh token') || msg.includes('401')
+          ? 'RECONNECT'
+          : msg
+      )
     } finally {
       setLoading(false)
       setRefreshing(false)
@@ -184,12 +190,29 @@ export default function CompanyFinancialsPage() {
 
   if (error) return (
     <div className="p-8">
-      <div className="bg-red-50 border border-red-200 rounded-xl p-6 flex items-start gap-3">
-        <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+      <div className={`border rounded-xl p-6 flex items-start gap-3 ${error === 'RECONNECT' ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'}`}>
+        <AlertCircle className={`w-5 h-5 flex-shrink-0 mt-0.5 ${error === 'RECONNECT' ? 'text-amber-500' : 'text-red-500'}`} />
         <div>
-          <p className="font-semibold text-red-800">Failed to load financials</p>
-          <p className="text-sm text-red-600 mt-1">{error}</p>
-          <button onClick={() => load()} className="mt-3 text-sm font-semibold text-red-700 hover:underline">Try again</button>
+          {error === 'RECONNECT' ? (
+            <>
+              <p className="font-semibold text-amber-800">QuickBooks session expired</p>
+              <p className="text-sm text-amber-700 mt-1">
+                Your QuickBooks connection has expired. You need to reconnect to continue loading financials.
+              </p>
+              <a
+                href="/api/quickbooks/connect"
+                className="mt-3 inline-block px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold rounded-lg transition-colors"
+              >
+                Reconnect QuickBooks
+              </a>
+            </>
+          ) : (
+            <>
+              <p className="font-semibold text-red-800">Failed to load financials</p>
+              <p className="text-sm text-red-600 mt-1">{error}</p>
+              <button onClick={() => load()} className="mt-3 text-sm font-semibold text-red-700 hover:underline">Try again</button>
+            </>
+          )}
         </div>
       </div>
     </div>
