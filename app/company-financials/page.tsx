@@ -99,9 +99,13 @@ export default function CompanyFinancialsPage() {
     try {
       const params = dateParams(range)
       const url    = `/api/quickbooks/project-financials?class_name=Sama%20Alostoura${params ? '&' + params : ''}`
-      const res    = await fetch(url)
-      if (!res.ok) throw new Error((await res.json()).error ?? 'Failed')
-      const json = await res.json()
+      const res  = await fetch(url)
+      const text = await res.text()
+      let json: any
+      try { json = JSON.parse(text) } catch {
+        throw new Error(res.ok ? 'Server returned invalid data' : `Server error (${res.status}) — try again`)
+      }
+      if (!res.ok) throw new Error(json.error ?? `Server error (${res.status})`)
       if (json.error) throw new Error(json.error)
       setData(json)
     } catch (e) {

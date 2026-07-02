@@ -16,7 +16,7 @@ import {
 import type { QBClass, QBDeposit, QBPurchase, QBBill, QBVendorCredit } from '@/lib/quickbooks/types'
 
 export const dynamic     = 'force-dynamic'
-export const maxDuration = 60
+export const maxDuration = 300
 
 // ── Only these DetailTypes carry real expense amounts ─────────────────────────
 const EXPENSE_LINE_TYPES = new Set([
