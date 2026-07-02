@@ -49,10 +49,20 @@ function SettingsInner() {
         const updated = await fetch('/api/quickbooks/status').then(r => r.json())
         setStatus(updated)
       } else {
-        setSyncResult(`❌ Sync failed: ${d.error}`)
+        const msg = d.error ?? 'Sync failed'
+        setSyncResult(
+          msg.includes('invalid_grant') || msg.includes('refresh token')
+            ? 'RECONNECT'
+            : `❌ Sync failed: ${msg}`
+        )
       }
     } catch (e: unknown) {
-      setSyncResult(`❌ ${e instanceof Error ? e.message : 'Sync failed'}`)
+      const msg = e instanceof Error ? e.message : 'Sync failed'
+      setSyncResult(
+        msg.includes('invalid_grant') || msg.includes('refresh token')
+          ? 'RECONNECT'
+          : `❌ ${msg}`
+      )
     } finally {
       setSyncing(false)
     }
@@ -139,7 +149,18 @@ function SettingsInner() {
               </div>
 
               {syncResult && (
-                <div className="mb-4 bg-slate-50 rounded-lg px-4 py-3 text-sm text-slate-700">{syncResult}</div>
+                syncResult === 'RECONNECT' ? (
+                  <div className="mb-4 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+                    <p className="text-sm font-semibold text-amber-800">QuickBooks session expired</p>
+                    <p className="text-xs text-amber-700 mt-0.5">Your connection has expired. Reconnect to continue syncing.</p>
+                    <a href="/api/quickbooks/connect"
+                      className="mt-2 inline-block px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-lg transition-colors">
+                      Reconnect QuickBooks
+                    </a>
+                  </div>
+                ) : (
+                  <div className="mb-4 bg-slate-50 rounded-lg px-4 py-3 text-sm text-slate-700">{syncResult}</div>
+                )
               )}
 
               <div className="flex items-center gap-3">
