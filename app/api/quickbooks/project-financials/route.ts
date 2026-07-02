@@ -61,6 +61,7 @@ async function fetchDeposits(
 
 // ── Route ─────────────────────────────────────────────────────────────────────
 export async function GET(req: Request) {
+  try {
   const { searchParams } = new URL(req.url)
   const rawClass  = searchParams.get('class_name')?.trim()
   const from      = searchParams.get('from') || null
@@ -282,4 +283,9 @@ export async function GET(req: Request) {
     },
     fetchedAt: new Date().toISOString(),
   })
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : 'Unknown error'
+    console.error('[project-financials]', msg)
+    return NextResponse.json({ error: msg }, { status: 500 })
+  }
 }
