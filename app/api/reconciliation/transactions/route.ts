@@ -50,6 +50,7 @@ export async function GET(req: NextRequest) {
       txnType:     r.txnType ?? '',
       name:        r.name     ?? '',
       memo:        r.memo     ?? '',
+      split:       r.split    ?? '',   // contra-account = where $$ is categorised in Chart of Accounts
       balance:     r.balance  ?? 0,
     }))
 
