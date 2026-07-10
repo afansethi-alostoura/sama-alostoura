@@ -26,6 +26,7 @@ interface QBTxn {
   name:        string
   memo:        string
   split:       string   // Chart of Accounts category (the contra-account)
+  accountName: string   // which QB account the txn is posted to (populated in global mode)
 }
 
 // Status for each bank row
@@ -262,20 +263,34 @@ function StatusBadge({ status }: { status: TxnStatus }) {
 
 // ─── Account Location cell ────────────────────────────────────────────────────
 
-function LocationCell({ location, status }: { location: string; status: TxnStatus }) {
+function LocationCell({
+  location, status, accountName,
+}: { location: string; status: TxnStatus; accountName?: string }) {
   if (status === 'missing' || status === 'transfer') {
     return <span className="text-xs font-bold text-red-500 tracking-wide">MISSING</span>
   }
-  if (!location) {
+  if (!location && !accountName) {
     return <span className="text-xs text-slate-400 italic">—</span>
   }
-  const isUncategorized = UNCATEGORIZED_KEYWORDS.some(k => location.toLowerCase().includes(k))
+  const isUncategorized = location
+    ? UNCATEGORIZED_KEYWORDS.some(k => location.toLowerCase().includes(k))
+    : false
   return (
-    <span className={`text-sm flex items-center gap-1 ${isUncategorized ? 'text-amber-700 font-medium' : 'text-slate-700'}`}>
-      <Tag className="w-3 h-3 flex-shrink-0 opacity-60" />
-      {location}
-      {isUncategorized && <span className="ml-1 text-xs text-amber-500">(needs review)</span>}
-    </span>
+    <div className="space-y-0.5">
+      {/* In global-search mode show which QB account the txn is posted to */}
+      {accountName && (
+        <div className="text-xs text-slate-400 flex items-center gap-1">
+          <span className="font-medium text-slate-500">In:</span> {accountName}
+        </div>
+      )}
+      {location && (
+        <span className={`text-sm flex items-center gap-1 ${isUncategorized ? 'text-amber-700 font-medium' : 'text-slate-700'}`}>
+          <Tag className="w-3 h-3 flex-shrink-0 opacity-60" />
+          {location}
+          {isUncategorized && <span className="ml-1 text-xs text-amber-500">(needs review)</span>}
+        </span>
+      )}
+    </div>
   )
 }
 
@@ -317,8 +332,8 @@ function TxnTableRow({ row, idx }: { row: TxnRow; idx: number }) {
         <td className="py-2.5 px-3"><StatusBadge status={status} /></td>
 
         {/* Account Location */}
-        <td className="py-2.5 px-3 max-w-[200px]">
-          <LocationCell location={accountLocation} status={status} />
+        <td className="py-2.5 px-3 max-w-[220px]">
+          <LocationCell location={accountLocation} status={status} accountName={qb?.accountName} />
         </td>
 
         {/* QB Type */}
@@ -348,27 +363,42 @@ function TxnTableRow({ row, idx }: { row: TxnRow; idx: number }) {
                 <FileText className="w-3.5 h-3.5" /> QuickBooks Detail
               </p>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {[
-                  { label: 'QB Date',       value: fmtDate(qb.date), highlight: Math.abs(dd) > 0 },
-                  { label: 'Type',          value: qb.txnType || '—' },
-                  { label: 'Vendor / Customer', value: qb.name || '—' },
-                  { label: 'Memo',          value: qb.memo || '—' },
+                {([
+                  { label: 'QB Date',           value: fmtDate(qb.date),  highlight: Math.abs(dd) > 0 },
+                  { label: 'Type',              value: qb.txnType || '—' },
+                  { label: 'Vendor / Customer', value: qb.name    || '—' },
+                  { label: 'Memo',              value: qb.memo    || '—' },
                   { label: 'Reference / TxnID', value: qb.reference || '—' },
+                  ...(qb.accountName ? [{
+                    label:   'QB Account (Posted to)',
+                    value:   qb.accountName,
+                    isAcct:  true,
+                  }] : []),
                   {
-                    label:  'Account Location',
+                    label: 'Account Category',
                     value:  qb.split || '—',
-                    warn:   UNCATEGORIZED_KEYWORDS.some(k => qb.split?.toLowerCase().includes(k)),
+                    warn:   UNCATEGORIZED_KEYWORDS.some(k => (qb.split ?? '').toLowerCase().includes(k)),
                   },
-                ].map(({ label, value, highlight, warn }) => (
-                  <div key={label} className={`rounded-lg px-3 py-2 ${warn ? 'bg-amber-50 border border-amber-200' : 'bg-slate-50'}`}>
-                    <p className="text-xs text-slate-400 mb-0.5">{label}</p>
-                    <p className={`text-sm font-medium ${warn ? 'text-amber-800' : highlight ? 'text-blue-700' : 'text-slate-800'}`}>
-                      {value}
-                      {warn && <span className="ml-1.5 text-xs font-normal text-amber-600">← needs recategorization</span>}
-                      {highlight && <span className="ml-1.5 text-xs font-normal text-blue-500">(±{Math.abs(dd)} day)</span>}
-                    </p>
-                  </div>
-                ))}
+                ] as Array<{ label: string; value: string; highlight?: boolean; warn?: boolean; isAcct?: boolean }>)
+                  .map(({ label, value, highlight, warn, isAcct }) => (
+                    <div key={label} className={`rounded-lg px-3 py-2 ${
+                      warn   ? 'bg-amber-50 border border-amber-200'
+                      : isAcct ? 'bg-blue-50 border border-blue-200'
+                      : 'bg-slate-50'
+                    }`}>
+                      <p className="text-xs text-slate-400 mb-0.5">{label}</p>
+                      <p className={`text-sm font-medium ${
+                        warn   ? 'text-amber-800'
+                        : isAcct ? 'text-blue-800'
+                        : highlight ? 'text-blue-700'
+                        : 'text-slate-800'
+                      }`}>
+                        {value}
+                        {warn      && <span className="ml-1.5 text-xs font-normal text-amber-600">← needs recategorization</span>}
+                        {highlight && <span className="ml-1.5 text-xs font-normal text-blue-500">(±{Math.abs(dd)} day)</span>}
+                      </p>
+                    </div>
+                  ))}
               </div>
             </div>
           </td>
@@ -448,7 +478,7 @@ export default function ReconciliationPage() {
 
   // Setup
   const [accounts,     setAccounts]    = useState<QBAccount[]>([])
-  const [acctId,       setAcctId]      = useState('')
+  const [acctId,       setAcctId]      = useState('__ALL__')   // default = global search
   const [from,         setFrom]        = useState(def.from)
   const [to,           setTo]          = useState(def.to)
   const [bankFile,     setBankFile]    = useState<File | null>(null)
@@ -462,10 +492,11 @@ export default function ReconciliationPage() {
   const [errMsg, setErrMsg] = useState('')
 
   // Results
-  const [result,   setResult]   = useState<MatchResult | null>(null)
-  const [bankTxns, setBankTxns] = useState<BankTxn[]>([])
-  const [qbTxns,   setQBTxns]   = useState<QBTxn[]>([])
-  const [tab,      setTab]      = useState<TabKey>('all')
+  const [result,         setResult]         = useState<MatchResult | null>(null)
+  const [bankTxns,       setBankTxns]       = useState<BankTxn[]>([])
+  const [qbTxns,         setQBTxns]         = useState<QBTxn[]>([])
+  const [tab,            setTab]            = useState<TabKey>('all')
+  const [isGlobalSearch, setIsGlobalSearch] = useState(false)
 
   // ── Load QB accounts ──────────────────────────────────────────────────────
 
@@ -476,7 +507,7 @@ export default function ReconciliationPage() {
       const d = await r.json()
       if (!r.ok) throw new Error(d.error ?? 'Failed to load accounts')
       setAccounts(d.accounts ?? [])
-      if (d.accounts?.length > 0 && !acctId) setAcctId(d.accounts[0].id)
+      // Do NOT auto-select — keep __ALL__ as the default so global search is always available
     } catch (e) {
       setAcctError(e instanceof Error ? e.message : 'Failed')
     } finally {
@@ -487,10 +518,11 @@ export default function ReconciliationPage() {
   // ── Run reconciliation ────────────────────────────────────────────────────
 
   async function run() {
-    if (!acctId)  { setErrMsg('Please select a QuickBooks account.'); return }
-    if (!bankFile){ setErrMsg('Please upload a bank statement.'); return }
-    if (!from || !to){ setErrMsg('Please set the date range.'); return }
+    if (!acctId)      { setErrMsg('Please select an account (or keep All Accounts).'); return }
+    if (!bankFile)    { setErrMsg('Please upload a bank statement.'); return }
+    if (!from || !to) { setErrMsg('Please set the date range.'); return }
 
+    const globalMode = acctId === '__ALL__'
     setPhase('loading'); setErrMsg(''); setResult(null); setSearch('')
 
     try {
@@ -509,9 +541,13 @@ export default function ReconciliationPage() {
       const bank = parseBankCSV(await csvFile.text())
       setBankTxns(bank)
 
-      // Step 2: fetch QB GL
-      const acctName = accounts.find(a => a.id === acctId)?.name ?? acctId
-      setStatus(`Fetching QuickBooks GL for "${acctName}" (${from} → ${to})…`)
+      // Step 2: fetch QB transactions
+      if (globalMode) {
+        setStatus(`Scanning entire QuickBooks ledger (${from} → ${to})…`)
+      } else {
+        const name = accounts.find(a => a.id === acctId)?.name ?? acctId
+        setStatus(`Fetching QuickBooks GL for "${name}" (${from} → ${to})…`)
+      }
       const qbRes  = await fetch(`/api/reconciliation/transactions?accountId=${acctId}&from=${from}&to=${to}`)
       const qbData = await qbRes.json()
       if (!qbRes.ok) {
@@ -520,6 +556,7 @@ export default function ReconciliationPage() {
       }
       const qb: QBTxn[] = qbData.transactions ?? []
       setQBTxns(qb)
+      setIsGlobalSearch(qbData.isGlobalSearch ?? false)
 
       // Step 3: match
       setStatus('Running reconciliation…')
@@ -558,7 +595,8 @@ export default function ReconciliationPage() {
           r.bank.reference.toLowerCase().includes(q) ||
           r.accountLocation.toLowerCase().includes(q) ||
           (r.qb?.name ?? '').toLowerCase().includes(q) ||
-          (r.qb?.txnType ?? '').toLowerCase().includes(q)
+          (r.qb?.txnType ?? '').toLowerCase().includes(q) ||
+          (r.qb?.accountName ?? '').toLowerCase().includes(q)
         )
       })
     : []
@@ -568,14 +606,15 @@ export default function ReconciliationPage() {
   function doExport() {
     if (!result) return
     const rows = [
-      ['Bank Date','Bank Amount','Bank Description','Reference','QB Status','Account Location','QB Type','QB Date','QB Vendor','QB Memo'],
+      ['Bank Date','Bank Amount','Bank Description','Reference','QB Status','QB Account','Account Category','QB Type','QB Date','QB Vendor','QB Memo'],
       ...result.rows.map(r => [
         r.bank.date,
         r.bank.amount.toFixed(2),
         r.bank.description,
         r.bank.reference,
         r.status,
-        r.accountLocation || (r.status === 'missing' ? 'MISSING' : ''),
+        r.qb?.accountName ?? (r.status === 'missing' ? 'MISSING' : ''),
+        r.accountLocation  || (r.status === 'missing' ? 'MISSING' : ''),
         r.qb?.txnType ?? '',
         r.qb?.date ?? '',
         r.qb?.name ?? '',
@@ -585,7 +624,9 @@ export default function ReconciliationPage() {
     exportCSV(rows, `reconciliation_${from}_${to}.csv`)
   }
 
-  const acctName = accounts.find(a => a.id === acctId)?.name ?? ''
+  const acctName = acctId === '__ALL__'
+    ? 'All Accounts (Global Search)'
+    : (accounts.find(a => a.id === acctId)?.name ?? '')
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 sm:p-8">
@@ -620,24 +661,24 @@ export default function ReconciliationPage() {
                 <div className="flex gap-2">
                   <select value={acctId} onChange={e => setAcctId(e.target.value)}
                     className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-0">
-                    {accounts.length === 0
-                      ? <option value="">— click Load to fetch accounts —</option>
-                      : Object.entries(groupAccounts(accounts)).map(([type, accts]) => (
-                          <optgroup key={type} label={type}>
-                            {accts.map(a => (
-                              <option key={a.id} value={a.id}>
-                                {a.name}
-                                {a.balance !== 0 ? ` (${a.balance.toLocaleString('en-AE',{minimumFractionDigits:2})} AED)` : ''}
-                              </option>
-                            ))}
-                          </optgroup>
-                        ))
-                    }
+                    {/* Global search always available at top */}
+                    <option value="__ALL__">🔍 All Accounts — Global Search</option>
+                    {accounts.length > 0 && <option disabled value="">──────────────────────</option>}
+                    {Object.entries(groupAccounts(accounts)).map(([type, accts]) => (
+                      <optgroup key={type} label={type}>
+                        {accts.map(a => (
+                          <option key={a.id} value={a.id}>
+                            {a.name}
+                            {a.balance !== 0 ? ` (${a.balance.toLocaleString('en-AE',{minimumFractionDigits:2})} AED)` : ''}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
                   </select>
                   <button onClick={loadAccounts} disabled={loadingAcct}
                     className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition-colors disabled:opacity-60 flex-shrink-0">
                     {loadingAcct ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                    {accounts.length === 0 ? 'Load' : 'Reload'}
+                    {accounts.length === 0 ? 'Load Accounts' : 'Reload'}
                   </button>
                 </div>
                 {acctError && (
@@ -645,6 +686,20 @@ export default function ReconciliationPage() {
                     <XCircle className="w-3.5 h-3.5" />{acctError}
                     {acctError.includes('not connected') && <a href="/settings" className="underline ml-1">Settings</a>}
                   </p>
+                )}
+                {/* Global search info banner */}
+                {acctId === '__ALL__' && (
+                  <div className="mt-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2.5 flex items-start gap-2">
+                    <Search className="w-3.5 h-3.5 text-blue-500 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-xs font-semibold text-blue-800">Global Search mode</p>
+                      <p className="text-xs text-blue-600 mt-0.5">
+                        Searches your entire QuickBooks ledger — every transaction type, every account.
+                        The <strong>Account Location</strong> column will show which QB account each bank
+                        transaction was recorded in, helping you find entries posted to the wrong place.
+                      </p>
+                    </div>
+                  </div>
                 )}
               </div>
 
@@ -863,7 +918,7 @@ export default function ReconciliationPage() {
                             </td>
                             <td className="py-2.5 px-3 text-sm text-slate-700">{qb.name || '—'}</td>
                             <td className="py-2.5 px-3">
-                              <LocationCell location={qb.split} status="found" />
+                              <LocationCell location={qb.split} status="found" accountName={qb.accountName} />
                             </td>
                             <td className="py-2.5 px-3 text-xs text-slate-500 max-w-[200px] truncate">{qb.memo || '—'}</td>
                           </tr>
@@ -925,9 +980,13 @@ export default function ReconciliationPage() {
         {/* Empty setup state */}
         {phase === 'setup' && (
           <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-12 text-center text-slate-400">
-            <ArrowLeftRight className="w-12 h-12 mx-auto mb-4 text-slate-300" />
+            <Search className="w-12 h-12 mx-auto mb-4 text-blue-300" />
             <p className="font-medium text-slate-600 mb-1">Ready to reconcile</p>
-            <p className="text-sm">Load your Chart of Accounts, select an account, upload your bank statement, then click Run.</p>
+            <p className="text-sm max-w-md mx-auto">
+              <strong>All Accounts (Global Search)</strong> is selected by default — upload your bank statement
+              and click Run to search across your entire QuickBooks ledger.
+              Or choose a specific account from the dropdown.
+            </p>
           </div>
         )}
       </div>
@@ -973,8 +1032,8 @@ function NeedsActionRow({ row, idx }: { row: TxnRow; idx: number }) {
           {bank.reference && <div className="text-xs text-slate-400 font-mono truncate">{bank.reference}</div>}
         </td>
         <td className="py-2.5 px-3"><StatusBadge status={status} /></td>
-        <td className="py-2.5 px-3 max-w-[200px]">
-          <LocationCell location={accountLocation} status={status} />
+        <td className="py-2.5 px-3 max-w-[220px]">
+          <LocationCell location={accountLocation} status={status} accountName={qb?.accountName} />
         </td>
         <td className="py-2.5 px-3 text-right w-8" onClick={e => e.stopPropagation()}>
           <div className="flex items-center justify-end gap-1">
@@ -996,23 +1055,31 @@ function NeedsActionRow({ row, idx }: { row: TxnRow; idx: number }) {
                 <AlertTriangle className="w-3.5 h-3.5" /> {actionLabel}
               </p>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {[
+                {([
                   { label: 'Date',        value: fmtDate(bank.date) },
                   { label: 'Amount',      value: fmtAmt(bank.amount) },
                   { label: 'Description', value: bank.description || '—' },
                   { label: 'Reference',   value: bank.reference || '—' },
                   ...(qb ? [
-                    { label: 'QB Type',     value: qb.txnType || '—' },
-                    { label: 'Vendor',      value: qb.name || '—' },
-                    { label: 'Current Category', value: accountLocation || '—', warn: true },
-                    { label: 'Memo',        value: qb.memo || '—' },
+                    { label: 'QB Type',              value: qb.txnType || '—' },
+                    { label: 'Vendor',               value: qb.name    || '—' },
+                    ...(qb.accountName ? [{ label: 'QB Account (Posted to)', value: qb.accountName, isAcct: true }] : []),
+                    { label: 'Current Category',     value: accountLocation || '—', warn: true },
+                    { label: 'Memo',                 value: qb.memo || '—' },
                   ] : []),
-                ].map(({ label, value, warn }) => (
-                  <div key={label} className={`rounded-lg px-3 py-2 ${warn ? 'bg-amber-50 border border-amber-200' : 'bg-slate-50'}`}>
-                    <p className="text-xs text-slate-400 mb-0.5">{label}</p>
-                    <p className={`text-sm font-medium ${warn ? 'text-amber-800' : 'text-slate-800'}`}>{value}</p>
-                  </div>
-                ))}
+                ] as Array<{ label: string; value: string; warn?: boolean; isAcct?: boolean }>)
+                  .map(({ label, value, warn, isAcct }) => (
+                    <div key={label} className={`rounded-lg px-3 py-2 ${
+                      warn   ? 'bg-amber-50 border border-amber-200'
+                      : isAcct ? 'bg-blue-50 border border-blue-200'
+                      : 'bg-slate-50'
+                    }`}>
+                      <p className="text-xs text-slate-400 mb-0.5">{label}</p>
+                      <p className={`text-sm font-medium ${warn ? 'text-amber-800' : isAcct ? 'text-blue-800' : 'text-slate-800'}`}>
+                        {value}
+                      </p>
+                    </div>
+                  ))}
               </div>
             </div>
           </td>
