@@ -32,9 +32,16 @@ interface QBTxn {
 // Status for each bank row
 type TxnStatus = 'found' | 'uncategorized' | 'missing' | 'transfer'
 
+interface NearMiss {
+  qb:      QBTxn
+  amtDiff: number   // absolute amount difference
+  dateDiff: number  // absolute day difference
+}
+
 interface TxnRow {
   bank:            BankTxn
   qb:              QBTxn | null
+  nearMiss:        NearMiss | null   // closest QB txn that almost matched (diagnostic)
   status:          TxnStatus
   accountLocation: string   // qb.split or empty
   daysDiff:        number   // 0 if missing
@@ -194,16 +201,39 @@ function runMatching(bankTxns: BankTxn[], qbTxns: QBTxn[]): MatchResult {
     let bestDiff = 99
     for (const qb of qbTxns) {
       if (usedQB.has(qb.id)) continue
-      if (Math.abs(bank.amount - qb.amount) > 0.01) continue
+      // Match on absolute amount — bank CSV and QB may use opposite sign conventions
+      // (e.g., bank withdrawal = -5000, QB TransactionList may return the same as +5000)
+      if (Math.abs(Math.abs(bank.amount) - Math.abs(qb.amount)) > 0.01) continue
       const diff = Math.abs(daysDiff(bank.date, qb.date))
       if (diff <= 1 && diff < bestDiff) { bestQB = qb; bestDiff = diff }
     }
     if (bestQB) usedQB.add(bestQB.id)
 
+    // Near-miss: find closest QB txn that almost matched, for diagnostic display
+    let nearMiss: NearMiss | null = null
+    if (!bestQB) {
+      let bestScore = Infinity
+      for (const qb of qbTxns) {
+        if (usedQB.has(qb.id)) continue
+        const absDiff  = Math.abs(Math.abs(bank.amount) - Math.abs(qb.amount))
+        const pctDiff  = absDiff / (Math.abs(bank.amount) || 1)
+        const dateDiff = Math.abs(daysDiff(bank.date, qb.date))
+        // Include candidates within 10% of amount AND within 10 days
+        if (pctDiff <= 0.10 && dateDiff <= 10) {
+          const score = dateDiff * 1000 + absDiff
+          if (score < bestScore) {
+            bestScore = score
+            nearMiss  = { qb, amtDiff: Math.round(absDiff * 100) / 100, dateDiff }
+          }
+        }
+      }
+    }
+
     const status = assessStatus(bestQB, bank)
     rows.push({
       bank,
       qb:              bestQB,
+      nearMiss,
       status,
       accountLocation: bestQB?.split ?? '',
       daysDiff:        bestQB ? daysDiff(bank.date, bestQB.date) : 0,
@@ -998,7 +1028,7 @@ export default function ReconciliationPage() {
 
 function NeedsActionRow({ row, idx }: { row: TxnRow; idx: number }) {
   const [open, setOpen] = useState(false)
-  const { bank, qb, status, accountLocation } = row
+  const { bank, qb, nearMiss, status, accountLocation } = row
 
   const actionLabel = {
     missing:       'Add to QuickBooks — transaction not recorded',
@@ -1081,6 +1111,37 @@ function NeedsActionRow({ row, idx }: { row: TxnRow; idx: number }) {
                     </div>
                   ))}
               </div>
+
+              {/* Near-miss diagnostic — show when missing but a close QB candidate exists */}
+              {!qb && nearMiss && (
+                <div className="mt-3 bg-orange-50 border border-orange-200 rounded-xl px-4 py-3">
+                  <p className="text-xs font-semibold text-orange-800 mb-2 flex items-center gap-1.5">
+                    🔍 Closest QB Match Found — Did Not Pass Filters
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
+                    {[
+                      { label: 'QB Date',    value: `${fmtDate(nearMiss.qb.date)}${nearMiss.dateDiff > 0 ? ` — ${nearMiss.dateDiff} day${nearMiss.dateDiff > 1 ? 's' : ''} off` : ' — same day'}` },
+                      { label: 'QB Amount',  value: `${fmtAmt(nearMiss.qb.amount)}${nearMiss.amtDiff > 0 ? ` — off by ${nearMiss.amtDiff.toFixed(2)}` : ' — exact'}` },
+                      { label: 'QB Type',    value: nearMiss.qb.txnType     || '—' },
+                      { label: 'Vendor',     value: nearMiss.qb.name        || '—' },
+                      { label: 'Category',   value: nearMiss.qb.split       || '—' },
+                      { label: 'QB Account', value: nearMiss.qb.accountName || '—' },
+                    ].map(({ label, value }) => (
+                      <div key={label} className="bg-white border border-orange-100 rounded-lg px-3 py-2">
+                        <p className="text-orange-500 mb-0.5">{label}</p>
+                        <p className="font-medium text-orange-900">{value}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-orange-600 mt-2">
+                    {nearMiss.dateDiff > 1
+                      ? `Date is ${nearMiss.dateDiff} day${nearMiss.dateDiff > 1 ? 's' : ''} apart — matcher allows ±1. Correct the date in QB or widen the search period.`
+                      : nearMiss.amtDiff > 0
+                      ? `Amount differs by ${nearMiss.amtDiff.toFixed(2)} AED — possible bank fee or rounding difference.`
+                      : 'This QB transaction was already matched to another bank row.'}
+                  </p>
+                </div>
+              )}
             </div>
           </td>
         </tr>
