@@ -527,6 +527,7 @@ export default function ReconciliationPage() {
   const [qbTxns,         setQBTxns]         = useState<QBTxn[]>([])
   const [tab,            setTab]            = useState<TabKey>('all')
   const [isGlobalSearch, setIsGlobalSearch] = useState(false)
+  const [qbDebug,        setQbDebug]        = useState<Record<string,unknown> | null>(null)
 
   // ── Load QB accounts ──────────────────────────────────────────────────────
 
@@ -587,6 +588,7 @@ export default function ReconciliationPage() {
       const qb: QBTxn[] = qbData.transactions ?? []
       setQBTxns(qb)
       setIsGlobalSearch(qbData.isGlobalSearch ?? false)
+      setQbDebug(qb.length === 0 ? (qbData.debug ?? null) : null)
 
       // Step 3: match
       setStatus('Running reconciliation…')
@@ -778,6 +780,36 @@ export default function ReconciliationPage() {
             )}
           </div>
         </div>
+
+        {/* QB returned 0 transactions — show diagnostic panel */}
+        {phase === 'done' && qbTxns.length === 0 && (
+          <div className="mt-4 bg-red-50 border border-red-200 rounded-xl p-4">
+            <p className="text-sm font-semibold text-red-800 mb-1 flex items-center gap-1.5">
+              <AlertTriangle className="w-4 h-4" /> QuickBooks returned 0 transactions for this date range
+            </p>
+            <p className="text-xs text-red-700 mb-3">
+              Every bank row will show as Missing. Check that the QB date range overlaps your statement, then re-run.
+            </p>
+            {qbDebug && (
+              <details className="text-xs text-slate-600">
+                <summary className="cursor-pointer font-medium text-red-700 mb-2">Show QB parsing diagnostics</summary>
+                <div className="bg-white border border-red-100 rounded-lg p-3 space-y-1.5 font-mono">
+                  <p><span className="text-slate-400">Raw data rows found:</span> {String(qbDebug.dataRowCount ?? '?')}</p>
+                  <p><span className="text-slate-400">Amount column index:</span> {String(qbDebug.amtColIdx ?? '?')} {Number(qbDebug.amtColIdx) === -1 ? '⚠️ NOT FOUND — column name mismatch' : '✓'}</p>
+                  <p><span className="text-slate-400">Date column index:</span>   {String(qbDebug.dateColIdx ?? '?')} {Number(qbDebug.dateColIdx) === -1 ? '⚠️ NOT FOUND' : '✓'}</p>
+                  <p className="pt-1"><span className="text-slate-400">QB columns returned:</span></p>
+                  <p className="pl-2 break-all">{(qbDebug.colTypes as string[] | undefined)?.join(', ') ?? '—'}</p>
+                  {(qbDebug.sampleValues as unknown[] | undefined)?.length ? (
+                    <>
+                      <p className="pt-1"><span className="text-slate-400">First row values:</span></p>
+                      <p className="pl-2 break-all">{(qbDebug.sampleValues as string[]).join(' | ')}</p>
+                    </>
+                  ) : null}
+                </div>
+              </details>
+            )}
+          </div>
+        )}
 
         {/* Results */}
         {phase === 'done' && result && counts && (

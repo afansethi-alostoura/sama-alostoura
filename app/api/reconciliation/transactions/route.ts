@@ -53,55 +53,112 @@ interface TLRow {
   reference:   string
 }
 
-function parseTransactionList(report: unknown): TLRow[] {
+interface TLParseResult {
+  rows:         TLRow[]
+  debug: {
+    colTypes:     string[]
+    dataRowCount: number
+    parsedCount:  number
+    amtColIdx:    number
+    dateColIdx:   number
+    sampleValues: string[]
+  }
+}
+
+function parseTransactionList(report: unknown): TLParseResult {
   const r    = report as any
   const cols: any[] = r?.Columns?.Column ?? []
 
-  // Locate column indices by ColType (QB uses different ColType strings per report version)
+  // Case-insensitive ColType lookup with multiple fallback names
   const find = (...types: string[]) => {
     for (const t of types) {
-      const i = cols.findIndex((c: any) => c.ColType === t)
+      const lo = t.toLowerCase()
+      const i  = cols.findIndex((c: any) =>
+        c.ColType === t || c.ColType?.toLowerCase() === lo ||
+        c.ColTitle?.toLowerCase() === lo
+      )
       if (i !== -1) return i
     }
     return -1
   }
 
-  const typeIdx  = find('TxnType')
-  const dateIdx  = find('tx_date', 'TxnDate', 'date')
-  const numIdx   = find('doc_num', 'TxnNum', 'num')
-  const nameIdx  = find('entity_name', 'name', 'EntityName')
-  const memoIdx  = find('memo', 'Memo', 'description')
-  const acctIdx  = find('account_name', 'account', 'Account')
-  const splitIdx = find('split_acc', 'split', 'Split')
-  const amtIdx   = find('subt_nat_amount', 'amount', 'Amount')
+  const dateIdx  = find('tx_date',  'txndate',   'date',           'txn_date')
+  const typeIdx  = find('TxnType',  'txn_type',  'transactiontype','transaction_type')
+  const numIdx   = find('doc_num',  'txnnum',    'num',            'reference', 'doc_number')
+  const nameIdx  = find('entity_name','name',    'entityname',     'vendor_name', 'payee')
+  const memoIdx  = find('memo',     'Memo',      'description',    'memo_descr', 'narration')
+  const acctIdx  = find('account_name','account','acct',           'Account')
+  const splitIdx = find('split_acc','split',     'Split',          'split_account', 'category')
+  // QB GL uses 'subt_net_amount'; TransactionList uses 'subt_nat_amount' — try both
+  const amtIdx   = find('subt_nat_amount','subt_net_amount','amount','Amount','nat_amount','net_amount','net_amount_home')
+
+  // Log column discovery so server logs reveal parsing issues
+  console.log('[TxnList] cols:', cols.map((c: any, i: number) => `${i}:${c.ColType}`).join(' | '))
+  console.log('[TxnList] idx →', { dateIdx, typeIdx, numIdx, nameIdx, memoIdx, acctIdx, splitIdx, amtIdx })
+
+  // Collect all Data rows — handle both flat structure and nested Section→Data (like GL)
+  const dataRows: any[] = []
+  const collect = (rows: any[]) => {
+    for (const row of rows) {
+      if (row.type === 'Data') {
+        dataRows.push(row)
+      } else if (row.Rows?.Row) {
+        collect(row.Rows.Row)
+      }
+    }
+  }
+  collect(r?.Rows?.Row ?? [])
+  console.log(`[TxnList] data rows found: ${dataRows.length}`)
+  if (dataRows.length > 0) {
+    const sample = dataRows[0].ColData?.map((c: any) => c?.value).join(' | ')
+    console.log('[TxnList] first row values:', sample)
+  }
 
   const results: TLRow[] = []
 
-  for (const row of r?.Rows?.Row ?? []) {
-    if (row.type !== 'Data') continue
+  for (const row of dataRows) {
     const d: any[] = row.ColData ?? []
 
-    const date = (d[dateIdx]?.value ?? '').trim()
-    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) continue
+    // Parse date — accept YYYY-MM-DD, MM/DD/YYYY, or ISO datetime
+    let isoDate: string | null = null
+    const rawDate = dateIdx >= 0 ? (d[dateIdx]?.value ?? '').trim() : ''
+    if (/^\d{4}-\d{2}-\d{2}/.test(rawDate)) {
+      isoDate = rawDate.slice(0, 10)
+    } else if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(rawDate)) {
+      const [m, day, y] = rawDate.split('/')
+      isoDate = `${y}-${m.padStart(2,'0')}-${day.padStart(2,'0')}`
+    }
+    if (!isoDate) continue
 
-    const rawAmt = (d[amtIdx]?.value ?? '0').replace(/,/g, '')
+    const rawAmt = amtIdx >= 0 ? (d[amtIdx]?.value ?? '').replace(/,/g, '') : ''
     const amount = parseFloat(rawAmt) || 0
     if (amount === 0) continue
 
     results.push({
       id:          `tl_${row.id ?? results.length}`,
-      date,
+      date:        isoDate,
       amount,
-      txnType:     (d[typeIdx]?.value  ?? '').trim(),
-      name:        (d[nameIdx]?.value  ?? '').trim(),
-      memo:        (d[memoIdx]?.value  ?? '').trim(),
-      accountName: (d[acctIdx]?.value  ?? '').trim(),
-      split:       (d[splitIdx]?.value ?? '').trim(),
-      reference:   (d[numIdx]?.value   ?? '').trim(),
+      txnType:     typeIdx  >= 0 ? (d[typeIdx]?.value  ?? '').trim() : '',
+      name:        nameIdx  >= 0 ? (d[nameIdx]?.value  ?? '').trim() : '',
+      memo:        memoIdx  >= 0 ? (d[memoIdx]?.value  ?? '').trim() : '',
+      accountName: acctIdx  >= 0 ? (d[acctIdx]?.value  ?? '').trim() : '',
+      split:       splitIdx >= 0 ? (d[splitIdx]?.value ?? '').trim() : '',
+      reference:   numIdx   >= 0 ? (d[numIdx]?.value   ?? '').trim() : '',
     })
   }
 
-  return results
+  console.log(`[TxnList] parsed ${results.length} transactions with non-zero amounts`)
+  return {
+    rows: results,
+    debug: {
+      colTypes:     cols.map((c: any) => `${c.ColType}(${c.ColTitle})`),
+      dataRowCount: dataRows.length,
+      parsedCount:  results.length,
+      amtColIdx:    amtIdx,
+      dateColIdx:   dateIdx,
+      sampleValues: dataRows[0]?.ColData?.map((c: any) => c?.value ?? '') ?? [],
+    },
+  }
 }
 
 // ── Route ─────────────────────────────────────────────────────────────────────
@@ -135,10 +192,10 @@ export async function GET(req: NextRequest) {
 
     // ── Global search: TransactionList across all accounts ────────────────────
     if (accountId === GLOBAL_ID) {
-      const report = await fetchTransactionList(t, from, to)
-      const rows   = parseTransactionList(report)
+      const report            = await fetchTransactionList(t, from, to)
+      const { rows, debug }   = parseTransactionList(report)
 
-      const transactions = rows.map(r => ({
+      const transactions = rows.map((r: TLRow) => ({
         id:          r.id,
         date:        r.date,
         amount:      r.amount,
@@ -152,7 +209,13 @@ export async function GET(req: NextRequest) {
         balance:     0,
       }))
 
-      return NextResponse.json({ transactions, count: transactions.length, isGlobalSearch: true })
+      return NextResponse.json({
+        transactions,
+        count: transactions.length,
+        isGlobalSearch: true,
+        // Debug info helps diagnose 0-transaction situations without needing server logs
+        debug: transactions.length === 0 ? debug : undefined,
+      })
     }
 
     // ── Single-account: GeneralLedger for the chosen account ─────────────────
