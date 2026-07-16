@@ -1,7 +1,7 @@
 'use client'
 import React, { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { FolderOpen, FileText, BarChart2, FlaskConical, ShieldCheck } from 'lucide-react'
+import { FolderOpen, FileText, BarChart2, FlaskConical, ShieldCheck, Camera } from 'lucide-react'
 
 const FOLDERS = [
   {
@@ -98,6 +98,18 @@ export default function DocumentsPage() {
             </Link>
           )
         })}
+
+        {/* Progress Photo Album — special card */}
+        <Link
+          href="/documents/photo-album"
+          className="flex flex-col items-center gap-4 p-8 rounded-2xl border-2 transition-all bg-blue-50 border-blue-200 hover:bg-blue-100 group col-span-1 sm:col-span-2"
+        >
+          <Camera className="w-14 h-14 text-blue-600 group-hover:scale-110 transition-transform" />
+          <div className="text-center">
+            <p className="font-bold text-base text-blue-700">Progress Photo Album</p>
+            <p className="text-xs text-blue-500 mt-1">Upload site photos → generate professional A4 PDF (4 photos/page)</p>
+          </div>
+        </Link>
       </div>
     </div>
   )
