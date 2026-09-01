@@ -22,7 +22,7 @@ import { getAllOverrides, saveOverride }   from '@/lib/project-overrides'
 import { getAllStoredProjects }            from '@/lib/projects-store'
 import { getAllStoredFromSupabase }        from '@/lib/project-overrides'
 import { saveProgress }                   from '@/lib/project-progress'
-import type { QBClass, QBDeposit, QBPurchase, QBBill, QBVendorCredit } from '@/lib/quickbooks/types'
+import type { QBClass, QBDeposit, QBInvoice, QBPurchase, QBBill, QBVendorCredit } from '@/lib/quickbooks/types'
 
 export const dynamic     = 'force-dynamic'
 export const maxDuration = 60
@@ -51,6 +51,24 @@ async function fetchDeposits(t: { access_token: string; realm_id: string }): Pro
     if (!res.ok) break
     const data = await res.json()
     const rows = (data?.QueryResponse?.Deposit as QBDeposit[] | undefined) ?? []
+    all.push(...rows); if (rows.length < PAGE) break; pos += PAGE
+  }
+  return all
+}
+
+async function fetchInvoices(t: { access_token: string; realm_id: string }): Promise<QBInvoice[]> {
+  const BASE = process.env.QUICKBOOKS_ENVIRONMENT === 'production'
+    ? 'https://quickbooks.api.intuit.com/v3/company'
+    : 'https://sandbox-quickbooks.api.intuit.com/v3/company'
+  const PAGE = 1000; const all: QBInvoice[] = []; let pos = 1
+  while (true) {
+    const q = `SELECT * FROM Invoice ORDERBY TxnDate ASC MAXRESULTS ${PAGE} STARTPOSITION ${pos}`
+    const res = await fetch(`${BASE}/${t.realm_id}/query?query=${encodeURIComponent(q)}&minorversion=70`, {
+      headers: { Authorization: `Bearer ${t.access_token}`, Accept: 'application/json' },
+    })
+    if (!res.ok) break
+    const data = await res.json()
+    const rows = (data?.QueryResponse?.Invoice as QBInvoice[] | undefined) ?? []
     all.push(...rows); if (rows.length < PAGE) break; pos += PAGE
   }
   return all
@@ -126,8 +144,9 @@ export async function POST() {
     }
 
     // Fetch all QB data once
-    const [deposits, purchases, bills, vendorCredits] = await Promise.all([
+    const [deposits, invoices, purchases, bills, vendorCredits] = await Promise.all([
       fetchDeposits(t),
+      fetchInvoices(t),
       fetchPurchasesInRange(null, null),
       fetchBillsInRange(null, null),
       fetchVendorCreditsInRange(null, null),
@@ -146,6 +165,15 @@ export async function POST() {
         if (!cls) continue
         incomeByClassId.set(cls.id, (incomeByClassId.get(cls.id) ?? 0) + (line.Amount ?? 0))
       }
+    }
+
+    // Invoice payments: TotalAmt - Balance = amount already collected per class
+    for (const inv of invoices as QBInvoice[]) {
+      const paid = (inv.TotalAmt ?? 0) - (inv.Balance ?? 0)
+      if (paid <= 0) continue
+      const cls = resolveClass(inv.ClassRef, undefined)
+      if (!cls) continue
+      incomeByClassId.set(cls.id, (incomeByClassId.get(cls.id) ?? 0) + paid)
     }
 
     for (const p of purchases as QBPurchase[]) {
