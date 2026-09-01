@@ -1,254 +1,233 @@
 /**
- * GET /api/cash-flow?classId=<QB class ID>
+ * GET /api/cash-flow?from=YYYY-MM-DD&to=YYYY-MM-DD
  *
- * Returns a chronological fund-flow timeline for a QB class (project):
- *   IN  — Invoice Payments + direct Deposits tagged to the class
- *   OUT — Purchases + Bills tagged to the class
+ * RAK Bank General Ledger — company-wide cash-flow tracker.
  *
- * Also returns summary totals, per-category expense breakdown, and
- * the classes list so the client can populate the project selector.
+ * Returns:
+ *   - transactions  : every GL line for the RAK Bank account in the date range
+ *   - groups        : credits (incoming client deposits) with the debits that
+ *                     followed until the next deposit — "fund allocation" view
+ *   - monthly       : per-month summary (credits / debits / closing balance)
+ *   - summary       : period totals + opening / closing balance
  *
- * Data sources:
- *   - invoices / payments / purchases / bills  → Supabase qb_snapshot
- *   - deposits                                 → QB API live (not in snapshot)
+ * Data source: QB GeneralLedger report for the account whose name contains
+ * "RAK Bank" and is of type "Bank" (falls back to any "RAK" bank account).
  */
-import { NextResponse }                     from 'next/server'
-import { supabaseAdmin, isSupabaseConfigured } from '@/lib/supabase'
-import { loadTokensAsync }                  from '@/lib/quickbooks/tokens'
-import type {
-  QBInvoice, QBPayment, QBPurchase, QBBill, QBDeposit, QBClass,
-} from '@/lib/quickbooks/types'
+import { NextRequest, NextResponse }                from 'next/server'
+import { supabaseAdmin, isSupabaseConfigured }      from '@/lib/supabase'
+import { loadTokensAsync }                          from '@/lib/quickbooks/tokens'
+import {
+  fetchAccounts, fetchGLReport, parseGLReport, buildMonthSummaries,
+} from '@/lib/quickbooks/client'
+import type { QBAlostouraTransaction } from '@/lib/quickbooks/types'
 
 export const dynamic     = 'force-dynamic'
 export const maxDuration = 30
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-export interface FundEvent {
-  id:             string
-  date:           string   // YYYY-MM-DD
-  type:           'deposit' | 'payment' | 'purchase' | 'bill'
-  direction:      'in' | 'out'
-  amount:         number
-  party:          string   // customer / vendor name
-  category:       string   // account / expense type
-  ref:            string   // doc number or payment ref
-  bank:           string   // bank account name
-  classId:        string
-  className:      string
-  runningBalance: number
+export interface FundGroup {
+  depositId:   string           // txnId of the credit that opened this period
+  depositDate: string           // YYYY-MM-DD
+  depositor:   string           // customer / party name
+  memo:        string
+  depositAmt:  number           // amount received (positive)
+  endDate:     string | null    // date of next deposit (null = open)
+  debits:      QBAlostouraTransaction[]  // outgoing payments in this period
+  totalDebits: number
+  remaining:   number           // depositAmt that was NOT spent (may go negative)
+  byCategory:  Array<{ name: string; amount: number }>
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-const QB_BASE = process.env.QUICKBOOKS_ENVIRONMENT === 'production'
-  ? 'https://quickbooks.api.intuit.com/v3/company'
-  : 'https://sandbox-quickbooks.api.intuit.com/v3/company'
+function defaultFrom() {
+  const d = new Date(); d.setFullYear(d.getFullYear() - 2)
+  return d.toISOString().slice(0, 10)
+}
+function defaultTo() { return new Date().toISOString().slice(0, 10) }
 
-async function fetchDeposits(t: { access_token: string; realm_id: string }): Promise<QBDeposit[]> {
-  const all: QBDeposit[] = []; let pos = 1
-  while (true) {
-    const q   = `SELECT * FROM Deposit ORDERBY TxnDate ASC MAXRESULTS 1000 STARTPOSITION ${pos}`
-    const res = await fetch(`${QB_BASE}/${t.realm_id}/query?query=${encodeURIComponent(q)}&minorversion=70`, {
-      headers: { Authorization: `Bearer ${t.access_token}`, Accept: 'application/json' },
-    })
-    if (!res.ok) break
-    const rows = (await res.json())?.QueryResponse?.Deposit as QBDeposit[] | undefined ?? []
-    all.push(...rows); if (rows.length < 1000) break; pos += 1000
-  }
-  return all
+function categorise(split: string): string {
+  const s = split.toLowerCase()
+  if (s.includes('loan') || s.includes('mortgage'))           return 'Loan / Finance'
+  if (s.includes('credit card') || s.includes('rak credit'))  return 'Credit Card'
+  if (s.includes('salary') || s.includes('wage') || s.includes('payroll')) return 'Salaries'
+  if (s.includes('petty cash'))                               return 'Petty Cash'
+  if (s.includes('project cost') || s.includes('building materials')) return 'Project Costs'
+  if (s.includes('accounts payable') || s.includes('a/p'))   return 'Vendor Bills'
+  if (s.includes('accounts receivable') || s.includes('a/r')) return 'Client Payments (internal)'
+  if (s.includes('transfer'))                                 return 'Bank Transfer'
+  if (s.includes('tax') || s.includes('vat'))                 return 'Tax / VAT'
+  if (split.trim() === '' || split === '-Split-')             return 'Multiple Accounts'
+  return split   // keep as-is if no match
 }
 
-const EXPENSE_TYPES = new Set(['AccountBasedExpenseLineDetail', 'ItemBasedExpenseLineDetail'])
+function buildGroups(txns: QBAlostouraTransaction[]): FundGroup[] {
+  const sorted = [...txns].sort((a, b) => a.txnDate.localeCompare(b.txnDate))
+  const groups: FundGroup[] = []
+  let current: FundGroup | null = null
 
-// ── Route ─────────────────────────────────────────────────────────────────────
-export async function GET(req: Request) {
-  const filterClassId = new URL(req.url).searchParams.get('classId') ?? ''
+  // Collect debits that arrive BEFORE the first credit into an "opening" bucket
+  const preDebits: QBAlostouraTransaction[] = []
 
-  if (!isSupabaseConfigured() || !supabaseAdmin) {
-    return NextResponse.json({ error: 'Supabase not configured' }, { status: 503 })
-  }
-
-  const { data, error } = await supabaseAdmin
-    .from('qb_snapshot')
-    .select('invoices, payments, purchases, bills, classes, synced_at')
-    .eq('id', 1)
-    .single()
-
-  if (error || !data) {
-    return NextResponse.json(
-      { error: 'No QB snapshot found. Run a QB sync first from Accounting → Sync QuickBooks.' },
-      { status: 404 },
-    )
-  }
-
-  const invoices  = (data.invoices  ?? []) as QBInvoice[]
-  const payments  = (data.payments  ?? []) as QBPayment[]
-  const purchases = (data.purchases ?? []) as QBPurchase[]
-  const bills     = (data.bills     ?? []) as QBBill[]
-  const classes   = (data.classes   ?? []) as QBClass[]
-
-  // Build invoice ID → class ref map (header first, then line-level fallback)
-  const invClassMap = new Map<string, { value: string; name: string }>()
-  for (const inv of invoices) {
-    let cls = inv.ClassRef ?? null
-    if (!cls) {
-      for (const line of inv.Line ?? []) {
-        cls = line.SalesItemLineDetail?.ClassRef ?? null
-        if (cls) break
-      }
-    }
-    if (cls) invClassMap.set(inv.Id, cls)
-  }
-
-  const events: Omit<FundEvent, 'runningBalance'>[] = []
-
-  // ── Income: QB Payments (linked to Invoices → class) ─────────────────────
-  for (const pmt of payments) {
-    let cls: { value: string; name: string } | null = null
-    outer: for (const line of pmt.Line ?? []) {
-      for (const link of line.LinkedTxn ?? []) {
-        if (link.TxnType === 'Invoice') { cls = invClassMap.get(link.TxnId) ?? null; break outer }
-      }
-    }
-    if (!cls) continue
-    if (filterClassId && cls.value !== filterClassId) continue
-    events.push({
-      id:        `pmt-${pmt.Id}`,
-      date:      pmt.TxnDate,
-      type:      'payment',
-      direction: 'in',
-      amount:    pmt.TotalAmt ?? 0,
-      party:     pmt.CustomerRef?.name ?? '',
-      category:  'Invoice Payment',
-      ref:       pmt.PaymentRefNum ?? '',
-      bank:      pmt.DepositToAccountRef?.name ?? '',
-      classId:   cls.value,
-      className: cls.name,
-    })
-  }
-
-  // ── Income: Direct Deposits from QB API ───────────────────────────────────
-  const tokens = await loadTokensAsync()
-  if (tokens) {
-    const deposits = await fetchDeposits(tokens).catch(() => [])
-    for (const dep of deposits) {
-      for (const line of dep.Line ?? []) {
-        if (line.DetailType !== 'DepositLineDetail') continue
-        const detail = line.DepositLineDetail
-        if (!detail?.ClassRef) continue
-        const cls = detail.ClassRef
-        if (filterClassId && cls.value !== filterClassId) continue
-        const amount = line.Amount ?? 0
-        if (amount <= 0) continue
-        events.push({
-          id:        `dep-${dep.Id}-${line.Id ?? '0'}`,
-          date:      dep.TxnDate,
-          type:      'deposit',
-          direction: 'in',
-          amount,
-          party:     detail.EntityRef?.name ?? 'Client',
-          category:  detail.AccountRef?.name ?? 'Bank Deposit',
-          ref:       (dep as any).DocNumber ?? '',
-          bank:      dep.DepositToAccountRef?.name ?? '',
-          classId:   cls.value,
-          className: cls.name,
+  for (const t of sorted) {
+    if (t.amount > 0) {
+      // A new incoming deposit — close the previous group
+      if (current) {
+        current.endDate     = t.txnDate
+        current.totalDebits = current.debits.reduce((s, d) => s + Math.abs(d.amount), 0)
+        current.remaining   = current.depositAmt - current.totalDebits
+        current.byCategory  = summariseByCategory(current.debits)
+        groups.push(current)
+      } else if (preDebits.length) {
+        // Flush pre-deposit debits as a synthetic "Opening Balance" group
+        const totalD = preDebits.reduce((s, d) => s + Math.abs(d.amount), 0)
+        groups.push({
+          depositId:   'opening',
+          depositDate: preDebits[0].txnDate,
+          depositor:   'Opening / Prior Period',
+          memo:        '',
+          depositAmt:  0,
+          endDate:     t.txnDate,
+          debits:      preDebits,
+          totalDebits: totalD,
+          remaining:   -totalD,
+          byCategory:  summariseByCategory(preDebits),
         })
       }
-    }
-  }
-
-  // ── Expenses: Purchases (aggregated per transaction × class) ─────────────
-  const purMap = new Map<string, Omit<FundEvent, 'runningBalance'>>()
-  for (const p of purchases) {
-    for (const line of p.Line ?? []) {
-      if (!EXPENSE_TYPES.has(line.DetailType)) continue
-      const abd = line.AccountBasedExpenseLineDetail
-      const ibd = line.ItemBasedExpenseLineDetail
-      const cls = abd?.ClassRef ?? ibd?.ClassRef ?? p.ClassRef ?? null
-      if (!cls) continue
-      if (filterClassId && cls.value !== filterClassId) continue
-      const amount = line.Amount ?? 0
-      if (amount <= 0) continue
-      const key = `pur-${p.Id}-${cls.value}`
-      const ex  = purMap.get(key)
-      if (ex) { ex.amount += amount } else {
-        purMap.set(key, {
-          id: key, date: p.TxnDate, type: 'purchase', direction: 'out', amount,
-          party:     p.EntityRef?.name ?? 'Supplier',
-          category:  abd?.AccountRef?.name ?? ibd?.ItemRef?.name ?? 'Purchase',
-          ref:       (p as any).DocNumber ?? '',
-          bank:      p.AccountRef?.name ?? '',
-          classId:   cls.value, className: cls.name,
-        })
+      current = {
+        depositId:   t.txnId || `dep-${t.txnDate}`,
+        depositDate: t.txnDate,
+        depositor:   t.name || 'Client',
+        memo:        t.memo,
+        depositAmt:  t.amount,
+        endDate:     null,
+        debits:      [],
+        totalDebits: 0,
+        remaining:   t.amount,
+        byCategory:  [],
+      }
+    } else if (t.amount < 0) {
+      if (current) {
+        current.debits.push(t)
+      } else {
+        preDebits.push(t)
       }
     }
   }
-  events.push(...purMap.values())
 
-  // ── Expenses: Bills (aggregated per transaction × class) ─────────────────
-  const bilMap = new Map<string, Omit<FundEvent, 'runningBalance'>>()
-  for (const b of bills) {
-    for (const line of b.Line ?? []) {
-      if (!EXPENSE_TYPES.has(line.DetailType)) continue
-      const abd = line.AccountBasedExpenseLineDetail
-      const ibd = line.ItemBasedExpenseLineDetail
-      const cls = abd?.ClassRef ?? ibd?.ClassRef ?? b.ClassRef ?? null
-      if (!cls) continue
-      if (filterClassId && cls.value !== filterClassId) continue
-      const amount = line.Amount ?? 0
-      if (amount <= 0) continue
-      const key = `bil-${b.Id}-${cls.value}`
-      const ex  = bilMap.get(key)
-      if (ex) { ex.amount += amount } else {
-        bilMap.set(key, {
-          id: key, date: b.TxnDate, type: 'bill', direction: 'out', amount,
-          party:     b.VendorRef?.name ?? 'Vendor',
-          category:  abd?.AccountRef?.name ?? ibd?.ItemRef?.name ?? 'Bill',
-          ref:       (b as any).DocNumber ?? '',
-          bank:      '',
-          classId:   cls.value, className: cls.name,
-        })
-      }
-    }
+  // Close the last open group
+  if (current) {
+    current.totalDebits = current.debits.reduce((s, d) => s + Math.abs(d.amount), 0)
+    current.remaining   = current.depositAmt - current.totalDebits
+    current.byCategory  = summariseByCategory(current.debits)
+    groups.push(current)
   }
-  events.push(...bilMap.values())
 
-  // Sort: by date asc, income before expenses on same day
-  events.sort((a, b) =>
-    a.date.localeCompare(b.date) ||
-    (a.direction === 'in' ? -1 : 1) - (b.direction === 'in' ? -1 : 1)
-  )
+  return groups
+}
 
-  // Running balance
-  let balance = 0
-  const eventsWithBalance: FundEvent[] = events.map(e => {
-    balance += e.direction === 'in' ? e.amount : -e.amount
-    return { ...e, runningBalance: Math.round(balance * 100) / 100 }
-  })
-
-  const totalIn  = events.filter(e => e.direction === 'in' ).reduce((s, e) => s + e.amount, 0)
-  const totalOut = events.filter(e => e.direction === 'out').reduce((s, e) => s + e.amount, 0)
-
-  // Category breakdown (expenses only, sorted largest first)
-  const catMap = new Map<string, number>()
-  events.filter(e => e.direction === 'out').forEach(e => {
-    const cat = e.category || 'Other'
-    catMap.set(cat, (catMap.get(cat) ?? 0) + e.amount)
-  })
-  const byCategory = [...catMap.entries()]
+function summariseByCategory(debits: QBAlostouraTransaction[]): Array<{ name: string; amount: number }> {
+  const map = new Map<string, number>()
+  for (const d of debits) {
+    const cat = categorise(d.split)
+    map.set(cat, (map.get(cat) ?? 0) + Math.abs(d.amount))
+  }
+  return [...map.entries()]
     .map(([name, amount]) => ({ name, amount: Math.round(amount * 100) / 100 }))
     .sort((a, b) => b.amount - a.amount)
+}
+
+// ── Route ─────────────────────────────────────────────────────────────────────
+export async function GET(req: NextRequest) {
+  const sp   = new URL(req.url).searchParams
+  const from = sp.get('from') || defaultFrom()
+  const to   = sp.get('to')   || defaultTo()
+
+  const tokens = await loadTokensAsync()
+  if (!tokens) {
+    // Try snapshot fallback
+    if (!isSupabaseConfigured() || !supabaseAdmin) {
+      return NextResponse.json({ found: false, message: 'QuickBooks not connected.' }, { status: 401 })
+    }
+    const { data } = await supabaseAdmin.from('qb_snapshot').select('rak_bank, synced_at').eq('id', 1).single()
+    const cached = (data as any)?.rak_bank as { transactions: QBAlostouraTransaction[]; account: unknown; summary: unknown } | null
+    if (!cached) {
+      return NextResponse.json({ found: false, message: 'QuickBooks not connected. Connect QB and run a sync to see RAK Bank data.' })
+    }
+    const txns = cached.transactions.filter(t => t.txnDate >= from && t.txnDate <= to)
+    return buildResponse(txns, cached.account, from, to, 'snapshot', (data as any)?.synced_at)
+  }
+
+  try {
+    const accounts = await fetchAccounts()
+
+    // Find the RAK Bank account — prefer an exact Bank-type account named "RAK Bank"
+    let rakAccount = accounts.find(a =>
+      a.AccountType === 'Bank' &&
+      a.Name.toLowerCase().replace(/\s+/g, ' ').includes('rak bank')
+    )
+    // Broader fallback: any active Bank account with "RAK" in the name
+    if (!rakAccount) {
+      rakAccount = accounts.find(a =>
+        a.AccountType === 'Bank' &&
+        a.Name.toLowerCase().includes('rak') &&
+        !a.Name.toLowerCase().includes('credit')
+      )
+    }
+
+    if (!rakAccount) {
+      return NextResponse.json({
+        found:   false,
+        message: `No RAK Bank account found in your QuickBooks Chart of Accounts. ` +
+                 `Available bank accounts: ${accounts.filter(a => a.AccountType === 'Bank').map(a => a.Name).join(', ') || 'none found'}.`,
+        accounts: accounts.filter(a => a.AccountType === 'Bank').map(a => ({ Id: a.Id, Name: a.Name })),
+      })
+    }
+
+    const glReport   = await fetchGLReport(rakAccount.Id, from, to)
+    const txns       = parseGLReport(glReport)
+
+    return buildResponse(
+      txns,
+      { id: rakAccount.Id, name: rakAccount.Name, balance: rakAccount.CurrentBalance },
+      from, to, 'live', new Date().toISOString()
+    )
+  } catch (err: any) {
+    console.error('[RAK Bank GL] Error:', err.message)
+    return NextResponse.json({ found: false, message: `QB error: ${err.message}` }, { status: 500 })
+  }
+}
+
+function buildResponse(
+  txns:     QBAlostouraTransaction[],
+  account:  unknown,
+  from:     string,
+  to:       string,
+  source:   string,
+  fetchedAt: string,
+) {
+  const sorted      = [...txns].sort((a, b) => a.txnDate.localeCompare(b.txnDate))
+  const monthly     = buildMonthSummaries(sorted)
+  const groups      = buildGroups(sorted)
+
+  const totalIn  = sorted.filter(t => t.amount >  0).reduce((s, t) => s + t.amount,         0)
+  const totalOut = sorted.filter(t => t.amount <  0).reduce((s, t) => s + Math.abs(t.amount), 0)
+  const closing  = sorted.length ? sorted[sorted.length - 1].balance : 0
 
   return NextResponse.json({
-    classId: filterClassId,
-    events:  eventsWithBalance,
+    found:        true,
+    source,
+    fetched_at:   fetchedAt,
+    account,
+    dateFilter:   { from, to },
+    transactions: [...sorted].reverse(),   // newest first for timeline tab
+    groups,                                // oldest first for allocation tab
+    monthly,
     summary: {
-      totalIn:  Math.round(totalIn  * 100) / 100,
-      totalOut: Math.round(totalOut * 100) / 100,
-      balance:  Math.round(balance  * 100) / 100,
-      txnCount: events.length,
+      totalIn:        Math.round(totalIn  * 100) / 100,
+      totalOut:       Math.round(totalOut * 100) / 100,
+      net:            Math.round((totalIn - totalOut) * 100) / 100,
+      closingBalance: Math.round(closing  * 100) / 100,
+      txnCount:       sorted.length,
     },
-    byCategory,
-    classes,
-    synced_at: data.synced_at ?? null,
   })
 }

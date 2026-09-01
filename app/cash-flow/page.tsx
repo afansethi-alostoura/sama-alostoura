@@ -1,34 +1,34 @@
 'use client'
 import { useEffect, useState, useCallback } from 'react'
 import {
-  Landmark, RefreshCw, Loader2, ArrowDownCircle, ArrowUpCircle,
-  ChevronDown, Wallet, TrendingUp, TrendingDown, AlertCircle,
-  Building2, CreditCard, FileText, Banknote, BarChart3,
+  Landmark, Loader2, ArrowDownCircle, ArrowUpCircle,
+  Wallet, AlertCircle, ChevronDown, ChevronRight,
+  LayoutList, GitFork,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { FundEvent } from '@/app/api/cash-flow/route'
+import type { FundGroup } from '@/app/api/cash-flow/route'
+import type { QBAlostouraTransaction } from '@/lib/quickbooks/types'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-interface ClassOption { Id: string; Name: string; FullyQualifiedName: string }
-interface CategoryRow { name: string; amount: number }
-interface Summary { totalIn: number; totalOut: number; balance: number; txnCount: number }
+interface MonthlySummary { month: string; label: string; credits: number; debits: number; balance: number }
+interface Summary { totalIn: number; totalOut: number; net: number; closingBalance: number; txnCount: number }
 
-interface CashFlowData {
-  events:     FundEvent[]
-  summary:    Summary
-  byCategory: CategoryRow[]
-  classes:    ClassOption[]
-  synced_at:  string | null
+interface RakData {
+  found:        boolean
+  message?:     string
+  source?:      string
+  fetched_at?:  string
+  account?:     { name: string; balance?: number }
+  transactions: QBAlostouraTransaction[]
+  groups:       FundGroup[]
+  monthly:      MonthlySummary[]
+  summary:      Summary
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function aed(v: number, compact = false) {
+function aed(v: number) {
   if (v === 0) return '—'
-  if (compact) {
-    if (Math.abs(v) >= 1_000_000) return `AED ${(v / 1_000_000).toFixed(2)}M`
-    if (Math.abs(v) >= 1_000)     return `AED ${(v / 1_000).toFixed(1)}K`
-  }
-  return `AED ${Math.round(v).toLocaleString()}`
+  return `AED ${Math.round(Math.abs(v)).toLocaleString()}`
 }
 
 function fmtDate(d: string) {
@@ -37,50 +37,232 @@ function fmtDate(d: string) {
   return `${day}/${m}/${y}`
 }
 
-const TYPE_META: Record<string, { label: string; cls: string; Icon: any }> = {
-  deposit: { label: 'Bank Deposit',     cls: 'bg-emerald-100 text-emerald-700', Icon: Banknote    },
-  payment: { label: 'Invoice Payment',  cls: 'bg-blue-100   text-blue-700',     Icon: FileText    },
-  purchase:{ label: 'Purchase',         cls: 'bg-orange-100 text-orange-700',   Icon: CreditCard  },
-  bill:    { label: 'Bill',             cls: 'bg-rose-100   text-rose-700',     Icon: FileText    },
+function fmtMonth(m: string) {
+  const [y, mo] = m.split('-')
+  return `${['', 'Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+mo]} ${y}`
 }
 
-function TypeBadge({ type }: { type: string }) {
-  const m = TYPE_META[type] ?? { label: type, cls: 'bg-slate-100 text-slate-600', Icon: FileText }
+const CAT_COLORS: Record<string, string> = {
+  'Loan / Finance':             'bg-violet-500',
+  'Credit Card':                'bg-rose-500',
+  'Salaries':                   'bg-amber-500',
+  'Petty Cash':                 'bg-orange-400',
+  'Project Costs':              'bg-blue-500',
+  'Vendor Bills':               'bg-teal-500',
+  'Client Payments (internal)': 'bg-slate-400',
+  'Bank Transfer':              'bg-indigo-400',
+  'Tax / VAT':                  'bg-red-400',
+  'Multiple Accounts':          'bg-slate-300',
+}
+function catColor(name: string) {
+  return CAT_COLORS[name] ?? 'bg-slate-400'
+}
+
+const TXN_COLORS: Record<string, string> = {
+  'Deposit':          'text-emerald-700 bg-emerald-50',
+  'Check':            'text-rose-700 bg-rose-50',
+  'Bill Payment':     'text-rose-700 bg-rose-50',
+  'Journal Entry':    'text-slate-600 bg-slate-100',
+  'Transfer':         'text-indigo-700 bg-indigo-50',
+  'Sales Receipt':    'text-emerald-700 bg-emerald-50',
+  'Payment':          'text-blue-700 bg-blue-50',
+}
+function txnColor(type: string) {
+  return TXN_COLORS[type] ?? 'text-slate-600 bg-slate-100'
+}
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+function StatCard({
+  icon: Icon, label, value, sub, color,
+}: { icon: any; label: string; value: string; sub?: string; color: string }) {
   return (
-    <span className={cn('inline-flex items-center gap-1 text-[10px] font-semibold rounded px-1.5 py-0.5', m.cls)}>
-      <m.Icon className="w-2.5 h-2.5" />
-      {m.label}
-    </span>
+    <div className="bg-white rounded-xl border border-slate-100 p-5 shadow-sm">
+      <div className="flex items-center gap-2 mb-2">
+        <div className={cn('w-7 h-7 rounded-lg flex items-center justify-center', color + '/10')}>
+          <Icon className={cn('w-4 h-4', color)} />
+        </div>
+        <p className="text-xs text-slate-500 font-medium">{label}</p>
+      </div>
+      <p className={cn('text-xl font-bold', color)}>{value}</p>
+      {sub && <p className="text-xs text-slate-400 mt-0.5">{sub}</p>}
+    </div>
+  )
+}
+
+function GroupCard({ group, defaultOpen }: { group: FundGroup; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen ?? false)
+  const isOpening = group.depositId === 'opening'
+  const coverage  = group.depositAmt > 0
+    ? Math.min(100, Math.round((group.totalDebits / group.depositAmt) * 100))
+    : 0
+
+  return (
+    <div className={cn(
+      'bg-white rounded-xl border shadow-sm overflow-hidden',
+      isOpening ? 'border-slate-200' : 'border-l-4 border-l-emerald-400 border-slate-100'
+    )}>
+      {/* Deposit header */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full text-left px-5 py-4 flex items-start gap-4 hover:bg-slate-50 transition-colors"
+      >
+        {/* Date badge */}
+        <div className="shrink-0 text-center">
+          <div className={cn('rounded-lg px-2.5 py-1', isOpening ? 'bg-slate-100' : 'bg-emerald-50')}>
+            <p className={cn('text-[10px] font-semibold uppercase', isOpening ? 'text-slate-500' : 'text-emerald-600')}>
+              {fmtDate(group.depositDate).split('/')[1] && fmtDate(group.depositDate).split('/').slice(1).join('/')}
+            </p>
+            <p className={cn('text-lg font-bold leading-none', isOpening ? 'text-slate-500' : 'text-emerald-700')}>
+              {fmtDate(group.depositDate).split('/')[0]}
+            </p>
+          </div>
+        </div>
+
+        {/* Deposit info */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            {!isOpening && (
+              <span className="text-[10px] font-bold uppercase tracking-wide text-emerald-600 bg-emerald-50 rounded px-1.5 py-0.5">
+                ↓ DEPOSIT RECEIVED
+              </span>
+            )}
+            <span className="text-sm font-semibold text-slate-800 truncate">{group.depositor}</span>
+          </div>
+          {group.memo && (
+            <p className="text-xs text-slate-400 mt-0.5 truncate">{group.memo}</p>
+          )}
+          <div className="flex items-center gap-4 mt-1.5 flex-wrap">
+            {group.depositAmt > 0 && (
+              <span className="text-base font-bold text-emerald-600">+{aed(group.depositAmt)}</span>
+            )}
+            {group.debits.length > 0 && (
+              <>
+                <span className="text-xs text-slate-400">→</span>
+                <span className="text-sm text-rose-600 font-medium">−{aed(group.totalDebits)} disbursed</span>
+                {group.depositAmt > 0 && (
+                  <span className={cn(
+                    'text-xs font-semibold px-1.5 py-0.5 rounded',
+                    group.remaining >= 0 ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'
+                  )}>
+                    {group.remaining >= 0 ? `${aed(group.remaining)} remaining` : `${aed(Math.abs(group.remaining))} over`}
+                  </span>
+                )}
+              </>
+            )}
+            <span className="text-xs text-slate-400 ml-auto">
+              {group.debits.length} outgoing · until {group.endDate ? fmtDate(group.endDate) : 'present'}
+            </span>
+          </div>
+
+          {/* Coverage mini-bar */}
+          {group.depositAmt > 0 && group.debits.length > 0 && (
+            <div className="mt-2">
+              <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden w-full max-w-xs">
+                <div
+                  className={cn('h-full rounded-full', group.remaining >= 0 ? 'bg-emerald-400' : 'bg-amber-400')}
+                  style={{ width: `${Math.min(coverage, 100)}%` }}
+                />
+              </div>
+              <p className="text-[10px] text-slate-400 mt-0.5">{coverage}% of deposit deployed</p>
+            </div>
+          )}
+        </div>
+
+        {/* Expand chevron */}
+        <div className="shrink-0 pt-0.5">
+          {open
+            ? <ChevronDown className="w-4 h-4 text-slate-400" />
+            : <ChevronRight className="w-4 h-4 text-slate-400" />}
+        </div>
+      </button>
+
+      {/* Expanded: debits + category breakdown */}
+      {open && (
+        <div className="border-t border-slate-100">
+          {/* Category breakdown bars */}
+          {group.byCategory.length > 0 && (
+            <div className="px-5 py-4 bg-slate-50 border-b border-slate-100">
+              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-3">
+                How these funds were used
+              </p>
+              <div className="space-y-2">
+                {group.byCategory.map(cat => {
+                  const pct = group.totalDebits > 0
+                    ? Math.round((cat.amount / group.totalDebits) * 100) : 0
+                  return (
+                    <div key={cat.name}>
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="text-xs text-slate-600 font-medium">{cat.name}</span>
+                        <div className="flex items-center gap-3">
+                          <span className="text-[10px] text-slate-400">{pct}%</span>
+                          <span className="text-xs font-semibold text-slate-700 w-28 text-right">
+                            {aed(cat.amount)}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                        <div
+                          className={cn('h-full rounded-full', catColor(cat.name))}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Individual debit rows */}
+          {group.debits.length > 0 ? (
+            <div className="divide-y divide-slate-50">
+              {group.debits.map((d, i) => (
+                <div key={`${d.txnId}-${i}`} className="px-5 py-3 flex items-center gap-4 hover:bg-slate-50">
+                  <span className="text-xs text-slate-400 w-20 shrink-0">{fmtDate(d.txnDate)}</span>
+                  <span className={cn(
+                    'text-[10px] font-semibold rounded px-1.5 py-0.5 shrink-0',
+                    txnColor(d.txnType)
+                  )}>
+                    {d.txnType || 'Txn'}
+                  </span>
+                  <span className="text-sm text-slate-700 font-medium flex-1 truncate" title={d.name || d.memo}>
+                    {d.name || d.memo || '—'}
+                  </span>
+                  <span className="text-xs text-slate-400 max-w-[150px] truncate" title={d.split}>{d.split}</span>
+                  <span className="text-sm font-semibold text-rose-600 shrink-0 ml-auto">
+                    −{aed(Math.abs(d.amount))}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="px-5 py-4 text-xs text-slate-400">No outgoing payments in this period.</div>
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function CashFlowPage() {
-  const [classId,    setClassId]    = useState('')
-  const [data,       setData]       = useState<CashFlowData | null>(null)
-  const [loading,    setLoading]    = useState(false)
-  const [error,      setError]      = useState<string | null>(null)
-  const [filterDir,  setFilterDir]  = useState<'all' | 'in' | 'out'>('all')
-  const [filterType, setFilterType] = useState<string>('all')
+  const today   = new Date().toISOString().slice(0, 10)
+  const twoYAgo = (() => { const d = new Date(); d.setFullYear(d.getFullYear() - 2); return d.toISOString().slice(0, 10) })()
 
-  // Fetch classes on mount (no classId needed)
-  useEffect(() => {
-    fetch('/api/cash-flow')
-      .then(r => r.json())
-      .then(d => {
-        if (d.classes?.length) setData(d)
-      })
-      .catch(() => {})
-  }, [])
+  const [from,    setFrom]    = useState(twoYAgo)
+  const [to,      setTo]      = useState(today)
+  const [data,    setData]    = useState<RakData | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error,   setError]   = useState<string | null>(null)
+  const [view,    setView]    = useState<'allocation' | 'timeline'>('allocation')
 
-  const load = useCallback(async (id: string) => {
-    if (!id) return
+  const load = useCallback(async (f: string, t: string) => {
     setLoading(true); setError(null)
     try {
-      const res = await fetch(`/api/cash-flow?classId=${encodeURIComponent(id)}`)
+      const res = await fetch(`/api/cash-flow?from=${f}&to=${t}`)
       const d   = await res.json()
-      if (!res.ok) throw new Error(d.error ?? 'Failed to load')
       setData(d)
+      if (!d.found) setError(d.message ?? 'No data found')
     } catch (e: any) {
       setError(e.message)
     } finally {
@@ -88,76 +270,65 @@ export default function CashFlowPage() {
     }
   }, [])
 
-  function handleClassChange(id: string) {
-    setClassId(id)
-    setFilterDir('all')
-    setFilterType('all')
-    load(id)
-  }
+  useEffect(() => { load(from, to) }, [])   // eslint-disable-line react-hooks/exhaustive-deps
 
-  const events = (data?.events ?? []).filter(e => {
-    if (filterDir  !== 'all' && e.direction !== filterDir)  return false
-    if (filterType !== 'all' && e.type      !== filterType) return false
-    return true
-  })
-
-  const summary    = data?.summary
-  const classes    = data?.classes ?? []
-  const syncedAt   = data?.synced_at
-  const totalBar   = summary ? summary.totalIn + summary.totalOut : 0
-  const inPct      = totalBar > 0 ? (summary!.totalIn  / totalBar) * 100 : 0
-  const outPct     = totalBar > 0 ? (summary!.totalOut / totalBar) * 100 : 0
+  const summary = data?.summary
+  const groups  = data?.groups ?? []
+  const txns    = data?.transactions ?? []
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
+      <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
 
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
               <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
                 <Landmark className="w-4 h-4 text-white" />
               </div>
-              <h1 className="text-2xl font-bold text-slate-900">Fund Traceability</h1>
+              <h1 className="text-2xl font-bold text-slate-900">RAK Bank Cash Flow</h1>
             </div>
             <p className="text-slate-500 text-sm">
-              Track every dirham received from clients and see exactly how it was spent, per project.
+              Track every deposit into the company account and trace exactly how those funds were allocated.
             </p>
+            {data?.account?.name && (
+              <p className="text-xs text-slate-400 mt-1">
+                Account: <span className="font-medium">{data.account.name}</span>
+                {data.account.balance != null && (
+                  <> · Current balance: <span className="font-semibold text-blue-600">{aed(data.account.balance)}</span></>
+                )}
+                {data.source && <> · {data.source === 'live' ? '🟢 Live from QB' : '📦 Cached'}</>}
+                {data.fetched_at && (
+                  <> · {new Date(data.fetched_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</>
+                )}
+              </p>
+            )}
           </div>
-          {syncedAt && (
-            <p className="text-xs text-slate-400 shrink-0">
-              QB synced {new Date(syncedAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
-            </p>
-          )}
-        </div>
 
-        {/* Project selector */}
-        <div className="bg-white rounded-xl border border-slate-100 p-5 shadow-sm">
-          <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">
-            Select Project (QuickBooks Class)
-          </label>
-          <div className="relative max-w-md">
-            <select
-              value={classId}
-              onChange={e => handleClassChange(e.target.value)}
-              className="w-full appearance-none bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 pr-10 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          {/* Date range + load button */}
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
+            <input
+              type="date" value={from} onChange={e => setFrom(e.target.value)}
+              className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <span className="text-slate-400 text-sm">to</span>
+            <input
+              type="date" value={to} onChange={e => setTo(e.target.value)}
+              className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <button
+              onClick={() => load(from, to)}
+              disabled={loading}
+              className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
             >
-              <option value="">— Choose a project —</option>
-              {classes.map(c => (
-                <option key={c.Id} value={c.Id}>{c.FullyQualifiedName || c.Name}</option>
-              ))}
-            </select>
-            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+              Load
+            </button>
           </div>
-          {!classId && !loading && (
-            <p className="text-xs text-slate-400 mt-2">
-              Select a project above to view its complete fund flow timeline.
-            </p>
-          )}
         </div>
 
-        {/* Error */}
+        {/* Error banner */}
         {error && (
           <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl p-4">
             <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
@@ -167,303 +338,215 @@ export default function CashFlowPage() {
 
         {/* Loading */}
         {loading && (
-          <div className="flex items-center justify-center py-16 gap-3 text-slate-400">
+          <div className="flex items-center justify-center py-20 gap-3 text-slate-400">
             <Loader2 className="w-5 h-5 animate-spin" />
-            <span className="text-sm">Loading fund flow data…</span>
+            <span className="text-sm">Fetching RAK Bank ledger from QuickBooks…</span>
           </div>
         )}
 
         {/* Content */}
-        {!loading && classId && summary && (
+        {!loading && data?.found && summary && (
           <>
             {/* Summary cards */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <StatCard
+                icon={ArrowDownCircle} label="Total Received" color="text-emerald-600"
+                value={aed(summary.totalIn)} sub="into RAK Bank"
+              />
+              <StatCard
+                icon={ArrowUpCircle} label="Total Disbursed" color="text-rose-600"
+                value={aed(summary.totalOut)} sub="outgoing payments"
+              />
+              <StatCard
+                icon={Wallet} label="Closing Balance" color="text-blue-600"
+                value={aed(summary.closingBalance)} sub="end of period"
+              />
               <div className="bg-white rounded-xl border border-slate-100 p-5 shadow-sm">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center">
-                    <ArrowDownCircle className="w-4 h-4 text-emerald-600" />
-                  </div>
-                  <p className="text-xs text-slate-500 font-medium">Total Received</p>
-                </div>
-                <p className="text-xl font-bold text-emerald-600">{aed(summary.totalIn)}</p>
-                <p className="text-xs text-slate-400 mt-0.5">from client payments</p>
-              </div>
-
-              <div className="bg-white rounded-xl border border-slate-100 p-5 shadow-sm">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-7 h-7 rounded-lg bg-rose-50 flex items-center justify-center">
-                    <ArrowUpCircle className="w-4 h-4 text-rose-600" />
-                  </div>
-                  <p className="text-xs text-slate-500 font-medium">Total Spent</p>
-                </div>
-                <p className="text-xl font-bold text-rose-600">{aed(summary.totalOut)}</p>
-                <p className="text-xs text-slate-400 mt-0.5">on this project</p>
-              </div>
-
-              <div className="bg-white rounded-xl border border-slate-100 p-5 shadow-sm">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className={cn('w-7 h-7 rounded-lg flex items-center justify-center',
-                    summary.balance >= 0 ? 'bg-blue-50' : 'bg-amber-50')}>
-                    <Wallet className={cn('w-4 h-4', summary.balance >= 0 ? 'text-blue-600' : 'text-amber-600')} />
-                  </div>
-                  <p className="text-xs text-slate-500 font-medium">Cash Balance</p>
-                </div>
-                <p className={cn('text-xl font-bold', summary.balance >= 0 ? 'text-blue-600' : 'text-amber-600')}>
-                  {aed(summary.balance)}
+                <p className="text-xs text-slate-500 font-medium mb-2">Utilisation</p>
+                <p className="text-xl font-bold text-slate-700">
+                  {summary.totalIn > 0
+                    ? `${Math.round((summary.totalOut / summary.totalIn) * 100)}%`
+                    : '—'}
                 </p>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  {summary.balance >= 0 ? 'funds available' : 'deficit — spending ahead of receipts'}
-                </p>
-              </div>
-
-              <div className="bg-white rounded-xl border border-slate-100 p-5 shadow-sm">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center">
-                    <BarChart3 className="w-4 h-4 text-slate-600" />
-                  </div>
-                  <p className="text-xs text-slate-500 font-medium">Transactions</p>
+                <div className="mt-2 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-blue-500 rounded-full"
+                    style={{ width: `${summary.totalIn > 0 ? Math.min(100, (summary.totalOut / summary.totalIn) * 100) : 0}%` }}
+                  />
                 </div>
-                <p className="text-xl font-bold text-slate-700">{summary.txnCount}</p>
-                <p className="text-xs text-slate-400 mt-0.5">all in + out movements</p>
+                <p className="text-xs text-slate-400 mt-0.5">{summary.txnCount} transactions</p>
               </div>
             </div>
 
-            {/* Flow bar */}
-            {totalBar > 0 && (
-              <div className="bg-white rounded-xl border border-slate-100 p-5 shadow-sm">
-                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">
-                  Fund Utilisation
-                </p>
-                <div className="flex rounded-full overflow-hidden h-4 mb-2">
-                  <div
-                    className="bg-emerald-400 transition-all"
-                    style={{ width: `${inPct}%` }}
-                    title={`Received: ${aed(summary.totalIn)}`}
-                  />
-                  <div
-                    className="bg-rose-400 transition-all"
-                    style={{ width: `${outPct}%` }}
-                    title={`Spent: ${aed(summary.totalOut)}`}
-                  />
-                  {inPct + outPct < 100 && (
-                    <div className="flex-1 bg-slate-100" />
-                  )}
-                </div>
-                <div className="flex items-center gap-6 text-xs text-slate-500">
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-sm bg-emerald-400 inline-block" />
-                    Received {Math.round(inPct)}%
-                  </span>
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-sm bg-rose-400 inline-block" />
-                    Spent {Math.round(outPct)}%
-                  </span>
-                  <span className="ml-auto font-medium text-slate-700">
-                    {summary.totalOut > 0
-                      ? `${Math.round((summary.totalOut / summary.totalIn) * 100)}% of received funds deployed`
-                      : 'No expenses yet'}
-                  </span>
-                </div>
+            {/* View toggle */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setView('allocation')}
+                className={cn(
+                  'flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+                  view === 'allocation'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                )}
+              >
+                <GitFork className="w-4 h-4" />
+                Fund Allocation
+              </button>
+              <button
+                onClick={() => setView('timeline')}
+                className={cn(
+                  'flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-colors',
+                  view === 'timeline'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
+                )}
+              >
+                <LayoutList className="w-4 h-4" />
+                Timeline
+              </button>
+              <span className="text-xs text-slate-400 ml-2">
+                {view === 'allocation'
+                  ? `${groups.length} deposit events — expand each to see how funds were used`
+                  : `${txns.length} transactions, newest first`}
+              </span>
+            </div>
+
+            {/* Fund Allocation view */}
+            {view === 'allocation' && (
+              <div className="space-y-3">
+                {groups.length === 0 ? (
+                  <div className="bg-white rounded-xl border border-slate-100 p-10 text-center text-slate-400">
+                    <Landmark className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                    <p className="text-sm">No transactions found for the selected date range.</p>
+                  </div>
+                ) : (
+                  groups.map((g, i) => (
+                    <GroupCard key={g.depositId} group={g} defaultOpen={i === groups.length - 1} />
+                  ))
+                )}
               </div>
             )}
 
-            {/* Filters + Timeline */}
-            <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
-              {/* Filter bar */}
-              <div className="px-5 py-4 border-b border-slate-100 flex flex-wrap items-center gap-3">
-                <p className="text-sm font-semibold text-slate-700 mr-2">Transaction Timeline</p>
-                <div className="flex gap-1.5 ml-auto">
-                  {(['all', 'in', 'out'] as const).map(d => (
-                    <button
-                      key={d}
-                      onClick={() => setFilterDir(d)}
-                      className={cn(
-                        'px-3 py-1 rounded-full text-xs font-medium transition-colors',
-                        filterDir === d
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      )}
-                    >
-                      {d === 'all' ? 'All' : d === 'in' ? '↓ Received' : '↑ Spent'}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex gap-1.5">
-                  {(['all', 'deposit', 'payment', 'purchase', 'bill'] as const).map(t => (
-                    <button
-                      key={t}
-                      onClick={() => setFilterType(t)}
-                      className={cn(
-                        'px-3 py-1 rounded-full text-xs font-medium transition-colors',
-                        filterType === t
-                          ? 'bg-slate-700 text-white'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      )}
-                    >
-                      {t === 'all' ? 'All Types' : TYPE_META[t]?.label ?? t}
-                    </button>
-                  ))}
-                </div>
+            {/* Timeline view */}
+            {view === 'timeline' && (
+              <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+                {txns.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400 text-sm">No transactions in range.</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide bg-slate-50 border-b border-slate-100">
+                          <th className="px-5 py-3">Date</th>
+                          <th className="px-4 py-3">Type</th>
+                          <th className="px-4 py-3">Party</th>
+                          <th className="px-4 py-3">Category / Account</th>
+                          <th className="px-4 py-3">Memo</th>
+                          <th className="px-4 py-3 text-right">Amount</th>
+                          <th className="px-5 py-3 text-right">Balance</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50">
+                        {txns.map((t, i) => (
+                          <tr
+                            key={`${t.txnId}-${i}`}
+                            className={cn(
+                              'hover:bg-slate-50 transition-colors',
+                              t.amount > 0
+                                ? 'border-l-2 border-l-emerald-400'
+                                : 'border-l-2 border-l-transparent'
+                            )}
+                          >
+                            <td className="px-5 py-3 text-xs text-slate-500 whitespace-nowrap">
+                              {fmtDate(t.txnDate)}
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <span className={cn('text-[10px] font-semibold rounded px-1.5 py-0.5', txnColor(t.txnType))}>
+                                {t.txnType || '—'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 max-w-[160px]">
+                              <span className="font-medium text-slate-700 truncate block" title={t.name}>
+                                {t.name || '—'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 max-w-[150px]">
+                              <span className="text-xs text-slate-500 truncate block" title={t.split}>
+                                {t.split || '—'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 max-w-[180px]">
+                              <span className="text-xs text-slate-400 truncate block" title={t.memo}>
+                                {t.memo || ''}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-right whitespace-nowrap">
+                              <span className={cn(
+                                'font-semibold',
+                                t.amount > 0 ? 'text-emerald-600' : 'text-rose-600'
+                              )}>
+                                {t.amount > 0 ? '+' : '−'}{aed(Math.abs(t.amount))}
+                              </span>
+                            </td>
+                            <td className="px-5 py-3 text-right whitespace-nowrap">
+                              <span className="text-xs font-medium text-slate-600">
+                                {aed(Math.abs(t.balance))}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
+            )}
 
-              {/* Table */}
-              {events.length === 0 ? (
-                <div className="py-16 text-center text-slate-400">
-                  <Building2 className="w-8 h-8 mx-auto mb-2 opacity-30" />
-                  <p className="text-sm">No transactions match the current filters.</p>
-                </div>
-              ) : (
+            {/* Monthly breakdown */}
+            {data.monthly.length > 0 && (
+              <div className="bg-white rounded-xl border border-slate-100 p-5 shadow-sm">
+                <p className="text-sm font-semibold text-slate-700 mb-4">Monthly Summary</p>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide bg-slate-50">
-                        <th className="px-5 py-3">Date</th>
-                        <th className="px-4 py-3">Type</th>
-                        <th className="px-4 py-3">Party</th>
-                        <th className="px-4 py-3">Category</th>
-                        <th className="px-4 py-3">Bank / Account</th>
-                        <th className="px-4 py-3 text-right">Amount</th>
-                        <th className="px-5 py-3 text-right">Running Balance</th>
+                      <tr className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wide border-b border-slate-100">
+                        <th className="pb-2">Month</th>
+                        <th className="pb-2 text-right text-emerald-600">Received</th>
+                        <th className="pb-2 text-right text-rose-600">Disbursed</th>
+                        <th className="pb-2 text-right">Net</th>
+                        <th className="pb-2 text-right">Closing Balance</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
-                      {events.map(e => (
-                        <tr
-                          key={e.id}
-                          className={cn(
-                            'hover:bg-slate-50 transition-colors',
-                            e.direction === 'in' ? 'border-l-2 border-l-emerald-400' : 'border-l-2 border-l-rose-300'
-                          )}
-                        >
-                          <td className="px-5 py-3 whitespace-nowrap text-slate-500 text-xs">
-                            {fmtDate(e.date)}
+                      {[...data.monthly].reverse().map(m => (
+                        <tr key={m.month} className="hover:bg-slate-50">
+                          <td className="py-2 font-medium text-slate-700">{fmtMonth(m.month)}</td>
+                          <td className="py-2 text-right text-emerald-600 font-medium">{m.credits > 0 ? aed(m.credits) : '—'}</td>
+                          <td className="py-2 text-right text-rose-600">{m.debits > 0 ? aed(m.debits) : '—'}</td>
+                          <td className={cn('py-2 text-right font-medium',
+                            m.credits - m.debits >= 0 ? 'text-blue-600' : 'text-amber-600')}>
+                            {m.credits - m.debits !== 0
+                              ? (m.credits - m.debits > 0 ? '+' : '−') + aed(Math.abs(m.credits - m.debits))
+                              : '—'}
                           </td>
-                          <td className="px-4 py-3 whitespace-nowrap">
-                            <TypeBadge type={e.type} />
-                          </td>
-                          <td className="px-4 py-3 max-w-[200px]">
-                            <span className="font-medium text-slate-700 truncate block" title={e.party}>
-                              {e.party || '—'}
-                            </span>
-                            {e.ref && (
-                              <span className="text-[10px] text-slate-400">Ref: {e.ref}</span>
-                            )}
-                          </td>
-                          <td className="px-4 py-3 max-w-[180px]">
-                            <span className="text-slate-500 truncate block text-xs" title={e.category}>
-                              {e.category || '—'}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 max-w-[140px]">
-                            <span className="text-slate-400 truncate block text-xs" title={e.bank}>
-                              {e.bank || '—'}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-right whitespace-nowrap">
-                            <span className={cn(
-                              'font-semibold',
-                              e.direction === 'in' ? 'text-emerald-600' : 'text-rose-600'
-                            )}>
-                              {e.direction === 'in' ? '+' : '−'} {aed(e.amount)}
-                            </span>
-                          </td>
-                          <td className="px-5 py-3 text-right whitespace-nowrap">
-                            <span className={cn(
-                              'font-medium text-xs',
-                              e.runningBalance >= 0 ? 'text-slate-700' : 'text-amber-600'
-                            )}>
-                              {e.runningBalance >= 0 ? '' : '('}{aed(Math.abs(e.runningBalance))}{e.runningBalance < 0 ? ')' : ''}
-                            </span>
-                          </td>
+                          <td className="py-2 text-right text-slate-600">{aed(Math.abs(m.balance))}</td>
                         </tr>
                       ))}
                     </tbody>
-                    {/* Totals footer */}
-                    <tfoot className="bg-slate-50 border-t border-slate-200">
-                      <tr>
-                        <td colSpan={5} className="px-5 py-3 text-xs font-semibold text-slate-500">
-                          Showing {events.length} of {summary.txnCount} transactions
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex flex-col items-end gap-0.5">
-                            <span className="text-xs font-semibold text-emerald-600">
-                              +{aed(events.filter(e => e.direction === 'in').reduce((s, e) => s + e.amount, 0))}
-                            </span>
-                            <span className="text-xs font-semibold text-rose-600">
-                              −{aed(events.filter(e => e.direction === 'out').reduce((s, e) => s + e.amount, 0))}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-5 py-3 text-right">
-                          <span className={cn(
-                            'text-sm font-bold',
-                            summary.balance >= 0 ? 'text-blue-600' : 'text-amber-600'
-                          )}>
-                            {aed(summary.balance)}
-                          </span>
-                        </td>
-                      </tr>
-                    </tfoot>
                   </table>
-                </div>
-              )}
-            </div>
-
-            {/* Category breakdown */}
-            {data!.byCategory.length > 0 && (
-              <div className="bg-white rounded-xl border border-slate-100 p-5 shadow-sm">
-                <p className="text-sm font-semibold text-slate-700 mb-4">
-                  Spending by Category
-                </p>
-                <div className="space-y-2.5">
-                  {data!.byCategory.map((cat, i) => {
-                    const pct = summary.totalOut > 0 ? (cat.amount / summary.totalOut) * 100 : 0
-                    const colors = [
-                      'bg-blue-500', 'bg-orange-500', 'bg-violet-500', 'bg-rose-500',
-                      'bg-amber-500', 'bg-teal-500', 'bg-pink-500', 'bg-indigo-500',
-                    ]
-                    const color = colors[i % colors.length]
-                    return (
-                      <div key={cat.name}>
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs font-medium text-slate-600 truncate max-w-[60%]" title={cat.name}>
-                            {cat.name}
-                          </span>
-                          <div className="flex items-center gap-3 shrink-0">
-                            <span className="text-xs text-slate-400">{Math.round(pct)}%</span>
-                            <span className="text-xs font-semibold text-slate-700 w-32 text-right">
-                              {aed(cat.amount)}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                          <div
-                            className={cn('h-full rounded-full transition-all', color)}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                      </div>
-                    )
-                  })}
                 </div>
               </div>
             )}
           </>
         )}
 
-        {/* Empty state — no project selected */}
-        {!loading && !classId && !error && (
+        {/* Empty / not loaded */}
+        {!loading && !data && !error && (
           <div className="bg-white rounded-xl border border-slate-100 p-12 text-center shadow-sm">
             <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
               <Landmark className="w-7 h-7 text-blue-600" />
             </div>
-            <h3 className="text-base font-semibold text-slate-700 mb-2">
-              Select a project to begin
-            </h3>
-            <p className="text-sm text-slate-400 max-w-sm mx-auto">
-              Choose a QuickBooks class above to see every fund movement — client payments in,
-              supplier payments out — in one chronological view with running balance.
-            </p>
+            <h3 className="text-base font-semibold text-slate-700 mb-2">Loading RAK Bank data…</h3>
           </div>
         )}
 
