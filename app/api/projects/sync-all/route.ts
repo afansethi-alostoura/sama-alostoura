@@ -167,13 +167,28 @@ export async function POST() {
       }
     }
 
-    // Invoice payments: TotalAmt - Balance = amount already collected per class
+    // Invoice payments: TotalAmt - Balance = amount already collected per class.
+    // Class may be set at header level OR at each line's SalesItemLineDetail.ClassRef.
     for (const inv of invoices as QBInvoice[]) {
       const paid = (inv.TotalAmt ?? 0) - (inv.Balance ?? 0)
       if (paid <= 0) continue
-      const cls = resolveClass(inv.ClassRef, undefined)
-      if (!cls) continue
-      incomeByClassId.set(cls.id, (incomeByClassId.get(cls.id) ?? 0) + paid)
+
+      // Header-level class — entire invoice belongs to one project
+      if (inv.ClassRef) {
+        const id = inv.ClassRef.value
+        incomeByClassId.set(id, (incomeByClassId.get(id) ?? 0) + paid)
+        continue
+      }
+
+      // Line-level class — prorate paid amount across lines by their share
+      const lines = (inv.Line ?? []).filter(l => l.SalesItemLineDetail?.ClassRef && (l.Amount ?? 0) > 0)
+      const totalLineAmt = lines.reduce((s, l) => s + (l.Amount ?? 0), 0)
+      if (totalLineAmt <= 0) continue
+      for (const line of lines) {
+        const classId = line.SalesItemLineDetail!.ClassRef!.value
+        const linePaid = paid * ((line.Amount ?? 0) / totalLineAmt)
+        incomeByClassId.set(classId, (incomeByClassId.get(classId) ?? 0) + linePaid)
+      }
     }
 
     for (const p of purchases as QBPurchase[]) {

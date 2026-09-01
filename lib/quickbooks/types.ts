@@ -37,6 +37,7 @@ export interface QBInvoiceLine {
     ItemRef: { value: string; name: string }
     UnitPrice: number
     Qty: number
+    ClassRef?: { value: string; name: string }
   }
 }
 
