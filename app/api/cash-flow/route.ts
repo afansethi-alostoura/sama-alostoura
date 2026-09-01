@@ -26,16 +26,19 @@ export const maxDuration = 30
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 export interface FundGroup {
-  depositId:   string           // txnId of the credit that opened this period
-  depositDate: string           // YYYY-MM-DD
-  depositor:   string           // customer / party name
-  memo:        string
-  depositAmt:  number           // amount received (positive)
-  endDate:     string | null    // date of next deposit (null = open)
-  debits:      QBAlostouraTransaction[]  // outgoing payments in this period
-  totalDebits: number
-  remaining:   number           // depositAmt that was NOT spent (may go negative)
-  byCategory:  Array<{ name: string; amount: number }>
+  depositId:            string           // txnId of the credit that opened this period
+  depositDate:          string           // YYYY-MM-DD
+  depositor:            string           // customer / party name
+  memo:                 string
+  depositAmt:           number           // amount received (positive)
+  balanceBeforeDeposit: number           // running balance just before this deposit landed
+  balanceAfterDeposit:  number           // running balance immediately after deposit hit
+  closingBalance:       number           // balance after the last transaction in this window
+  endDate:              string | null    // date of next deposit (null = open / still running)
+  debits:               QBAlostouraTransaction[]  // outgoing payments in this period
+  totalDebits:          number
+  remaining:            number           // depositAmt − totalDebits (not the bank balance)
+  byCategory:           Array<{ name: string; amount: number }>
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -80,38 +83,47 @@ function buildGroups(txns: QBAlostouraTransaction[]): FundGroup[] {
     if (t.amount > 0) {
       // A new incoming deposit — close the previous group
       if (current) {
-        current.endDate     = t.txnDate
-        current.totalDebits = current.debits.reduce((s, d) => s + Math.abs(d.amount), 0)
-        current.remaining   = current.depositAmt - current.totalDebits
+        current.endDate        = t.txnDate
+        current.totalDebits    = current.debits.reduce((s, d) => s + Math.abs(d.amount), 0)
+        current.remaining      = current.depositAmt - current.totalDebits
+        current.closingBalance = current.debits.length
+          ? current.debits[current.debits.length - 1].balance
+          : current.balanceAfterDeposit
         current.byCategory  = summariseByCategory(current.debits)
         groups.push(current)
       } else if (preDebits.length) {
-        // Flush pre-deposit debits as a synthetic "Opening Balance" group
         const totalD = preDebits.reduce((s, d) => s + Math.abs(d.amount), 0)
+        const lastBal = preDebits[preDebits.length - 1].balance
         groups.push({
-          depositId:   'opening',
-          depositDate: preDebits[0].txnDate,
-          depositor:   'Opening / Prior Period',
-          memo:        '',
-          depositAmt:  0,
-          endDate:     t.txnDate,
-          debits:      preDebits,
-          totalDebits: totalD,
-          remaining:   -totalD,
-          byCategory:  summariseByCategory(preDebits),
+          depositId:            'opening',
+          depositDate:          preDebits[0].txnDate,
+          depositor:            'Opening / Prior Period',
+          memo:                 '',
+          depositAmt:           0,
+          balanceBeforeDeposit: 0,
+          balanceAfterDeposit:  0,
+          closingBalance:       lastBal,
+          endDate:              t.txnDate,
+          debits:               preDebits,
+          totalDebits:          totalD,
+          remaining:            -totalD,
+          byCategory:           summariseByCategory(preDebits),
         })
       }
       current = {
-        depositId:   t.txnId || `dep-${t.txnDate}`,
-        depositDate: t.txnDate,
-        depositor:   t.name || 'Client',
-        memo:        t.memo,
-        depositAmt:  t.amount,
-        endDate:     null,
-        debits:      [],
-        totalDebits: 0,
-        remaining:   t.amount,
-        byCategory:  [],
+        depositId:            t.txnId || `dep-${t.txnDate}`,
+        depositDate:          t.txnDate,
+        depositor:            t.name || 'Client',
+        memo:                 t.memo,
+        depositAmt:           t.amount,
+        balanceBeforeDeposit: t.balance - t.amount,   // balance just before deposit landed
+        balanceAfterDeposit:  t.balance,              // balance immediately after deposit
+        closingBalance:       t.balance,              // updated as debits accumulate
+        endDate:              null,
+        debits:               [],
+        totalDebits:          0,
+        remaining:            t.amount,
+        byCategory:           [],
       }
     } else if (t.amount < 0) {
       if (current) {
@@ -122,10 +134,13 @@ function buildGroups(txns: QBAlostouraTransaction[]): FundGroup[] {
     }
   }
 
-  // Close the last open group
+  // Close the last open group (still running — no next deposit yet)
   if (current) {
-    current.totalDebits = current.debits.reduce((s, d) => s + Math.abs(d.amount), 0)
-    current.remaining   = current.depositAmt - current.totalDebits
+    current.totalDebits    = current.debits.reduce((s, d) => s + Math.abs(d.amount), 0)
+    current.remaining      = current.depositAmt - current.totalDebits
+    current.closingBalance = current.debits.length
+      ? current.debits[current.debits.length - 1].balance
+      : current.balanceAfterDeposit
     current.byCategory  = summariseByCategory(current.debits)
     groups.push(current)
   }

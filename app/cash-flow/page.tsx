@@ -131,30 +131,47 @@ function GroupCard({ group, defaultOpen }: { group: FundGroup; defaultOpen?: boo
           {group.memo && (
             <p className="text-xs text-slate-400 mt-0.5 truncate">{group.memo}</p>
           )}
-          <div className="flex items-center gap-4 mt-1.5 flex-wrap">
-            {group.depositAmt > 0 && (
-              <span className="text-base font-bold text-emerald-600">+{aed(group.depositAmt)}</span>
-            )}
-            {group.debits.length > 0 && (
-              <>
-                <span className="text-xs text-slate-400">→</span>
-                <span className="text-sm text-rose-600 font-medium">−{aed(group.totalDebits)} disbursed</span>
-                {group.depositAmt > 0 && (
-                  <span className={cn(
-                    'text-xs font-semibold px-1.5 py-0.5 rounded',
-                    group.remaining >= 0 ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'
+          {/* Balance timeline: before → deposit → closing */}
+          {group.depositAmt > 0 && (
+            <div className="flex items-center gap-2 mt-2 flex-wrap">
+              <div className="flex items-center gap-1.5 bg-slate-100 rounded-lg px-2.5 py-1">
+                <span className="text-[10px] text-slate-500 uppercase tracking-wide font-semibold">Before</span>
+                <span className="text-xs font-bold text-slate-700">{aed(group.balanceBeforeDeposit)}</span>
+              </div>
+              <span className="text-slate-300 text-sm">→</span>
+              <div className="flex items-center gap-1.5 bg-emerald-50 rounded-lg px-2.5 py-1">
+                <span className="text-[10px] text-emerald-600 uppercase tracking-wide font-semibold">+Deposit</span>
+                <span className="text-xs font-bold text-emerald-700">{aed(group.balanceAfterDeposit)}</span>
+              </div>
+              {group.debits.length > 0 && (
+                <>
+                  <span className="text-slate-300 text-sm">→</span>
+                  <div className={cn(
+                    'flex items-center gap-1.5 rounded-lg px-2.5 py-1',
+                    group.endDate ? 'bg-blue-50' : 'bg-amber-50'
                   )}>
-                    {group.remaining >= 0 ? `${aed(group.remaining)} remaining` : `${aed(Math.abs(group.remaining))} over`}
-                  </span>
-                )}
-              </>
-            )}
-            <span className="text-xs text-slate-400 ml-auto">
-              {group.debits.length} outgoing · until {group.endDate ? fmtDate(group.endDate) : 'present'}
-            </span>
-          </div>
+                    <span className={cn(
+                      'text-[10px] uppercase tracking-wide font-semibold',
+                      group.endDate ? 'text-blue-600' : 'text-amber-600'
+                    )}>
+                      {group.endDate ? 'Before next deposit' : 'Current balance'}
+                    </span>
+                    <span className={cn(
+                      'text-xs font-bold',
+                      group.endDate ? 'text-blue-700' : 'text-amber-700'
+                    )}>
+                      {aed(group.closingBalance)}
+                    </span>
+                  </div>
+                </>
+              )}
+              <span className="text-xs text-slate-400 ml-auto">
+                {group.debits.length} outgoing · until {group.endDate ? fmtDate(group.endDate) : 'present'}
+              </span>
+            </div>
+          )}
 
-          {/* Coverage mini-bar */}
+          {/* Spent vs deposit bar */}
           {group.depositAmt > 0 && group.debits.length > 0 && (
             <div className="mt-2">
               <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden w-full max-w-xs">
@@ -163,7 +180,9 @@ function GroupCard({ group, defaultOpen }: { group: FundGroup; defaultOpen?: boo
                   style={{ width: `${Math.min(coverage, 100)}%` }}
                 />
               </div>
-              <p className="text-[10px] text-slate-400 mt-0.5">{coverage}% of deposit deployed</p>
+              <p className="text-[10px] text-slate-400 mt-0.5">
+                {aed(group.totalDebits)} spent · {coverage}% of deposit
+              </p>
             </div>
           )}
         </div>
