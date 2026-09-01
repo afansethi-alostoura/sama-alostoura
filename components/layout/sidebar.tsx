@@ -4,7 +4,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard, Building2, Calculator, Wallet, ShoppingCart,
   FolderOpen, ClipboardList, Wrench, Users, UserPlus, Settings,
-  LogOut, ChevronLeft, ChevronRight, Bot, X, PieChart, Scale,
+  LogOut, ChevronLeft, ChevronRight, Bot, X, PieChart, Scale, Landmark,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { label: 'Accounting',          href: '/accounting',          icon: Wallet    },
   { label: 'Company Financials',  href: '/company-financials',  icon: PieChart  },
   { label: 'Reconciliation',      href: '/reconciliation',      icon: Scale     },
+  { label: 'Fund Traceability',   href: '/cash-flow',           icon: Landmark  },
   { label: 'Estimation',     href: '/estimation',   icon: Calculator      },
   { label: 'Procurement',    href: '/procurement',  icon: ShoppingCart    },
   { label: 'Documents',      href: '/documents',    icon: FolderOpen      },
