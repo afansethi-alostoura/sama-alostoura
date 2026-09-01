@@ -60,6 +60,14 @@ function categorise(split: string): string {
   return split   // keep as-is if no match
 }
 
+// POS machine transactions belong to an external business using the company
+// terminal — exclude them from the fund-allocation and timeline views.
+function isPOS(t: QBAlostouraTransaction): boolean {
+  if (t.txnType === 'Sales Receipt') return true
+  const haystack = `${t.name} ${t.memo} ${t.split}`.toLowerCase()
+  return haystack.includes('pos') || haystack.includes('point of sale')
+}
+
 function buildGroups(txns: QBAlostouraTransaction[]): FundGroup[] {
   const sorted = [...txns].sort((a, b) => a.txnDate.localeCompare(b.txnDate))
   const groups: FundGroup[] = []
@@ -205,7 +213,7 @@ function buildResponse(
   source:   string,
   fetchedAt: string,
 ) {
-  const sorted      = [...txns].sort((a, b) => a.txnDate.localeCompare(b.txnDate))
+  const sorted      = [...txns].filter(t => !isPOS(t)).sort((a, b) => a.txnDate.localeCompare(b.txnDate))
   const monthly     = buildMonthSummaries(sorted)
   const groups      = buildGroups(sorted)
 
