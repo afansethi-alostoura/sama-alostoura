@@ -53,7 +53,21 @@ export async function GET() {
     out.clients_table = { error: e.message }
   }
 
-  // 4. Check project_overrides
+  // 4. Check stored_projects (the actual project store on this instance)
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('stored_projects')
+      .select('id, data')
+    out.stored_projects = {
+      error: error?.message ?? null,
+      count: data?.length ?? 0,
+      rows:  data ?? [],
+    }
+  } catch (e: any) {
+    out.stored_projects = { error: e.message }
+  }
+
+  // 5. Check project_overrides
   try {
     const { data, error } = await supabaseAdmin
       .from('project_overrides')
@@ -61,7 +75,6 @@ export async function GET() {
     out.project_overrides = {
       error: error?.message ?? null,
       count: data?.length ?? 0,
-      rows:  data ?? [],
     }
   } catch (e: any) {
     out.project_overrides = { error: e.message }
