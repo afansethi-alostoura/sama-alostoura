@@ -21,8 +21,6 @@ node_modules/
 .rates-data.json
 .uploads/
 
-# Debug route (remove before production)
-app/api/debug/
 
 # OS
 .DS_Store
