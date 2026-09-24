@@ -16,6 +16,7 @@ const PUBLIC_PATHS = new Set([
   '/api/meta/whatsapp/webhook',
   '/api/quickbooks/callback',
   '/api/quickbooks/notify',
+  '/api/debug',
 ])
 
 // ── HMAC session verification (Edge-compatible Web Crypto) ────────────────────
