@@ -719,6 +719,7 @@ export default function ReconciliationPage() {
   const [bankEndingBalance,  setBankEndingBalance]  = useState<number | null>(null)
   const [qbEndingBalance,    setQbEndingBalance]    = useState<number | null>(null)
   const [manualBankBalance,  setManualBankBalance]  = useState('')
+  const [manualOpenBalance,  setManualOpenBalance]  = useState('')
 
   // ── Load QB accounts ──────────────────────────────────────────────────────
 
@@ -764,7 +765,9 @@ export default function ReconciliationPage() {
       }
       const { txns: bank, openingBalance: csvOpen, closingBalance: csvBalance } = parseBankCSV(await csvFile.text())
       setBankTxns(bank)
-      if (csvOpen !== null) setBankOpeningBalance(csvOpen)
+      const manualOpenVal = manualOpenBalance.trim() ? parseFloat(manualOpenBalance.replace(/,/g,'')) : null
+      const bankOpen      = (!isNaN(manualOpenVal as number) && manualOpenVal !== null) ? manualOpenVal : csvOpen
+      if (bankOpen !== null) setBankOpeningBalance(bankOpen)
 
       // Use manual input if provided, otherwise use auto-detected CSV balance
       const manualVal = manualBankBalance.trim() ? parseFloat(manualBankBalance.replace(/,/g,'')) : null
@@ -967,21 +970,39 @@ export default function ReconciliationPage() {
                 <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />
                 Supports RAK Bank CSV export and any bank file with Date + Amount columns.
               </p>
-              {/* Manual ending balance input */}
-              <div className="mt-3">
-                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
-                  Statement Ending Balance (AED)
-                  <span className="ml-1.5 font-normal normal-case text-slate-400">— enter if not auto-detected from CSV</span>
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  placeholder="e.g. 125,000.00"
-                  value={manualBankBalance}
-                  onChange={e => setManualBankBalance(e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-slate-300"
-                />
+              {/* Manual balance inputs */}
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+                    Opening Balance (AED)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="e.g. 80,000.00"
+                    value={manualOpenBalance}
+                    onChange={e => setManualOpenBalance(e.target.value)}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-slate-300"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+                    Closing Balance (AED)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="e.g. 125,000.00"
+                    value={manualBankBalance}
+                    onChange={e => setManualBankBalance(e.target.value)}
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-slate-300"
+                  />
+                </div>
               </div>
+              <p className="text-xs text-slate-400 mt-1.5 flex items-start gap-1">
+                <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />
+                Auto-detected from CSV if available — enter manually to override.
+              </p>
             </div>
           </div>
 
