@@ -120,7 +120,7 @@ function parseDateToISO(raw: string): string | null {
   return null
 }
 
-function parseBankCSV(text: string): { txns: BankTxn[]; closingBalance: number | null } {
+function parseBankCSV(text: string): { txns: BankTxn[]; openingBalance: number | null; closingBalance: number | null } {
   const rows = tokenizeCSV(text)
   let headerIdx = -1
   for (let r = 0; r < Math.min(25, rows.length); r++) {
@@ -188,11 +188,33 @@ function parseBankCSV(text: string): { txns: BankTxn[]; closingBalance: number |
   if (results.length === 0)
     throw new Error('No transactions found. Check the date and amount columns.')
 
-  // ── Extract closing balance ────────────────────────────────────────────────
+  // ── Extract opening & closing balances ───────────────────────────────────
+  let openingBalance: number | null = null
   let closingBalance: number | null = null
 
-  // 1. Balance column in transaction rows — take the LAST non-zero value
+  // 1. Balance column in transaction rows — FIRST non-zero = opening, LAST non-zero = closing
   if (balCol >= 0) {
+    for (let r = headerIdx + 1; r < rows.length; r++) {
+      const c = rows[r]
+      if (!c || c.length <= balCol) continue
+      const val = parseNum(c[balCol] ?? '')
+      if (val !== 0) {
+        // Opening balance = balance BEFORE the first transaction = first balance - first txn amount
+        const dateRaw = (c[dateCol] ?? '').trim()
+        const date    = dateRaw ? parseDateToISO(dateRaw) : null
+        if (date) {
+          let txnAmt = 0
+          if (amtCol >= 0 && c[amtCol]) { txnAmt = parseNum(c[amtCol]) }
+          else {
+            const wd  = parseNum(wdCol  >= 0 ? c[wdCol]  ?? '' : '')
+            const dep = parseNum(depCol >= 0 ? c[depCol] ?? '' : '')
+            txnAmt = dep > 0 ? dep : (wd > 0 ? -wd : 0)
+          }
+          openingBalance = val - txnAmt
+        }
+        break
+      }
+    }
     for (let r = rows.length - 1; r > headerIdx; r--) {
       const c = rows[r]
       if (!c || c.length <= balCol) continue
@@ -201,24 +223,22 @@ function parseBankCSV(text: string): { txns: BankTxn[]; closingBalance: number |
     }
   }
 
-  // 2. Summary rows anywhere in the file labelled "closing balance" / "ending balance"
-  if (closingBalance === null) {
-    const balanceLabels = ['closing balance','ending balance','statement balance','closing ledger','available balance']
-    for (let r = 0; r < rows.length; r++) {
-      const c = rows[r]
-      if (!c) continue
-      const j = c.join(' ').toLowerCase()
-      if (balanceLabels.some(lbl => j.includes(lbl))) {
-        for (const cell of c) {
-          const val = parseNum(cell)
-          if (val !== 0) { closingBalance = val; break }
-        }
-        if (closingBalance !== null) break
-      }
+  // 2. Summary rows labelled "opening balance" / "closing balance"
+  const openLabels  = ['opening balance','beginning balance','opening ledger','brought forward']
+  const closeLabels = ['closing balance','ending balance','statement balance','closing ledger']
+  for (let r = 0; r < rows.length; r++) {
+    const c = rows[r]
+    if (!c) continue
+    const j = c.join(' ').toLowerCase()
+    if (openingBalance === null && openLabels.some(lbl => j.includes(lbl))) {
+      for (const cell of c) { const v = parseNum(cell); if (v !== 0) { openingBalance = v; break } }
+    }
+    if (closingBalance === null && closeLabels.some(lbl => j.includes(lbl))) {
+      for (const cell of c) { const v = parseNum(cell); if (v !== 0) { closingBalance = v; break } }
     }
   }
 
-  return { txns: results, closingBalance }
+  return { txns: results, openingBalance, closingBalance }
 }
 
 // ─── Matching Engine ──────────────────────────────────────────────────────────
@@ -488,13 +508,15 @@ function CopyBtn({ text }: { text: string }) {
 // ─── Balance Verification Card ───────────────────────────────────────────────
 
 function BalanceVerificationCard({
-  bankBalance,
-  qbBalance,
+  bankOpen, qbOpen,
+  bankClose, qbClose,
   isGlobalMode,
 }: {
-  bankBalance:   number | null
-  qbBalance:     number | null
-  isGlobalMode:  boolean
+  bankOpen:     number | null
+  qbOpen:       number | null
+  bankClose:    number | null
+  qbClose:      number | null
+  isGlobalMode: boolean
 }) {
   const aed = (n: number) =>
     n.toLocaleString('en-AE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
@@ -506,70 +528,105 @@ function BalanceVerificationCard({
         <div>
           <p className="text-sm font-semibold text-slate-600">Balance verification not available in Global Search mode</p>
           <p className="text-xs text-slate-400 mt-0.5">
-            Select a specific account (e.g. RAK Bank Checking) and re-run to compare ending balances.
+            Select a specific account (e.g. RAK Bank Checking) and re-run to compare opening and ending balances.
           </p>
         </div>
       </div>
     )
   }
 
-  if (bankBalance === null && qbBalance === null) return null
+  const hasOpen  = bankOpen  !== null || qbOpen  !== null
+  const hasClose = bankClose !== null || qbClose !== null
+  if (!hasOpen && !hasClose) return null
 
-  const diff = (bankBalance !== null && qbBalance !== null)
-    ? Math.abs(bankBalance - qbBalance)
-    : null
-  const matched = diff !== null && diff < 0.01
+  const openDiff  = (bankOpen  !== null && qbOpen  !== null) ? Math.abs(bankOpen  - qbOpen)  : null
+  const closeDiff = (bankClose !== null && qbClose !== null) ? Math.abs(bankClose - qbClose) : null
+  const openOk    = openDiff  !== null && openDiff  < 0.01
+  const closeOk   = closeDiff !== null && closeDiff < 0.01
+  const allOk     = openOk && closeOk
+  const anyMismatch = (openDiff !== null && !openOk) || (closeDiff !== null && !closeOk)
 
   return (
     <div className={`mb-5 rounded-xl border px-5 py-4 ${
-      matched
-        ? 'bg-emerald-50 border-emerald-200'
-        : 'bg-red-50 border-red-200'
+      anyMismatch ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-200'
     }`}>
       {/* Header */}
-      <div className="flex items-center gap-2 mb-3">
-        {matched
-          ? <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
-          : <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0" />
+      <div className="flex items-center gap-2 mb-4">
+        {anyMismatch
+          ? <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0" />
+          : <CheckCircle2  className="w-5 h-5 text-emerald-600 flex-shrink-0" />
         }
-        <p className={`font-bold text-sm ${matched ? 'text-emerald-800' : 'text-red-800'}`}>
-          {matched ? '✓ Statement Balance Matched' : '⚠ Balance Discrepancy Detected'}
+        <p className={`font-bold text-sm ${anyMismatch ? 'text-red-800' : 'text-emerald-800'}`}>
+          {anyMismatch ? '⚠ Balance Discrepancy Detected' : '✓ Statement Balances Matched'}
         </p>
       </div>
 
-      {/* Numbers */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div className="bg-white/70 rounded-lg px-4 py-3">
-          <p className="text-xs text-slate-500 mb-0.5">Statement Ending Balance</p>
-          <p className={`text-lg font-bold ${bankBalance !== null ? 'text-slate-800' : 'text-slate-400'}`}>
-            {bankBalance !== null ? `AED ${aed(bankBalance)}` : '—'}
-          </p>
-          {bankBalance === null && (
-            <p className="text-xs text-amber-600 mt-0.5">Enter below ↓</p>
-          )}
-        </div>
-        <div className="bg-white/70 rounded-lg px-4 py-3">
-          <p className="text-xs text-slate-500 mb-0.5">QuickBooks Ending Balance</p>
-          <p className={`text-lg font-bold ${qbBalance !== null ? 'text-slate-800' : 'text-slate-400'}`}>
-            {qbBalance !== null ? `AED ${aed(qbBalance)}` : '—'}
-          </p>
-          {qbBalance === null && (
-            <p className="text-xs text-amber-600 mt-0.5">Not available for this account</p>
-          )}
-        </div>
-        <div className={`rounded-lg px-4 py-3 ${matched ? 'bg-emerald-100/80' : 'bg-red-100/80'}`}>
-          <p className="text-xs text-slate-500 mb-0.5">Difference</p>
-          <p className={`text-lg font-bold ${matched ? 'text-emerald-700' : 'text-red-700'}`}>
-            {diff !== null ? `AED ${aed(diff)}` : '—'}
-          </p>
-          {matched && <p className="text-xs text-emerald-600 mt-0.5">Balances agree ✓</p>}
-        </div>
+      <div className="space-y-3">
+        {/* Opening Balance row */}
+        {hasOpen && (
+          <div>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Opening Balance</p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div className="bg-white/70 rounded-lg px-4 py-2.5">
+                <p className="text-xs text-slate-500 mb-0.5">Statement Opening Balance</p>
+                <p className={`text-base font-bold ${bankOpen !== null ? 'text-slate-800' : 'text-slate-400'}`}>
+                  {bankOpen !== null ? `AED ${aed(bankOpen)}` : '—'}
+                </p>
+              </div>
+              <div className="bg-white/70 rounded-lg px-4 py-2.5">
+                <p className="text-xs text-slate-500 mb-0.5">QuickBooks Opening Balance</p>
+                <p className={`text-base font-bold ${qbOpen !== null ? 'text-slate-800' : 'text-slate-400'}`}>
+                  {qbOpen !== null ? `AED ${aed(qbOpen)}` : '—'}
+                </p>
+              </div>
+              <div className={`rounded-lg px-4 py-2.5 ${openOk ? 'bg-emerald-100/80' : openDiff !== null ? 'bg-red-100/80' : 'bg-white/70'}`}>
+                <p className="text-xs text-slate-500 mb-0.5">Difference</p>
+                <p className={`text-base font-bold ${openOk ? 'text-emerald-700' : openDiff !== null ? 'text-red-700' : 'text-slate-400'}`}>
+                  {openDiff !== null ? `AED ${aed(openDiff)}` : '—'}
+                </p>
+                {openOk && <p className="text-xs text-emerald-600">Agree ✓</p>}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Divider */}
+        {hasOpen && hasClose && <div className="border-t border-current opacity-10" />}
+
+        {/* Closing Balance row */}
+        {hasClose && (
+          <div>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Closing Balance</p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div className="bg-white/70 rounded-lg px-4 py-2.5">
+                <p className="text-xs text-slate-500 mb-0.5">Statement Closing Balance</p>
+                <p className={`text-base font-bold ${bankClose !== null ? 'text-slate-800' : 'text-slate-400'}`}>
+                  {bankClose !== null ? `AED ${aed(bankClose)}` : '—'}
+                </p>
+                {bankClose === null && <p className="text-xs text-amber-600">Enter in Setup ↑</p>}
+              </div>
+              <div className="bg-white/70 rounded-lg px-4 py-2.5">
+                <p className="text-xs text-slate-500 mb-0.5">QuickBooks Closing Balance</p>
+                <p className={`text-base font-bold ${qbClose !== null ? 'text-slate-800' : 'text-slate-400'}`}>
+                  {qbClose !== null ? `AED ${aed(qbClose)}` : '—'}
+                </p>
+              </div>
+              <div className={`rounded-lg px-4 py-2.5 ${closeOk ? 'bg-emerald-100/80' : closeDiff !== null ? 'bg-red-100/80' : 'bg-white/70'}`}>
+                <p className="text-xs text-slate-500 mb-0.5">Difference</p>
+                <p className={`text-base font-bold ${closeOk ? 'text-emerald-700' : closeDiff !== null ? 'text-red-700' : 'text-slate-400'}`}>
+                  {closeDiff !== null ? `AED ${aed(closeDiff)}` : '—'}
+                </p>
+                {closeOk && <p className="text-xs text-emerald-600">Agree ✓</p>}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Warning hint */}
-      {!matched && diff !== null && (
+      {anyMismatch && (
         <p className="mt-3 text-xs text-red-700 bg-red-100/60 rounded-lg px-3 py-2">
-          Transactions may be matched, but the starting/ending account balances do not agree.
+          Transactions may be matched, but the account balances do not fully agree.
           Check for missing unrecorded entries or manual journal entries in QuickBooks.
         </p>
       )}
@@ -657,9 +714,11 @@ export default function ReconciliationPage() {
   const [qbDebug,        setQbDebug]        = useState<Record<string,unknown> | null>(null)
 
   // Balance verification
-  const [bankEndingBalance, setBankEndingBalance] = useState<number | null>(null)
-  const [qbEndingBalance,   setQbEndingBalance]   = useState<number | null>(null)
-  const [manualBankBalance, setManualBankBalance] = useState('')
+  const [bankOpeningBalance, setBankOpeningBalance] = useState<number | null>(null)
+  const [qbOpeningBalance,   setQbOpeningBalance]   = useState<number | null>(null)
+  const [bankEndingBalance,  setBankEndingBalance]  = useState<number | null>(null)
+  const [qbEndingBalance,    setQbEndingBalance]    = useState<number | null>(null)
+  const [manualBankBalance,  setManualBankBalance]  = useState('')
 
   // ── Load QB accounts ──────────────────────────────────────────────────────
 
@@ -687,6 +746,7 @@ export default function ReconciliationPage() {
 
     const globalMode = acctId === '__ALL__'
     setPhase('loading'); setErrMsg(''); setResult(null); setSearch('')
+    setBankOpeningBalance(null); setQbOpeningBalance(null)
     setBankEndingBalance(null); setQbEndingBalance(null)
 
     try {
@@ -702,8 +762,9 @@ export default function ReconciliationPage() {
         const csv    = XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]])
         csvFile = new File([csv], bankFile.name.replace(/\.xlsx?$/i,'.csv'), { type:'text/csv' })
       }
-      const { txns: bank, closingBalance: csvBalance } = parseBankCSV(await csvFile.text())
+      const { txns: bank, openingBalance: csvOpen, closingBalance: csvBalance } = parseBankCSV(await csvFile.text())
       setBankTxns(bank)
+      if (csvOpen !== null) setBankOpeningBalance(csvOpen)
 
       // Use manual input if provided, otherwise use auto-detected CSV balance
       const manualVal = manualBankBalance.trim() ? parseFloat(manualBankBalance.replace(/,/g,'')) : null
@@ -728,10 +789,17 @@ export default function ReconciliationPage() {
       setIsGlobalSearch(qbData.isGlobalSearch ?? false)
       setQbDebug(qb.length === 0 ? (qbData.debug ?? null) : null)
 
-      // QB closing balance = last transaction's running balance (only in single-account GL mode)
+      // QB opening & closing balances from first/last transaction's running balance (single-account GL only)
       if (!globalMode && qb.length > 0) {
-        const lastBal = (qb[qb.length - 1] as any).balance
-        if (typeof lastBal === 'number' && lastBal !== 0) setQbEndingBalance(lastBal)
+        const firstTxn = qb[0] as any
+        const lastTxn  = qb[qb.length - 1] as any
+        if (typeof firstTxn.balance === 'number' && firstTxn.balance !== 0) {
+          // Opening balance = balance before first transaction = first balance - first amount
+          setQbOpeningBalance(firstTxn.balance - firstTxn.amount)
+        }
+        if (typeof lastTxn.balance === 'number' && lastTxn.balance !== 0) {
+          setQbEndingBalance(lastTxn.balance)
+        }
       }
 
       // Step 3: match
@@ -975,8 +1043,10 @@ export default function ReconciliationPage() {
           <>
             {/* Balance Verification */}
             <BalanceVerificationCard
-              bankBalance={bankEndingBalance}
-              qbBalance={qbEndingBalance}
+              bankOpen={bankOpeningBalance}
+              qbOpen={qbOpeningBalance}
+              bankClose={bankEndingBalance}
+              qbClose={qbEndingBalance}
               isGlobalMode={isGlobalSearch}
             />
 
