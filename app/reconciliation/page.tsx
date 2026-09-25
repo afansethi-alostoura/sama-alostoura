@@ -120,7 +120,7 @@ function parseDateToISO(raw: string): string | null {
   return null
 }
 
-function parseBankCSV(text: string): BankTxn[] {
+function parseBankCSV(text: string): { txns: BankTxn[]; closingBalance: number | null } {
   const rows = tokenizeCSV(text)
   let headerIdx = -1
   for (let r = 0; r < Math.min(25, rows.length); r++) {
@@ -149,10 +149,14 @@ function parseBankCSV(text: string): BankTxn[] {
   const wdCol   = col('withdrawal','debit','dr','money out','debit amount')
   const depCol  = col('deposit','credit','cr','money in','credit amount')
   const amtCol  = col('amount','net amount')
+  const balCol  = col('balance','running balance','ledger balance','available balance','book balance')
 
   if (dateCol === -1) throw new Error('Could not find Date column in the uploaded file.')
 
-  const parseNum = (s: string) => parseFloat((s ?? '').replace(/,/g,'').replace(/[^\d.-]/g,'')) || 0
+  const parseNum = (s: string) => {
+    const n = parseFloat((s ?? '').replace(/,/g,'').replace(/[^\d.-]/g,''))
+    return isNaN(n) ? 0 : n
+  }
 
   const results: BankTxn[] = []
   for (let r = headerIdx + 1; r < rows.length; r++) {
@@ -183,7 +187,38 @@ function parseBankCSV(text: string): BankTxn[] {
   }
   if (results.length === 0)
     throw new Error('No transactions found. Check the date and amount columns.')
-  return results
+
+  // ── Extract closing balance ────────────────────────────────────────────────
+  let closingBalance: number | null = null
+
+  // 1. Balance column in transaction rows — take the LAST non-zero value
+  if (balCol >= 0) {
+    for (let r = rows.length - 1; r > headerIdx; r--) {
+      const c = rows[r]
+      if (!c || c.length <= balCol) continue
+      const val = parseNum(c[balCol] ?? '')
+      if (val !== 0) { closingBalance = val; break }
+    }
+  }
+
+  // 2. Summary rows anywhere in the file labelled "closing balance" / "ending balance"
+  if (closingBalance === null) {
+    const balanceLabels = ['closing balance','ending balance','statement balance','closing ledger','available balance']
+    for (let r = 0; r < rows.length; r++) {
+      const c = rows[r]
+      if (!c) continue
+      const j = c.join(' ').toLowerCase()
+      if (balanceLabels.some(lbl => j.includes(lbl))) {
+        for (const cell of c) {
+          const val = parseNum(cell)
+          if (val !== 0) { closingBalance = val; break }
+        }
+        if (closingBalance !== null) break
+      }
+    }
+  }
+
+  return { txns: results, closingBalance }
 }
 
 // ─── Matching Engine ──────────────────────────────────────────────────────────
@@ -450,6 +485,98 @@ function CopyBtn({ text }: { text: string }) {
   )
 }
 
+// ─── Balance Verification Card ───────────────────────────────────────────────
+
+function BalanceVerificationCard({
+  bankBalance,
+  qbBalance,
+  isGlobalMode,
+}: {
+  bankBalance:   number | null
+  qbBalance:     number | null
+  isGlobalMode:  boolean
+}) {
+  const aed = (n: number) =>
+    n.toLocaleString('en-AE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+  if (isGlobalMode) {
+    return (
+      <div className="mb-5 bg-slate-50 border border-slate-200 rounded-xl px-5 py-4 flex items-start gap-3">
+        <Info className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5" />
+        <div>
+          <p className="text-sm font-semibold text-slate-600">Balance verification not available in Global Search mode</p>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Select a specific account (e.g. RAK Bank Checking) and re-run to compare ending balances.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  if (bankBalance === null && qbBalance === null) return null
+
+  const diff = (bankBalance !== null && qbBalance !== null)
+    ? Math.abs(bankBalance - qbBalance)
+    : null
+  const matched = diff !== null && diff < 0.01
+
+  return (
+    <div className={`mb-5 rounded-xl border px-5 py-4 ${
+      matched
+        ? 'bg-emerald-50 border-emerald-200'
+        : 'bg-red-50 border-red-200'
+    }`}>
+      {/* Header */}
+      <div className="flex items-center gap-2 mb-3">
+        {matched
+          ? <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+          : <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0" />
+        }
+        <p className={`font-bold text-sm ${matched ? 'text-emerald-800' : 'text-red-800'}`}>
+          {matched ? '✓ Statement Balance Matched' : '⚠ Balance Discrepancy Detected'}
+        </p>
+      </div>
+
+      {/* Numbers */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="bg-white/70 rounded-lg px-4 py-3">
+          <p className="text-xs text-slate-500 mb-0.5">Statement Ending Balance</p>
+          <p className={`text-lg font-bold ${bankBalance !== null ? 'text-slate-800' : 'text-slate-400'}`}>
+            {bankBalance !== null ? `AED ${aed(bankBalance)}` : '—'}
+          </p>
+          {bankBalance === null && (
+            <p className="text-xs text-amber-600 mt-0.5">Enter below ↓</p>
+          )}
+        </div>
+        <div className="bg-white/70 rounded-lg px-4 py-3">
+          <p className="text-xs text-slate-500 mb-0.5">QuickBooks Ending Balance</p>
+          <p className={`text-lg font-bold ${qbBalance !== null ? 'text-slate-800' : 'text-slate-400'}`}>
+            {qbBalance !== null ? `AED ${aed(qbBalance)}` : '—'}
+          </p>
+          {qbBalance === null && (
+            <p className="text-xs text-amber-600 mt-0.5">Not available for this account</p>
+          )}
+        </div>
+        <div className={`rounded-lg px-4 py-3 ${matched ? 'bg-emerald-100/80' : 'bg-red-100/80'}`}>
+          <p className="text-xs text-slate-500 mb-0.5">Difference</p>
+          <p className={`text-lg font-bold ${matched ? 'text-emerald-700' : 'text-red-700'}`}>
+            {diff !== null ? `AED ${aed(diff)}` : '—'}
+          </p>
+          {matched && <p className="text-xs text-emerald-600 mt-0.5">Balances agree ✓</p>}
+        </div>
+      </div>
+
+      {/* Warning hint */}
+      {!matched && diff !== null && (
+        <p className="mt-3 text-xs text-red-700 bg-red-100/60 rounded-lg px-3 py-2">
+          Transactions may be matched, but the starting/ending account balances do not agree.
+          Check for missing unrecorded entries or manual journal entries in QuickBooks.
+        </p>
+      )}
+    </div>
+  )
+}
+
 // ─── File zone ────────────────────────────────────────────────────────────────
 
 function FileZone({ label, file, onFile }: { label: string; file: File | null; onFile: (f: File) => void }) {
@@ -529,6 +656,11 @@ export default function ReconciliationPage() {
   const [isGlobalSearch, setIsGlobalSearch] = useState(false)
   const [qbDebug,        setQbDebug]        = useState<Record<string,unknown> | null>(null)
 
+  // Balance verification
+  const [bankEndingBalance, setBankEndingBalance] = useState<number | null>(null)
+  const [qbEndingBalance,   setQbEndingBalance]   = useState<number | null>(null)
+  const [manualBankBalance, setManualBankBalance] = useState('')
+
   // ── Load QB accounts ──────────────────────────────────────────────────────
 
   async function loadAccounts() {
@@ -555,6 +687,7 @@ export default function ReconciliationPage() {
 
     const globalMode = acctId === '__ALL__'
     setPhase('loading'); setErrMsg(''); setResult(null); setSearch('')
+    setBankEndingBalance(null); setQbEndingBalance(null)
 
     try {
       // Step 1: parse bank file
@@ -569,8 +702,13 @@ export default function ReconciliationPage() {
         const csv    = XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]])
         csvFile = new File([csv], bankFile.name.replace(/\.xlsx?$/i,'.csv'), { type:'text/csv' })
       }
-      const bank = parseBankCSV(await csvFile.text())
+      const { txns: bank, closingBalance: csvBalance } = parseBankCSV(await csvFile.text())
       setBankTxns(bank)
+
+      // Use manual input if provided, otherwise use auto-detected CSV balance
+      const manualVal = manualBankBalance.trim() ? parseFloat(manualBankBalance.replace(/,/g,'')) : null
+      const bankBal   = (!isNaN(manualVal as number) && manualVal !== null) ? manualVal : csvBalance
+      setBankEndingBalance(bankBal)
 
       // Step 2: fetch QB transactions
       if (globalMode) {
@@ -589,6 +727,12 @@ export default function ReconciliationPage() {
       setQBTxns(qb)
       setIsGlobalSearch(qbData.isGlobalSearch ?? false)
       setQbDebug(qb.length === 0 ? (qbData.debug ?? null) : null)
+
+      // QB closing balance = last transaction's running balance (only in single-account GL mode)
+      if (!globalMode && qb.length > 0) {
+        const lastBal = (qb[qb.length - 1] as any).balance
+        if (typeof lastBal === 'number' && lastBal !== 0) setQbEndingBalance(lastBal)
+      }
 
       // Step 3: match
       setStatus('Running reconciliation…')
@@ -755,6 +899,21 @@ export default function ReconciliationPage() {
                 <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />
                 Supports RAK Bank CSV export and any bank file with Date + Amount columns.
               </p>
+              {/* Manual ending balance input */}
+              <div className="mt-3">
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
+                  Statement Ending Balance (AED)
+                  <span className="ml-1.5 font-normal normal-case text-slate-400">— enter if not auto-detected from CSV</span>
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  placeholder="e.g. 125,000.00"
+                  value={manualBankBalance}
+                  onChange={e => setManualBankBalance(e.target.value)}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder:text-slate-300"
+                />
+              </div>
             </div>
           </div>
 
@@ -814,6 +973,13 @@ export default function ReconciliationPage() {
         {/* Results */}
         {phase === 'done' && result && counts && (
           <>
+            {/* Balance Verification */}
+            <BalanceVerificationCard
+              bankBalance={bankEndingBalance}
+              qbBalance={qbEndingBalance}
+              isGlobalMode={isGlobalSearch}
+            />
+
             {/* Summary cards */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-5">
               {[
