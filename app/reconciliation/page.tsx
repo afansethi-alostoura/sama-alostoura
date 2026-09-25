@@ -256,9 +256,14 @@ function runMatching(bankTxns: BankTxn[], qbTxns: QBTxn[]): MatchResult {
     let bestDiff = 99
     for (const qb of qbTxns) {
       if (usedQB.has(qb.id)) continue
-      // Match on absolute amount — bank CSV and QB may use opposite sign conventions
-      // (e.g., bank withdrawal = -5000, QB TransactionList may return the same as +5000)
-      if (Math.abs(Math.abs(bank.amount) - Math.abs(qb.amount)) > 0.01) continue
+      const bankAbs = Math.abs(bank.amount)
+      const qbAbs   = Math.abs(qb.amount)
+      // Primary match: exact amount (±0.01)
+      // Fallback: QB may store pre-VAT net when TransactionList is used (UAE 5% VAT)
+      // e.g. bank = 21,078.00, QB net = 20,074.29 → 20,074.29 × 1.05 = 21,078.00
+      const exactMatch = Math.abs(bankAbs - qbAbs) <= 0.01
+      const vatMatch   = Math.abs(bankAbs - qbAbs * 1.05) <= 0.02 || Math.abs(bankAbs * 1.05 - qbAbs) <= 0.02
+      if (!exactMatch && !vatMatch) continue
       const diff = Math.abs(daysDiff(bank.date, qb.date))
       if (diff <= 1 && diff < bestDiff) { bestQB = qb; bestDiff = diff }
     }
