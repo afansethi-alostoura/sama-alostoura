@@ -10,10 +10,13 @@ export const dynamic = 'force-dynamic'
 export async function GET() {
   const out: Record<string, unknown> = {}
 
+  const dbUrl = process.env.RAILWAY_DATABASE_URL || process.env.DATABASE_URL
   out.env = {
-    DATABASE_URL:  process.env.DATABASE_URL ? process.env.DATABASE_URL.slice(0, 50) + '…' : '❌ MISSING',
-    isConfigured:  isDbConfigured(),
-    provider:      'Railway PostgreSQL',
+    DATABASE_URL:        dbUrl ? dbUrl.slice(0, 50) + '…' : '❌ MISSING',
+    RAILWAY_DATABASE_URL: process.env.RAILWAY_DATABASE_URL ? '✅ set' : '—',
+    DATABASE_URL_raw:    process.env.DATABASE_URL        ? '✅ set' : '—',
+    isConfigured:        isDbConfigured(),
+    provider:            'Railway PostgreSQL',
   }
 
   if (!isDbConfigured()) {

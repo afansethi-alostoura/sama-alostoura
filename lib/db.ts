@@ -11,7 +11,7 @@ declare global {
 
 export function getPool(): Pool {
   if (!global._pgPool) {
-    const url = process.env.DATABASE_URL
+    const url = process.env.RAILWAY_DATABASE_URL || process.env.DATABASE_URL
     if (!url) throw new Error('DATABASE_URL environment variable is not set')
     global._pgPool = new Pool({
       connectionString: url,
@@ -25,7 +25,7 @@ export function getPool(): Pool {
 }
 
 export function isDbConfigured(): boolean {
-  return Boolean(process.env.DATABASE_URL)
+  return Boolean(process.env.RAILWAY_DATABASE_URL || process.env.DATABASE_URL)
 }
 
 /** Run a query and return rows. Throws on error. */
