@@ -1,83 +1,56 @@
 /**
  * GET /api/debug
- * Diagnostic endpoint — checks env vars, Supabase connection, and table data.
+ * Diagnostic endpoint — checks Railway PostgreSQL connection and table data.
  */
 import { NextResponse } from 'next/server'
-import { supabaseAdmin, isSupabaseConfigured } from '@/lib/supabase'
+import { query, isDbConfigured } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
   const out: Record<string, unknown> = {}
 
-  // 1. Env vars (redacted)
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
-  const svc  = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
   out.env = {
-    SUPABASE_URL:          url  ? url.slice(0, 40) + '…'  : '❌ MISSING',
-    SUPABASE_ANON_KEY:     anon ? anon.slice(0, 20) + '…' : '❌ MISSING',
-    SUPABASE_SERVICE_KEY:  svc  ? svc.slice(0, 20) + '…'  : '❌ MISSING',
-    isConfigured:          isSupabaseConfigured(),
+    DATABASE_URL:  process.env.DATABASE_URL ? process.env.DATABASE_URL.slice(0, 50) + '…' : '❌ MISSING',
+    isConfigured:  isDbConfigured(),
+    provider:      'Railway PostgreSQL',
   }
 
-  if (!isSupabaseConfigured() || !supabaseAdmin) {
-    out.error = 'Supabase not configured — set env vars in Vercel dashboard'
+  if (!isDbConfigured()) {
+    out.error = 'DATABASE_URL not set — add it to Vercel environment variables'
     return NextResponse.json(out)
   }
 
-  // 2. Try querying the projects table
+  // stored_projects
   try {
-    const { data, error, count } = await supabaseAdmin
-      .from('projects')
-      .select('id, name, status, contract_value', { count: 'exact' })
-    out.projects_table = {
-      error:  error?.message ?? null,
-      count,
-      rows:   data ?? [],
-    }
-  } catch (e: any) {
-    out.projects_table = { error: e.message }
-  }
-
-  // 3. Try querying clients
-  try {
-    const { data, error } = await supabaseAdmin
-      .from('clients')
-      .select('id, name')
-    out.clients_table = {
-      error: error?.message ?? null,
-      rows:  data ?? [],
-    }
-  } catch (e: any) {
-    out.clients_table = { error: e.message }
-  }
-
-  // 4. Check stored_projects (the actual project store on this instance)
-  try {
-    const { data, error } = await supabaseAdmin
-      .from('stored_projects')
-      .select('id, data')
-    out.stored_projects = {
-      error: error?.message ?? null,
-      count: data?.length ?? 0,
-      rows:  data ?? [],
-    }
+    const rows = await query('SELECT id, data FROM stored_projects ORDER BY created_at ASC')
+    out.stored_projects = { count: rows.length, rows }
   } catch (e: any) {
     out.stored_projects = { error: e.message }
   }
 
-  // 5. Check project_overrides
+  // project_overrides
   try {
-    const { data, error } = await supabaseAdmin
-      .from('project_overrides')
-      .select('project_id, data')
-    out.project_overrides = {
-      error: error?.message ?? null,
-      count: data?.length ?? 0,
-    }
+    const rows = await query('SELECT project_id FROM project_overrides')
+    out.project_overrides = { count: rows.length }
   } catch (e: any) {
     out.project_overrides = { error: e.message }
+  }
+
+  // project_progress
+  try {
+    const rows = await query('SELECT project_id, progress_percent FROM project_progress')
+    out.project_progress = { count: rows.length, rows }
+  } catch (e: any) {
+    out.project_progress = { error: e.message }
+  }
+
+  // qb_tokens
+  try {
+    const rows = await query('SELECT realm_id, created_at FROM qb_tokens')
+    out.qb_tokens = { count: rows.length, hasTokens: rows.length > 0 }
+  } catch (e: any) {
+    out.qb_tokens = { error: e.message }
   }
 
   return NextResponse.json(out)

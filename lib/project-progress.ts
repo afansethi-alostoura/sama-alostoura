@@ -1,12 +1,8 @@
 /**
- * Supabase-backed progress storage.
- * Base project data stays in .projects-data.json (git-committed).
- * Progress updates (%, stage, BOQ sections) are saved here so they
- * survive Vercel serverless deploys (file system is read-only on Vercel).
- *
- * Uses the service-role key (supabaseAdmin) to bypass RLS on the table.
+ * Railway PostgreSQL-backed progress storage.
+ * Table: project_progress
  */
-import { supabaseAdmin, isSupabaseConfigured } from '@/lib/supabase'
+import { query, queryOne, isDbConfigured } from '@/lib/db'
 import type { BOQSection } from '@/lib/projects-store'
 
 export interface ProgressRecord {
@@ -17,79 +13,46 @@ export interface ProgressRecord {
   updated_at:       string
 }
 
-/** Fetch all saved progress rows keyed by project_id */
 export async function getAllProgress(): Promise<Record<string, ProgressRecord>> {
-  if (!isSupabaseConfigured() || !supabaseAdmin) {
-    console.warn('Supabase not configured — skipping getAllProgress')
-    return {}
-  }
+  if (!isDbConfigured()) return {}
   try {
-    const { data, error } = await supabaseAdmin
-      .from('project_progress')
-      .select('*')
-    if (error) {
-      console.error('getAllProgress error:', error.message)
-      return {}
-    }
-    if (!data) return {}
-    return Object.fromEntries(
-      (data as ProgressRecord[]).map(r => [r.project_id, r])
-    )
+    const rows = await query<ProgressRecord>('SELECT * FROM project_progress')
+    return Object.fromEntries(rows.map(r => [r.project_id, r]))
   } catch (err) {
-    console.error('getAllProgress fetch failed:', err)
+    console.error('getAllProgress failed:', err)
     return {}
   }
 }
 
-/** Fetch progress for one project */
 export async function getProgress(projectId: string): Promise<ProgressRecord | null> {
-  if (!isSupabaseConfigured() || !supabaseAdmin) return null
+  if (!isDbConfigured()) return null
   try {
-    const { data, error } = await supabaseAdmin
-      .from('project_progress')
-      .select('*')
-      .eq('project_id', projectId)
-      .maybeSingle()            // maybeSingle() returns null instead of error when not found
-    if (error) {
-      console.error('getProgress error:', error.message)
-      return null
-    }
-    return data as ProgressRecord | null
+    return await queryOne<ProgressRecord>(
+      'SELECT * FROM project_progress WHERE project_id = $1',
+      [projectId],
+    )
   } catch (err) {
-    console.error('getProgress fetch failed:', err)
+    console.error('getProgress failed:', err)
     return null
   }
 }
 
-/** Upsert progress for one project — never throws, logs errors silently */
 export async function saveProgress(
-  projectId: string,
+  projectId:       string,
   progressPercent: number,
-  currentStage: string,
-  boqSections: BOQSection[],
+  currentStage:    string,
+  boqSections:     BOQSection[],
 ): Promise<void> {
-  if (!isSupabaseConfigured() || !supabaseAdmin) {
-    console.warn('saveProgress: Supabase not configured — skipping')
-    return
-  }
+  if (!isDbConfigured()) return
   try {
-    const { error } = await supabaseAdmin
-      .from('project_progress')
-      .upsert(
-        {
-          project_id:       projectId,
-          progress_percent: progressPercent,
-          current_stage:    currentStage,
-          boq_sections:     boqSections,
-          updated_at:       new Date().toISOString(),
-        },
-        { onConflict: 'project_id' }
-      )
-    if (error) {
-      console.error('saveProgress error:', error.message, error.details)
-      // Don't throw — progress save failure should not crash the request
-    }
+    await query(
+      `INSERT INTO project_progress (project_id, progress_percent, current_stage, boq_sections, updated_at)
+       VALUES ($1, $2, $3, $4, NOW())
+       ON CONFLICT (project_id) DO UPDATE
+         SET progress_percent = $2, current_stage = $3, boq_sections = $4, updated_at = NOW()`,
+      [projectId, progressPercent, currentStage, JSON.stringify(boqSections)],
+    )
   } catch (err) {
-    console.error('saveProgress unexpected error:', err)
+    console.error('saveProgress failed:', err)
   }
 }

@@ -1,24 +1,21 @@
 /**
- * Supabase-backed project storage.
- * - New projects created on Vercel are saved to stored_projects table.
- * - Field edits are saved to project_overrides table (merged on top of base data).
- * - Local .projects-data.json is used as seed/fallback in dev only.
+ * Railway PostgreSQL-backed project storage.
+ * Tables: stored_projects, project_overrides
  */
-import { supabaseAdmin, isSupabaseConfigured } from '@/lib/supabase'
+import { query, queryOne, isDbConfigured } from '@/lib/db'
 import type { StoredProject } from '@/lib/projects-store'
 
 export type ProjectOverride = Record<string, unknown>
 
-// ── project_overrides (edits to existing projects) ───────────────────────────
+// ── project_overrides ─────────────────────────────────────────────────────────
 
 export async function getAllOverrides(): Promise<Record<string, ProjectOverride>> {
-  if (!isSupabaseConfigured() || !supabaseAdmin) return {}
+  if (!isDbConfigured()) return {}
   try {
-    const { data, error } = await supabaseAdmin
-      .from('project_overrides')
-      .select('project_id, data')
-    if (error) { console.error('getAllOverrides:', error.message); return {} }
-    return Object.fromEntries((data ?? []).map((r: any) => [r.project_id, r.data]))
+    const rows = await query<{ project_id: string; data: ProjectOverride }>(
+      'SELECT project_id, data FROM project_overrides',
+    )
+    return Object.fromEntries(rows.map(r => [r.project_id, r.data]))
   } catch (err) {
     console.error('getAllOverrides failed:', err)
     return {}
@@ -26,15 +23,13 @@ export async function getAllOverrides(): Promise<Record<string, ProjectOverride>
 }
 
 export async function getOverride(projectId: string): Promise<ProjectOverride | null> {
-  if (!isSupabaseConfigured() || !supabaseAdmin) return null
+  if (!isDbConfigured()) return null
   try {
-    const { data, error } = await supabaseAdmin
-      .from('project_overrides')
-      .select('data')
-      .eq('project_id', projectId)
-      .maybeSingle()
-    if (error) { console.error('getOverride:', error.message); return null }
-    return (data as any)?.data ?? null
+    const row = await queryOne<{ data: ProjectOverride }>(
+      'SELECT data FROM project_overrides WHERE project_id = $1',
+      [projectId],
+    )
+    return row?.data ?? null
   } catch (err) {
     console.error('getOverride failed:', err)
     return null
@@ -42,106 +37,57 @@ export async function getOverride(projectId: string): Promise<ProjectOverride | 
 }
 
 export async function saveOverride(projectId: string, fields: ProjectOverride): Promise<void> {
-  if (!isSupabaseConfigured() || !supabaseAdmin) {
-    console.warn('saveOverride: Supabase not configured')
-    return
-  }
+  if (!isDbConfigured()) return
   try {
     const existing = await getOverride(projectId) ?? {}
-    const { error } = await supabaseAdmin
-      .from('project_overrides')
-      .upsert(
-        { project_id: projectId, data: { ...existing, ...fields }, updated_at: new Date().toISOString() },
-        { onConflict: 'project_id' },
-      )
-    if (error) console.error('saveOverride error:', error.message)
+    const merged   = { ...existing, ...fields }
+    await query(
+      `INSERT INTO project_overrides (project_id, data, updated_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (project_id) DO UPDATE SET data = $2, updated_at = NOW()`,
+      [projectId, JSON.stringify(merged)],
+    )
   } catch (err) {
     console.error('saveOverride failed:', err)
   }
 }
 
-// ── projects table (canonical source — seeded via schema.sql + seed.sql) ──────
+// ── stored_projects ───────────────────────────────────────────────────────────
 
 export async function getAllStoredFromSupabase(): Promise<StoredProject[]> {
-  if (!isSupabaseConfigured() || !supabaseAdmin) return []
-
-  const results: StoredProject[] = []
-  const seenIds = new Set<string>()
-
-  // Primary source: `stored_projects` (canonical store on this Supabase instance)
+  if (!isDbConfigured()) return []
   try {
-    const { data, error } = await supabaseAdmin
-      .from('stored_projects')
-      .select('id, data')
-      .order('created_at', { ascending: true })
-    if (error) {
-      console.error('getAllStoredFromSupabase [stored_projects]:', error.message)
-    } else {
-      for (const r of data ?? []) {
-        seenIds.add(r.id)
-        results.push({ id: r.id, ...(r as any).data } as StoredProject)
-      }
-    }
+    const rows = await query<{ id: string; data: Record<string, unknown> }>(
+      'SELECT id, data FROM stored_projects ORDER BY created_at ASC',
+    )
+    return rows.map(r => ({ id: r.id, ...r.data } as StoredProject))
   } catch (err) {
-    console.error('getAllStoredFromSupabase [stored_projects] failed:', err)
+    console.error('getAllStoredFromSupabase failed:', err)
+    return []
   }
-
-  // Secondary source: legacy `projects` table (used in some Supabase instances)
-  try {
-    const { data, error } = await supabaseAdmin
-      .from('projects')
-      .select('*, clients(name)')
-      .order('created_at', { ascending: true })
-    if (!error) {
-      for (const r of data ?? []) {
-        if (!seenIds.has(r.id)) {
-          seenIds.add(r.id)
-          results.push({
-            id:                  r.id,
-            name:                r.name,
-            client_name:         (r as any).clients?.name ?? '',
-            location:            r.location ?? '',
-            type:                r.type,
-            status:              r.status,
-            contract_value:      Number(r.contract_value  ?? 0),
-            received_amount:     Number(r.received_amount ?? 0),
-            progress_percent:    Number(r.progress_percent ?? 0),
-            current_stage:       r.current_stage       ?? '',
-            notes:               r.notes               ?? '',
-            start_date:          r.start_date           ?? '',
-            expected_completion: r.expected_completion  ?? '',
-            created_at:          r.created_at,
-            updated_at:          r.updated_at,
-          } as StoredProject)
-        }
-      }
-    }
-  } catch {
-    // projects table may not exist — that is fine
-  }
-
-  return results
 }
 
 export async function saveNewProjectToSupabase(project: StoredProject): Promise<void> {
-  if (!isSupabaseConfigured() || !supabaseAdmin) return
+  if (!isDbConfigured()) return
   try {
     const { id, ...data } = project
-    const { error } = await supabaseAdmin
-      .from('stored_projects')
-      .upsert({ id, data, created_at: project.created_at, updated_at: project.updated_at }, { onConflict: 'id' })
-    if (error) console.error('saveNewProjectToSupabase error:', error.message)
+    await query(
+      `INSERT INTO stored_projects (id, data, created_at, updated_at)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (id) DO UPDATE SET data = $2, updated_at = $4`,
+      [id, JSON.stringify(data), project.created_at ?? new Date().toISOString(), project.updated_at ?? new Date().toISOString()],
+    )
   } catch (err) {
     console.error('saveNewProjectToSupabase failed:', err)
   }
 }
 
 export async function deleteProjectFromSupabase(projectId: string): Promise<void> {
-  if (!isSupabaseConfigured() || !supabaseAdmin) return
+  if (!isDbConfigured()) return
   try {
-    await supabaseAdmin.from('stored_projects').delete().eq('id', projectId)
-    await supabaseAdmin.from('project_overrides').delete().eq('project_id', projectId)
-    await supabaseAdmin.from('project_progress').delete().eq('project_id', projectId)
+    await query('DELETE FROM stored_projects    WHERE id         = $1', [projectId])
+    await query('DELETE FROM project_overrides  WHERE project_id = $1', [projectId])
+    await query('DELETE FROM project_progress   WHERE project_id = $1', [projectId])
   } catch (err) {
     console.error('deleteProjectFromSupabase failed:', err)
   }

@@ -14,7 +14,7 @@
  * "RAK Bank" and is of type "Bank" (falls back to any "RAK" bank account).
  */
 import { NextRequest, NextResponse }                from 'next/server'
-import { supabaseAdmin, isSupabaseConfigured }      from '@/lib/supabase'
+// supabase removed — using Railway PostgreSQL via lib/db.ts
 import { loadTokensAsync }                          from '@/lib/quickbooks/tokens'
 import {
   fetchAccounts, fetchGLReport, parseGLReport, buildMonthSummaries,
@@ -167,17 +167,18 @@ export async function GET(req: NextRequest) {
 
   const tokens = await loadTokensAsync()
   if (!tokens) {
-    // Try snapshot fallback
-    if (!isSupabaseConfigured() || !supabaseAdmin) {
-      return NextResponse.json({ found: false, message: 'QuickBooks not connected.' }, { status: 401 })
-    }
-    const { data } = await supabaseAdmin.from('qb_snapshot').select('rak_bank, synced_at').eq('id', 1).single()
-    const cached = (data as any)?.rak_bank as { transactions: QBAlostouraTransaction[]; account: unknown; summary: unknown } | null
-    if (!cached) {
-      return NextResponse.json({ found: false, message: 'QuickBooks not connected. Connect QB and run a sync to see RAK Bank data.' })
-    }
-    const txns = cached.transactions.filter(t => t.txnDate >= from && t.txnDate <= to)
-    return buildResponse(txns, cached.account, from, to, 'snapshot', (data as any)?.synced_at)
+    // Try snapshot fallback from Railway PostgreSQL
+    try {
+      const { queryOne } = await import('@/lib/db')
+      const snap = await queryOne<{ rak_bank: { transactions: QBAlostouraTransaction[]; account: unknown; summary: unknown }; synced_at: string }>(
+        'SELECT rak_bank, synced_at FROM qb_snapshot WHERE id = 1',
+      )
+      if (snap?.rak_bank) {
+        const txns = snap.rak_bank.transactions.filter(t => t.txnDate >= from && t.txnDate <= to)
+        return buildResponse(txns, snap.rak_bank.account, from, to, 'snapshot', snap.synced_at)
+      }
+    } catch {}
+    return NextResponse.json({ found: false, message: 'QuickBooks not connected. Connect QB and run a sync to see RAK Bank data.' })
   }
 
   try {
