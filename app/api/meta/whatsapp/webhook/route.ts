@@ -300,14 +300,14 @@ Matching rules:
         // Filter by keywords if provided
         const keywords = parsed.parsed_data.document_keywords?.toLowerCase().split(/\s+/).filter(Boolean) ?? []
         const matched = keywords.length > 0
-          ? docs.filter((d: any) => keywords.some(kw => d.original_name.toLowerCase().includes(kw)))
+          ? docs.filter((d) => keywords.some(kw => String(d.original_name ?? '').toLowerCase().includes(kw)))
           : docs
 
         const toSend = matched.length > 0 ? matched : docs.slice(0, 3)
 
         // Send each file as a document
         for (const doc of toSend.slice(0, 5)) {
-          await sendWhatsAppDocument(from, doc.public_url, doc.original_name)
+          await sendWhatsAppDocument(from, doc.public_url as string, doc.original_name as string)
           await new Promise(r => setTimeout(r, 400)) // small delay between messages
         }
 

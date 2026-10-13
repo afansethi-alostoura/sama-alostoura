@@ -94,7 +94,7 @@ export async function GET() {
     results.tables = 'created ✅'
 
     // ── 2. Migrate each table ─────────────────────────────────────────────
-    const tables = [
+    const tables: Array<{ name: string; jsonbCols: string[]; skipPk?: boolean }> = [
       { name: 'company_boq',        jsonbCols: ['items'] },
       { name: 'renovation_boq',     jsonbCols: ['sections'] },
       { name: 'mbhre_boq',          jsonbCols: ['items'] },
