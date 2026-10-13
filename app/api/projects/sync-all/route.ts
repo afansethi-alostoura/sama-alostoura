@@ -11,13 +11,14 @@
  * Called by the "Sync All" button on the CEO Dashboard.
  */
 import { NextResponse }                   from 'next/server'
-import { supabaseAdmin, isSupabaseConfigured } from '@/lib/supabase'
 import { loadTokensAsync }                from '@/lib/quickbooks/tokens'
 import {
   fetchPurchasesInRange,
   fetchBillsInRange,
   fetchVendorCreditsInRange,
+  fetchClasses,
 }                                         from '@/lib/quickbooks/client'
+import { queryOne as dbQueryOne }         from '@/lib/db'
 import { getAllOverrides, saveOverride }   from '@/lib/project-overrides'
 import { getAllStoredProjects }            from '@/lib/projects-store'
 import { getAllStoredFromSupabase }        from '@/lib/project-overrides'
@@ -100,26 +101,21 @@ export async function POST() {
   ].map((p: any) => ({ ...p, ...(overrides[p.id] ?? {}) }))
 
   // ── 1. BOQ Progress sync ──────────────────────────────────────────────────
-  if (isSupabaseConfigured() && supabaseAdmin) {
+  {
     const boqProjects = allProjects.filter((p: any) => p.company_boq_id)
-    if (boqProjects.length > 0) {
-      const boqIds = boqProjects.map((p: any) => p.company_boq_id)
-      const { data: boqRows } = await supabaseAdmin
-        .from('company_boq')
-        .select('id, items')
-        .in('id', boqIds)
-
-      for (const row of (boqRows ?? [])) {
-        const project = boqProjects.find((p: any) => p.company_boq_id === row.id)
-        if (!project) continue
-        try {
-          const items = Array.isArray(row.items) ? row.items : []
-          const newPct = computeBOQProgress(items)
-          await saveProgress(project.id, newPct, project.current_stage ?? '', [])
-          results.boqSynced.push(`${project.name} → ${newPct}%`)
-        } catch (e) {
-          results.errors.push(`BOQ ${project.name}: ${e}`)
-        }
+    for (const project of boqProjects) {
+      try {
+        const row = await dbQueryOne<{ items: unknown }>(
+          'SELECT items FROM company_boq WHERE id = $1',
+          [(project as any).company_boq_id],
+        )
+        if (!row) continue
+        const items = Array.isArray(row.items) ? row.items : []
+        const newPct = computeBOQProgress(items)
+        await saveProgress(project.id, newPct, (project as any).current_stage ?? '', [])
+        results.boqSynced.push(`${(project as any).name} → ${newPct}%`)
+      } catch (e) {
+        results.errors.push(`BOQ ${(project as any).name}: ${e}`)
       }
     }
   }
@@ -129,18 +125,25 @@ export async function POST() {
   if (tokens) {
     const t = { access_token: tokens.access_token, realm_id: tokens.realm_id }
 
-    // Load QB classes list for ID resolution
+    // Load QB classes — try Railway snapshot first, then live from QB
     let classNameById = new Map<string, string>()
     const classIdByName = new Map<string, string>()
-    if (isSupabaseConfigured() && supabaseAdmin) {
-      const { data } = await supabaseAdmin.from('qb_snapshot').select('classes').eq('id', 1).single()
-      const classes: QBClass[] = (data?.classes ?? []) as QBClass[]
+    try {
+      const snap = await dbQueryOne<{ classes: unknown }>('SELECT classes FROM qb_snapshot WHERE id = 1')
+      const snapClasses: QBClass[] = Array.isArray(snap?.classes) ? snap!.classes as QBClass[] : []
+      let classes: QBClass[] = snapClasses
+      if (classes.length === 0) {
+        // No snapshot yet — fetch live from QB
+        classes = await fetchClasses().catch(() => [])
+      }
       for (const c of classes) {
         const fullName = c.FullyQualifiedName ?? c.Name
         classNameById.set(c.Id, fullName)
         classIdByName.set(fullName.toLowerCase(), c.Id)
         classIdByName.set(c.Name.toLowerCase(), c.Id)
       }
+    } catch (e) {
+      console.warn('[sync-all] Failed to load QB classes:', e)
     }
 
     // Fetch all QB data once

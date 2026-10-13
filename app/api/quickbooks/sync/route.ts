@@ -5,7 +5,7 @@ import {
   fetchAccounts, fetchGLReport, parseGLReport, buildMonthSummaries,
 } from '@/lib/quickbooks/client'
 import { loadTokensAsync }                                                                     from '@/lib/quickbooks/tokens'
-import { supabaseAdmin, isSupabaseConfigured }                                               from '@/lib/supabase'
+import { query as dbQuery, queryOne as dbQueryOne, getPool } from '@/lib/db'
 import type { QBSnapshot }                                                                     from '@/lib/quickbooks/types'
 
 // ── POST — fetch from QBO and save snapshot ──────────────────
@@ -93,45 +93,43 @@ export async function POST() {
       `${purchases.length} purchases, ${bills.length} bills`
     )
 
-    // Save to Supabase — try with new columns first, fall back if migration not run yet
-    if (isSupabaseConfigured() && supabaseAdmin) {
-      const basePayload = {
-        id:           1,
-        realm_id:     snapshot.realm_id,
-        company_name: snapshot.company_name,
-        synced_at:    snapshot.synced_at,
-        invoices,
-        payments,
-        customers,
-      }
-
-      // Try saving with classes/purchases/bills/alostoura (requires migration)
-      const { error } = await supabaseAdmin
-        .from('qb_snapshot')
-        .upsert({ ...basePayload, classes, purchases, bills, alostoura: alostouraCache }, { onConflict: 'id' })
-
-      if (error) {
-        console.warn('[QB Sync] Full upsert failed (migration may be needed):', error.message)
-        // Try with just classes/purchases/bills (no alostoura column)
-        const { error: err3 } = await supabaseAdmin
-          .from('qb_snapshot')
-          .upsert({ ...basePayload, classes, purchases, bills }, { onConflict: 'id' })
-        if (err3) {
-          // Fall back to base only
-          const { error: err2 } = await supabaseAdmin
-            .from('qb_snapshot')
-            .upsert(basePayload, { onConflict: 'id' })
-          if (err2) {
-            console.error('[QB Sync] Base upsert also failed:', err2)
-            throw new Error(`Failed to save snapshot: ${err2.message}`)
-          }
-          console.log('[QB Sync] ✅ Base snapshot saved (full columns need DB migration)')
-        } else {
-          console.log('[QB Sync] ✅ Snapshot saved with classes/purchases/bills (alostoura column needs migration)')
-        }
-      } else {
-        console.log('[QB Sync] ✅ Full snapshot saved to Supabase (classes, expenses & alostoura)')
-      }
+    // Save to Railway qb_snapshot
+    try {
+      const pool = getPool()
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS qb_snapshot (
+          id           INTEGER PRIMARY KEY DEFAULT 1,
+          realm_id     TEXT,
+          company_name TEXT,
+          synced_at    TIMESTAMPTZ,
+          invoices     JSONB DEFAULT '[]',
+          payments     JSONB DEFAULT '[]',
+          customers    JSONB DEFAULT '[]',
+          classes      JSONB DEFAULT '[]',
+          purchases    JSONB DEFAULT '[]',
+          bills        JSONB DEFAULT '[]',
+          alostoura    JSONB
+        )
+      `)
+      await pool.query(
+        `INSERT INTO qb_snapshot (id, realm_id, company_name, synced_at, invoices, payments, customers, classes, purchases, bills, alostoura)
+         VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         ON CONFLICT (id) DO UPDATE SET
+           realm_id=EXCLUDED.realm_id, company_name=EXCLUDED.company_name,
+           synced_at=EXCLUDED.synced_at, invoices=EXCLUDED.invoices,
+           payments=EXCLUDED.payments, customers=EXCLUDED.customers,
+           classes=EXCLUDED.classes, purchases=EXCLUDED.purchases,
+           bills=EXCLUDED.bills, alostoura=EXCLUDED.alostoura`,
+        [
+          snapshot.realm_id, snapshot.company_name, snapshot.synced_at,
+          JSON.stringify(invoices), JSON.stringify(payments), JSON.stringify(customers),
+          JSON.stringify(classes), JSON.stringify(purchases), JSON.stringify(bills),
+          alostouraCache ? JSON.stringify(alostouraCache) : null,
+        ],
+      )
+      console.log('[QB Sync] ✅ Snapshot saved to Railway')
+    } catch (dbErr: any) {
+      console.error('[QB Sync] Railway snapshot save failed:', dbErr.message)
     }
 
     return NextResponse.json({
@@ -158,32 +156,24 @@ export async function POST() {
 // ── GET — return cached snapshot ──────────────────────────────
 
 export async function GET() {
-  if (!isSupabaseConfigured() || !supabaseAdmin) {
-    return NextResponse.json({ synced: false, message: 'Supabase not configured' })
-  }
-
   try {
-    const { data, error } = await supabaseAdmin
-      .from('qb_snapshot')
-      .select('*')
-      .eq('id', 1)
-      .single()
-
-    if (error || !data) {
+    const row = await dbQueryOne<Record<string, unknown>>(
+      'SELECT * FROM qb_snapshot WHERE id = 1',
+    )
+    if (!row) {
       return NextResponse.json({ synced: false, message: 'No sync data yet. Run a sync first.' })
     }
-
     return NextResponse.json({
       synced:       true,
-      realm_id:     data.realm_id,
-      company_name: data.company_name,
-      synced_at:    data.synced_at,
-      invoices:     data.invoices   ?? [],
-      payments:     data.payments   ?? [],
-      customers:    data.customers  ?? [],
-      classes:      data.classes    ?? [],
-      purchases:    data.purchases  ?? [],
-      bills:        data.bills      ?? [],
+      realm_id:     row.realm_id,
+      company_name: row.company_name,
+      synced_at:    row.synced_at,
+      invoices:     row.invoices   ?? [],
+      payments:     row.payments   ?? [],
+      customers:    row.customers  ?? [],
+      classes:      row.classes    ?? [],
+      purchases:    row.purchases  ?? [],
+      bills:        row.bills      ?? [],
     })
   } catch (err) {
     console.error('[QB Sync GET] Error:', err)

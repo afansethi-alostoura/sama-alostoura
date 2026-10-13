@@ -6,7 +6,7 @@
  * so every transaction tagged to this class is captured.
  */
 import { NextResponse }                                              from 'next/server'
-import { supabaseAdmin, isSupabaseConfigured }                       from '@/lib/supabase'
+import { queryOne as dbQueryOne }                                     from '@/lib/db'
 import { loadTokensAsync, isAccessTokenFresh }                        from '@/lib/quickbooks/tokens'
 import {
   fetchPurchasesInRange,
@@ -81,22 +81,16 @@ export async function GET(req: Request) {
     )
   }
 
-  // ── Load classes list from Supabase snapshot (needed for ID→name lookup) ─────
+  // ── Load classes from Railway snapshot (needed for ID→name lookup) ──────────
   let classNameById = new Map<string, string>()
   let targetClassId: string | null = null
 
-  if (isSupabaseConfigured() && supabaseAdmin) {
-    const { data } = await supabaseAdmin
-      .from('qb_snapshot')
-      .select('classes')
-      .eq('id', 1)
-      .single()
-
-    const classes: QBClass[] = (data?.classes ?? []) as QBClass[]
+  try {
+    const snap = await dbQueryOne<{ classes: unknown }>('SELECT classes FROM qb_snapshot WHERE id = 1')
+    const classes: QBClass[] = Array.isArray(snap?.classes) ? snap!.classes as QBClass[] : []
     for (const c of classes) {
       const fullName = c.FullyQualifiedName ?? c.Name
       classNameById.set(c.Id, fullName)
-      // Find the ID for the requested class name
       if (
         fullName === className ||
         c.Name   === className ||
@@ -106,7 +100,7 @@ export async function GET(req: Request) {
         targetClassId = c.Id
       }
     }
-  }
+  } catch { /* no snapshot yet — class ID resolution by name falls back */ }
 
   // Refresh access token if expired (fetchDeposits uses raw fetch, not qbFetch)
   const freshTokens = isAccessTokenFresh(tokens) ? tokens : await refreshAccessToken(tokens)
