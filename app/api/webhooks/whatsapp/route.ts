@@ -15,7 +15,7 @@ import { NextResponse } from 'next/server'
 import { getAllStoredProjects } from '@/lib/projects-store'
 import { getAllProgress, saveProgress } from '@/lib/project-progress'
 import { anthropic } from '@/lib/anthropic'
-import { supabaseAdmin, isSupabaseConfigured } from '@/lib/supabase'
+import { query as dbQuery, getPool, isDbConfigured } from '@/lib/db'
 import { twimlReply } from '@/lib/twilio'
 
 // Twilio will only POST here — reject GET requests
@@ -128,25 +128,16 @@ Matching rules:
     // Fall through — we still save the raw message even if parsing fails
   }
 
-  // ── 3. Save raw message + parsed data to Supabase ─────────────────────────
-  if (isSupabaseConfigured() && supabaseAdmin) {
+  // ── 3. Save to Railway ─────────────────────────────────────────────────────
+  if (isDbConfigured()) {
     try {
-      await supabaseAdmin.from('whatsapp_messages').insert({
-        project_id:    parsed?.project_id   ?? null,
-        project_name:  parsed?.project_name ?? null,
-        from_number:   from,
-        sender_name:   profileName,
-        group_id:      groupId || null,
-        message_body:  body,
-        action_type:   parsed?.action_type  ?? 'note',
-        parsed_data:   parsed?.parsed_data  ?? {},
-        ai_summary:    parsed?.ai_summary   ?? body,
-        confidence:    parsed?.confidence   ?? 'low',
-        auto_applied:  false,
-        created_at:    new Date().toISOString(),
-      })
+      await dbQuery(
+        `INSERT INTO whatsapp_messages (project_id, project_name, sender_name, action_type, ai_summary, auto_applied)
+         VALUES ($1, $2, $3, $4, $5, false)`,
+        [parsed?.project_id ?? null, parsed?.project_name ?? null, profileName, parsed?.action_type ?? 'note', parsed?.ai_summary ?? body],
+      )
     } catch (err) {
-      console.error('[WhatsApp] Supabase insert error:', err)
+      console.error('[WhatsApp] DB insert error:', err)
     }
   }
 
@@ -173,13 +164,15 @@ Matching rules:
         autoApplied = true
 
         // Update the whatsapp_messages row to mark as applied
-        if (isSupabaseConfigured() && supabaseAdmin) {
-          await supabaseAdmin
-            .from('whatsapp_messages')
-            .update({ auto_applied: true })
-            .eq('from_number', from)
-            .order('created_at', { ascending: false })
-            .limit(1)
+        if (isDbConfigured()) {
+          try {
+            const pool = getPool()
+            await pool.query(
+              `UPDATE whatsapp_messages SET auto_applied = true
+               WHERE id = (SELECT id FROM whatsapp_messages WHERE sender_name = $1 ORDER BY created_at DESC LIMIT 1)`,
+              [profileName],
+            )
+          } catch { /* non-critical */ }
         }
       } catch (err) {
         console.error('[WhatsApp] Progress save error:', err)

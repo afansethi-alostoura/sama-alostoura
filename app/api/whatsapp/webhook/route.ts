@@ -16,7 +16,7 @@ import { NextResponse } from 'next/server'
 import { getAllStoredProjects } from '@/lib/projects-store'
 import { getAllProgress, saveProgress } from '@/lib/project-progress'
 import { anthropic } from '@/lib/anthropic'
-import { supabaseAdmin, isSupabaseConfigured } from '@/lib/supabase'
+import { query as dbQuery, isDbConfigured } from '@/lib/db'
 
 // ─── Meta payload types ───────────────────────────────────────────────────────
 
@@ -208,23 +208,16 @@ Return ONLY valid JSON:
     console.error('[WhatsApp] AI parse error:', err)
   }
 
-  // 3. Save to Supabase
-  if (isSupabaseConfigured() && supabaseAdmin) {
+    // 3. Save to Railway
+  if (isDbConfigured()) {
     try {
-      await supabaseAdmin.from('whatsapp_messages').insert({
-        project_id:   parsed?.project_id   ?? null,
-        project_name: parsed?.project_name ?? null,
-        from_number:  from,
-        sender_name:  senderName,
-        message_body: text,
-        action_type:  parsed?.action_type  ?? 'note',
-        parsed_data:  parsed?.parsed_data  ?? {},
-        ai_summary:   parsed?.ai_summary   ?? text,
-        confidence:   parsed?.confidence   ?? 'low',
-        auto_applied: false,
-      })
+      await dbQuery(
+        `INSERT INTO whatsapp_messages (project_id, project_name, sender_name, action_type, ai_summary, auto_applied)
+         VALUES ($1, $2, $3, $4, $5, false)`,
+        [parsed?.project_id ?? null, parsed?.project_name ?? null, senderName, parsed?.action_type ?? 'note', parsed?.ai_summary ?? text],
+      )
     } catch (err) {
-      console.error('[WhatsApp] Supabase insert error:', err)
+      console.error('[WhatsApp] DB insert error:', err)
     }
   }
 

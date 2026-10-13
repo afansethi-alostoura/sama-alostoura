@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import type { Project } from '@/types'
 import { anthropic, SYSTEM_PROMPTS } from '@/lib/anthropic'
-import { supabaseAdmin, isSupabaseConfigured } from '@/lib/supabase'
+import { query, isDbConfigured } from '@/lib/db'
 
 export async function POST(req: Request) {
   if (!process.env.SAMA_AI_KEY) {
@@ -30,22 +30,20 @@ export async function POST(req: Request) {
   const totalContract = projects.reduce((s, p) => s + p.contract_value, 0)
   const totalReceived = projects.reduce((s, p) => s + p.received_amount, 0)
 
-  // Fetch recent WhatsApp messages (last 48 hours) from Supabase
+  // Fetch recent WhatsApp messages (last 48 hours) from Railway
   let whatsappContext = ''
-  if (isSupabaseConfigured() && supabaseAdmin) {
+  if (isDbConfigured()) {
     try {
       const since = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()
-      const { data } = await supabaseAdmin
-        .from('whatsapp_messages')
-        .select('project_name, sender_name, action_type, ai_summary, created_at, auto_applied')
-        .gte('created_at', since)
-        .order('created_at', { ascending: false })
-        .limit(20)
-
-      if (data && data.length > 0) {
+      const data = await query(
+        `SELECT project_name, sender_name, action_type, ai_summary, created_at, auto_applied
+         FROM whatsapp_messages WHERE created_at >= $1 ORDER BY created_at DESC LIMIT 20`,
+        [since],
+      )
+      if (data.length > 0) {
         whatsappContext = `
 RECENT WHATSAPP UPDATES (last 48 hours — ${data.length} messages):
-${data.map((m: { created_at: string; project_name?: string; ai_summary: string; auto_applied?: boolean }) => {
+${data.map((m: any) => {
   const time = new Date(m.created_at).toLocaleString('en-AE', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
   const applied = m.auto_applied ? ' [✅ auto-applied to dashboard]' : ''
   return `• [${time}] ${m.project_name ?? 'Unknown project'} — ${m.ai_summary}${applied}`

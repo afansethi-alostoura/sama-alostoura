@@ -21,7 +21,7 @@ import { NextResponse } from 'next/server'
 import { getAllStoredProjects } from '@/lib/projects-store'
 import { getAllProgress, saveProgress } from '@/lib/project-progress'
 import { anthropic } from '@/lib/anthropic'
-import { supabaseAdmin, isSupabaseConfigured } from '@/lib/supabase'
+import { query as dbQuery, getPool, isDbConfigured } from '@/lib/db'
 
 // ── Types for Meta webhook payload ───────────────────────────────────────────
 
@@ -225,24 +225,22 @@ Matching rules:
     console.error('[Meta WhatsApp] AI parse failed:', err)
   }
 
-  // 3. Save to Supabase
-  if (isSupabaseConfigured() && supabaseAdmin) {
+  // 3. Save to Railway
+  if (isDbConfigured()) {
     try {
-      await supabaseAdmin.from('whatsapp_messages').insert({
-        project_id:   parsed?.project_id   ?? null,
-        project_name: parsed?.project_name ?? null,
-        from_number:  from,
-        sender_name:  senderName,
-        group_id:     null,
-        message_body: body,
-        action_type:  parsed?.action_type  ?? 'note',
-        parsed_data:  parsed?.parsed_data  ?? {},
-        ai_summary:   parsed?.ai_summary   ?? body,
-        confidence:   parsed?.confidence   ?? 'low',
-        auto_applied: false,
-      })
+      await dbQuery(
+        `INSERT INTO whatsapp_messages (project_id, project_name, sender_name, action_type, ai_summary, auto_applied)
+         VALUES ($1, $2, $3, $4, $5, false)`,
+        [
+          parsed?.project_id   ?? null,
+          parsed?.project_name ?? null,
+          senderName,
+          parsed?.action_type  ?? 'note',
+          parsed?.ai_summary   ?? body,
+        ],
+      )
     } catch (err) {
-      console.error('[Meta WhatsApp] Supabase insert error:', err)
+      console.error('[Meta WhatsApp] DB insert error:', err)
     }
   }
 
@@ -266,13 +264,15 @@ Matching rules:
         )
         autoApplied = true
 
-        if (isSupabaseConfigured() && supabaseAdmin) {
-          await supabaseAdmin
-            .from('whatsapp_messages')
-            .update({ auto_applied: true })
-            .eq('from_number', from)
-            .order('created_at', { ascending: false })
-            .limit(1)
+        if (isDbConfigured()) {
+          try {
+            const pool = getPool()
+            await pool.query(
+              `UPDATE whatsapp_messages SET auto_applied = true
+               WHERE id = (SELECT id FROM whatsapp_messages WHERE sender_name = $1 ORDER BY created_at DESC LIMIT 1)`,
+              [senderName],
+            )
+          } catch { /* non-critical */ }
         }
       } catch (err) {
         console.error('[Meta WhatsApp] Progress save error:', err)
@@ -284,21 +284,17 @@ Matching rules:
   if (
     parsed?.action_type === 'document_request' &&
     parsed.project_id &&
-    isSupabaseConfigured() &&
-    supabaseAdmin
+    isDbConfigured()
   ) {
     try {
-      let query = supabaseAdmin
-        .from('project_documents')
-        .select('*')
-        .eq('project_id', parsed.project_id)
-        .order('created_at', { ascending: false })
-
+      let sql = 'SELECT * FROM project_documents WHERE project_id = $1'
+      const params: unknown[] = [parsed.project_id]
       if (parsed.parsed_data.document_folder) {
-        query = query.eq('folder', parsed.parsed_data.document_folder)
+        sql += ` AND folder = $${params.length + 1}`
+        params.push(parsed.parsed_data.document_folder)
       }
-
-      const { data: docs } = await query
+      sql += ' ORDER BY uploaded_at DESC'
+      const docs = await dbQuery(sql, params)
 
       if (docs && docs.length > 0) {
         // Filter by keywords if provided
