@@ -17,6 +17,7 @@ const PUBLIC_PATHS = new Set([
   '/api/quickbooks/callback',
   '/api/quickbooks/notify',
   '/api/debug',
+  '/api/migrate-overrides',
 ])
 
 // ── HMAC session verification (Edge-compatible Web Crypto) ────────────────────
