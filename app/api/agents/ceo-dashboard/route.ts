@@ -45,7 +45,7 @@ export async function POST(req: Request) {
       if (data && data.length > 0) {
         whatsappContext = `
 RECENT WHATSAPP UPDATES (last 48 hours — ${data.length} messages):
-${data.map(m => {
+${data.map((m: { created_at: string; project_name?: string; ai_summary: string; auto_applied?: boolean }) => {
   const time = new Date(m.created_at).toLocaleString('en-AE', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
   const applied = m.auto_applied ? ' [✅ auto-applied to dashboard]' : ''
   return `• [${time}] ${m.project_name ?? 'Unknown project'} — ${m.ai_summary}${applied}`
