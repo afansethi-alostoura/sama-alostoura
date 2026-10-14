@@ -3,7 +3,7 @@
  * Diagnostic endpoint — checks Railway PostgreSQL connection and table data.
  */
 import { NextResponse } from 'next/server'
-import { query, isDbConfigured } from '@/lib/db'
+import { query, queryOne, isDbConfigured } from '@/lib/db'
 
 export const dynamic = 'force-dynamic'
 
