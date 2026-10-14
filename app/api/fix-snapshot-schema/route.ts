@@ -11,15 +11,30 @@ export async function GET(req: Request) {
   const pool = getPool()
   const results: Record<string, unknown> = {}
 
-  // Add missing columns to qb_snapshot
-  const cols = ['classes', 'purchases', 'bills', 'payments', 'customers']
-  for (const col of cols) {
+  // Add all missing columns to qb_snapshot
+  const jsonbCols = ['classes', 'purchases', 'bills', 'payments', 'customers', 'invoices']
+  for (const col of jsonbCols) {
     try {
       await pool.query(`ALTER TABLE qb_snapshot ADD COLUMN IF NOT EXISTS ${col} JSONB DEFAULT '[]'`)
       results[`add_${col}`] = 'ok'
     } catch (e: any) {
       results[`add_${col}`] = e.message
     }
+  }
+  const textCols = ['realm_id', 'company_name']
+  for (const col of textCols) {
+    try {
+      await pool.query(`ALTER TABLE qb_snapshot ADD COLUMN IF NOT EXISTS ${col} TEXT`)
+      results[`add_${col}`] = 'ok'
+    } catch (e: any) {
+      results[`add_${col}`] = e.message
+    }
+  }
+  try {
+    await pool.query(`ALTER TABLE qb_snapshot ADD COLUMN IF NOT EXISTS alostoura JSONB`)
+    results.add_alostoura = 'ok'
+  } catch (e: any) {
+    results.add_alostoura = e.message
   }
 
   // Re-run QB sync to populate the new columns
