@@ -56,5 +56,38 @@ export async function GET() {
     out.qb_tokens = { error: e.message }
   }
 
+  // qb_snapshot classes (for debugging class name matching)
+  try {
+    const snap = await queryOne<{ classes: unknown; synced_at: unknown }>(
+      'SELECT synced_at, classes FROM qb_snapshot WHERE id = 1'
+    )
+    if (snap) {
+      const classes = Array.isArray(snap.classes) ? snap.classes as any[] : []
+      out.qb_snapshot = {
+        synced_at: snap.synced_at,
+        class_count: classes.length,
+        class_names: classes.map((c: any) => c.FullyQualifiedName ?? c.Name),
+      }
+    } else {
+      out.qb_snapshot = { note: 'no snapshot yet' }
+    }
+  } catch (e: any) {
+    out.qb_snapshot = { error: e.message }
+  }
+
+  // project_overrides data (to see received_amount)
+  try {
+    const rows = await query<{ project_id: string; data: Record<string, unknown> }>(
+      'SELECT project_id, data FROM project_overrides'
+    )
+    out.project_overrides_data = rows.map(r => ({
+      project_id: r.project_id,
+      received_amount: (r.data as any)?.received_amount ?? 0,
+      qb_class_name: (r.data as any)?.qb_class_name ?? null,
+    }))
+  } catch (e: any) {
+    out.project_overrides_data = { error: e.message }
+  }
+
   return NextResponse.json(out)
 }
