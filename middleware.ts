@@ -18,6 +18,8 @@ const PUBLIC_PATHS = new Set([
   '/api/quickbooks/notify',
   '/api/debug',
   '/api/trigger-sync',
+  '/api/quickbooks/sync',
+  '/api/projects/sync-all',
 ])
 
 // ── HMAC session verification (Edge-compatible Web Crypto) ────────────────────
