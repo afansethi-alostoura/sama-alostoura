@@ -80,7 +80,7 @@ function assessStatus(qb: QBTxn | null, bank: BankTxn): TxnStatus {
 
 // ─── CSV Parser ───────────────────────────────────────────────────────────────
 
-function tokenizeCSV(text: string): string[][] {
+function tokenizeCSV(text: string, sep = ','): string[][] {
   const rows: string[][] = []
   let row: string[] = [], field = '', inQ = false
   const src = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
@@ -89,7 +89,7 @@ function tokenizeCSV(text: string): string[][] {
     if (ch === '"') {
       if (inQ && src[i + 1] === '"') { field += '"'; i++; continue }
       inQ = !inQ
-    } else if (ch === ',' && !inQ) {
+    } else if (ch === sep && !inQ) {
       row.push(field.trim()); field = ''
     } else if (ch === '\n' && !inQ) {
       row.push(field.trim()); rows.push(row); row = []; field = ''
@@ -103,25 +103,53 @@ function tokenizeCSV(text: string): string[][] {
   return rows
 }
 
+function detectSeparator(text: string): string {
+  // Count commas, semicolons and tabs in the first 2000 chars to detect delimiter
+  const sample = text.slice(0, 2000)
+  const counts = {
+    ',': (sample.match(/,/g) ?? []).length,
+    ';': (sample.match(/;/g) ?? []).length,
+    '\t': (sample.match(/\t/g) ?? []).length,
+  }
+  return Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0]
+}
+
 function parseDateToISO(raw: string): string | null {
   if (!raw) return null
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw
-  const dmy = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/)
+  const s = raw.trim()
+  // ISO date or datetime: 2024-01-15 or 2024-01-15T00:00:00...
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10)
+  // YYYY/MM/DD
+  const ymd = s.match(/^(\d{4})[\/\.](\d{2})[\/\.](\d{2})$/)
+  if (ymd) return `${ymd[1]}-${ymd[2]}-${ymd[3]}`
+  // DD/MM/YYYY or DD-MM-YYYY
+  const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/)
   if (dmy) return `${dmy[3]}-${dmy[2].padStart(2,'0')}-${dmy[1].padStart(2,'0')}`
+  // DD.MM.YYYY
+  const dmy2 = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/)
+  if (dmy2) return `${dmy2[3]}-${dmy2[2].padStart(2,'0')}-${dmy2[1].padStart(2,'0')}`
   const mon: Record<string, string> = {
     jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',
     jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12',
   }
-  const dmonth = raw.match(/^(\d{1,2})[\/\- ]([A-Za-z]{3})[\/\- ](\d{4})$/)
+  // DD Mon YYYY (01 Jan 2024 or 1-Jan-2024)
+  const dmonth = s.match(/^(\d{1,2})[\/\- ]([A-Za-z]{3})[\/\- ](\d{4})$/)
   if (dmonth) {
     const m = mon[dmonth[2].toLowerCase()]
     if (m) return `${dmonth[3]}-${m}-${dmonth[1].padStart(2,'0')}`
+  }
+  // Mon DD, YYYY  (Jan 01, 2024)
+  const mdY = s.match(/^([A-Za-z]{3})[\/\- ](\d{1,2}),?\s*(\d{4})$/)
+  if (mdY) {
+    const m = mon[mdY[1].toLowerCase()]
+    if (m) return `${mdY[3]}-${m}-${mdY[2].padStart(2,'0')}`
   }
   return null
 }
 
 function parseBankCSV(text: string): { txns: BankTxn[]; openingBalance: number | null; closingBalance: number | null } {
-  const rows = tokenizeCSV(text)
+  const sep  = detectSeparator(text)
+  const rows = tokenizeCSV(text, sep)
   let headerIdx = -1
   for (let r = 0; r < Math.min(25, rows.length); r++) {
     const j = rows[r].join(' ').toLowerCase()
@@ -154,8 +182,12 @@ function parseBankCSV(text: string): { txns: BankTxn[]; openingBalance: number |
   if (dateCol === -1) throw new Error('Could not find Date column in the uploaded file.')
 
   const parseNum = (s: string) => {
-    const n = parseFloat((s ?? '').replace(/,/g,'').replace(/[^\d.-]/g,''))
-    return isNaN(n) ? 0 : n
+    const raw = (s ?? '').trim()
+    // Parentheses = negative: (1,234.56) → -1234.56
+    const isNeg = raw.startsWith('(') && raw.endsWith(')')
+    const cleaned = raw.replace(/,/g,'').replace(/[^\d.-]/g,'')
+    const n = parseFloat(cleaned)
+    return isNaN(n) ? 0 : (isNeg ? -Math.abs(n) : n)
   }
 
   const results: BankTxn[] = []
@@ -185,8 +217,27 @@ function parseBankCSV(text: string): { txns: BankTxn[]; openingBalance: number |
       reference:   (c[refCol]  ?? '').trim().slice(0,40),
     })
   }
-  if (results.length === 0)
-    throw new Error('No transactions found. Check the date and amount columns.')
+  if (results.length === 0) {
+    // Build a diagnostic showing what the parser found, to help the user fix their file
+    const hdrRow  = rows[headerIdx] ?? []
+    const sample  = rows[headerIdx + 1] ?? []
+    const details: string[] = []
+    details.push(`Header (row ${headerIdx + 1}): ${hdrRow.join(' | ')}`)
+    if (sample.length) details.push(`First data row: ${sample.join(' | ')}`)
+    details.push(`Date col: ${dateCol >= 0 ? hdrRow[dateCol] : '❌ not found'}`)
+    if (amtCol >= 0)  details.push(`Amount col: ${hdrRow[amtCol]}`)
+    if (wdCol  >= 0)  details.push(`Withdrawal col: ${hdrRow[wdCol]}`)
+    if (depCol >= 0)  details.push(`Deposit col: ${hdrRow[depCol]}`)
+    if (dateCol >= 0 && sample[dateCol]) details.push(`Sample date value: "${sample[dateCol]}"`)
+    const noDate  = dateCol < 0
+    const noAmt   = amtCol < 0 && wdCol < 0 && depCol < 0
+    let hint = noDate
+      ? 'Date column not found — expected a column named Date, Txn Date, Value Date or similar.'
+      : noAmt
+      ? 'Amount column not found — expected Amount, Withdrawal/Deposit, Debit/Credit or similar.'
+      : `Date "${sample[dateCol] ?? ''}" could not be parsed — expected DD/MM/YYYY, YYYY-MM-DD or DD Mon YYYY.`
+    throw new Error(`No transactions found. ${hint}\n\n${details.join('\n')}`)
+  }
 
   // ── Extract opening & closing balances ───────────────────────────────────
   let openingBalance: number | null = null
@@ -764,8 +815,8 @@ export default function ReconciliationPage() {
         setStatus('Converting Excel to CSV…')
         const buffer = await bankFile.arrayBuffer()
         const XLSX   = await import('xlsx')
-        const wb     = XLSX.read(new Uint8Array(buffer), { type:'array', cellDates:true })
-        const csv    = XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]])
+        const wb     = XLSX.read(new Uint8Array(buffer), { type:'array', cellDates:true, dateNF:'YYYY-MM-DD' })
+        const csv    = XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]], { dateNF:'YYYY-MM-DD' })
         csvFile = new File([csv], bankFile.name.replace(/\.xlsx?$/i,'.csv'), { type:'text/csv' })
       }
       const { txns: bank, openingBalance: csvOpen, closingBalance: csvBalance } = parseBankCSV(await csvFile.text())
