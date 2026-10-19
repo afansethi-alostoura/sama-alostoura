@@ -138,6 +138,12 @@ function parseDateToISO(raw: string): string | null {
     const m = mon[dmonth[2].toLowerCase()]
     if (m) return `${dmonth[3]}-${m}-${dmonth[1].padStart(2,'0')}`
   }
+  // DD-Mon-YY (30-Jun-25) — 2-digit year, assume 20XX
+  const dmonth2 = s.match(/^(\d{1,2})[\/\- ]([A-Za-z]{3})[\/\- ](\d{2})$/)
+  if (dmonth2) {
+    const m = mon[dmonth2[2].toLowerCase()]
+    if (m) return `20${dmonth2[3]}-${m}-${dmonth2[1].padStart(2,'0')}`
+  }
   // Mon DD, YYYY  (Jan 01, 2024)
   const mdY = s.match(/^([A-Za-z]{3})[\/\- ](\d{1,2}),?\s*(\d{4})$/)
   if (mdY) {
@@ -184,7 +190,8 @@ function parseBankCSV(text: string): { txns: BankTxn[]; openingBalance: number |
   const parseNum = (s: string) => {
     const raw = (s ?? '').trim()
     // Parentheses = negative: (1,234.56) → -1234.56
-    const isNeg = raw.startsWith('(') && raw.endsWith(')')
+    const isNeg = (raw.startsWith('(') && raw.endsWith(')')) ||
+                  /\bdr\.?\b/i.test(raw)   // "Dr." suffix = debit = negative
     const cleaned = raw.replace(/,/g,'').replace(/[^\d.-]/g,'')
     const n = parseFloat(cleaned)
     return isNaN(n) ? 0 : (isNeg ? -Math.abs(n) : n)
