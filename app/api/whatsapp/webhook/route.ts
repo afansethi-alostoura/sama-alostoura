@@ -71,6 +71,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
+  console.log('[WA-WEBHOOK] received:', JSON.stringify(body).slice(0, 500))
+
   if (body.object !== 'whatsapp_business_account') {
     return NextResponse.json({ status: 'ignored' })
   }
