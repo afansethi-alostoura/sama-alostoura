@@ -105,9 +105,14 @@ export async function POST(req: Request) {
               mimeType: msg.document?.mime_type ?? 'application/pdf',
               from, senderName,
             })
+
+          } else {
+            // Debug: reply with whatever type was received
+            await sendReply(from, `[Debug] Received message type: ${msg.type}`)
           }
         } catch (err) {
           console.error('[WhatsApp] handler error:', err)
+          await sendReply(from, `⚠️ Error processing message: ${String(err).slice(0, 100)}`)
         }
       }
     }
@@ -259,7 +264,7 @@ async function handleImageMessage({
 }: { mediaId: string; caption: string; mimeType: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'; from: string; senderName: string }) {
 
   // Acknowledge immediately so user knows it was received
-  await sendReply(from, '📷 Image received — analyzing...')
+  await sendReply(from, `📷 Image received from ${from} — analyzing...`)
 
   const media = await downloadMedia(mediaId)
   if (!media) {
