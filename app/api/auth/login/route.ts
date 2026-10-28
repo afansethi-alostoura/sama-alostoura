@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import crypto from 'crypto'
 
 const SECRET      = process.env.SESSION_SECRET ?? 'dev-secret-change-in-production'
-const SESSION_TTL = 7 * 24 * 60 * 60 * 1000
+const SESSION_TTL = 90 * 24 * 60 * 60 * 1000
 
 // All users — add more rows here to create additional accounts
 const USERS: Array<{ usernameEnv: string; passwordEnv: string; defaultUser: string; defaultPass: string; role: string }> = [
