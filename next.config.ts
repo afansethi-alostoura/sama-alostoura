@@ -20,7 +20,6 @@ const nextConfig: NextConfig = {
   // Suppress url.parse() deprecation warning from intuit-oauth dependency
   serverExternalPackages: ['intuit-oauth'],
   typescript: { ignoreBuildErrors: true },
-  eslint:     { ignoreDuringBuilds: true },
   async headers() {
     return [
       {

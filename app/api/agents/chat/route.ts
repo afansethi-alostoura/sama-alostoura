@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { generate, SYSTEM_PROMPTS } from '@/lib/gemini'
+import { generate } from '@/lib/gemini'
 
 const SYSTEM_PROMPTS: Record<string, string> = {
   'construction-ops': `You are a Senior Construction Operations Engineer with 25+ years of experience in villa construction, building construction, MEP works, finishing works, project planning, quantity surveying, and construction management working for Sama Alostoura Building Contracting LLC in Dubai, UAE.
