@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server'
 import type { Project } from '@/types'
-import { anthropic, SYSTEM_PROMPTS } from '@/lib/anthropic'
+import { generate, SYSTEM_PROMPTS } from '@/lib/gemini'
 import { query, isDbConfigured } from '@/lib/db'
 
 export async function POST(req: Request) {
-  if (!process.env.SAMA_AI_KEY) {
+  if (!process.env.GOOGLE_API_KEY) {
     return NextResponse.json({
       briefing: [
         '⚠️ AI not configured yet.',
@@ -80,14 +80,7 @@ KNOWN ISSUES:
 ${whatsappContext}`
 
   try {
-    const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 600,
-      system: SYSTEM_PROMPTS.CEO_DASHBOARD,
-      messages: [{ role: 'user', content: `Generate my morning CEO briefing:\n${context}` }],
-    })
-
-    const briefing = message.content[0].type === 'text' ? message.content[0].text : ''
+    const briefing = await generate(`Generate my morning CEO briefing:\n${context}`, SYSTEM_PROMPTS.CEO_DASHBOARD, 600)
     return NextResponse.json({ briefing })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Unknown error'

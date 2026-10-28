@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
-import { anthropic } from '@/lib/anthropic'
+import { generate, SYSTEM_PROMPTS } from '@/lib/gemini'
 
 export async function POST(req: Request) {
-  if (!process.env.SAMA_AI_KEY) {
+  if (!process.env.GOOGLE_API_KEY) {
     return NextResponse.json({
       briefing: '⚠️ SAMA_AI_KEY is not set in .env.local.\n\nAdd this line to C:\\Users\\pc\\Documents\\sama-alostoura\\.env.local:\nSAMA_AI_KEY=your-anthropic-key\n\nThen restart the dev server.',
     })
@@ -63,10 +63,7 @@ export async function POST(req: Request) {
     context += '4. Recommendation for next payment stage (if MBHRE-funded, consider the gap between actual work and approved progress)\n'
     context += '5. Action items for the contractor and project manager'
 
-    const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 1200,
-      system: `You are an expert construction project manager and AI consultant. You provide clear, actionable project briefings that help construction company management understand project status at a glance.
+    const briefing = await generate(context, `You are an expert construction project manager and AI consultant. You provide clear, actionable project briefings that help construction company management understand project status at a glance.
 
 Your briefing format should be:
 - Start with a 1-sentence executive summary
@@ -76,11 +73,7 @@ Your briefing format should be:
 - For MBHRE-funded projects: highlight if actual progress exceeds approved progress and recommend when to submit for next payment
 - End with 2-3 specific ACTION ITEMS for tomorrow
 
-Use clear formatting with headers (###), bold for key numbers (**AED X**), and bullet points for lists.`,
-      messages: [{ role: 'user', content: context }],
-    })
-
-    const briefing = message.content[0].type === 'text' ? message.content[0].text : ''
+Use clear formatting with headers (###), bold for key numbers (**AED X**), and bullet points for lists.`, 1200)
     return NextResponse.json({ briefing })
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Unknown error'

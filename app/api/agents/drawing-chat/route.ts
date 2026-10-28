@@ -12,7 +12,7 @@
  *   { answer: string }
  */
 import { NextRequest, NextResponse } from 'next/server'
-import { anthropic } from '@/lib/anthropic'
+import { generate, SYSTEM_PROMPTS } from '@/lib/gemini'
 import { supabaseAdmin } from '@/lib/supabase'
 
 export const maxDuration = 60
@@ -154,13 +154,7 @@ export async function POST(req: NextRequest) {
     console.log(`[drawing-chat] ${files.length} drawings, ${messages.length} messages → Claude`)
 
     // ── Call Claude ───────────────────────────────────────────────────────────
-    const resp = await anthropic.messages.create({
-      model:      'claude-opus-4-5',
-      max_tokens: 2000,
-      system:     SYSTEM,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      messages:   claudeMessages as any,
-    })
+    const respText = await generate('', 2000)
 
     const answer = resp.content[0].type === 'text' ? resp.content[0].text : '(No response)'
 

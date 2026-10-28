@@ -21,7 +21,7 @@
  *   Finding: { severity, title, detail, amount?, project? }
  */
 import { NextRequest, NextResponse } from 'next/server'
-import { anthropic }                 from '@/lib/anthropic'
+import { generate }                 from '@/lib/gemini'
 import { supabaseAdmin, isSupabaseConfigured } from '@/lib/supabase'
 import type { QBClassExpenseRow, QBPurchase, QBBill } from '@/lib/quickbooks/types'
 
@@ -223,12 +223,7 @@ Return ONLY a JSON array of findings, no markdown fences:
   ...
 ]`
 
-    const resp = await anthropic.messages.create({
-      model:      'claude-opus-4-5',
-      max_tokens: 3000,
-      system,
-      messages:   [{ role: 'user', content: context }],
-    })
+    const respText = await generate(context, 3000)
 
     const raw = resp.content[0].type === 'text' ? resp.content[0].text : '[]'
 

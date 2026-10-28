@@ -20,7 +20,7 @@
 import { NextResponse } from 'next/server'
 import { getAllStoredProjects } from '@/lib/projects-store'
 import { getAllProgress, saveProgress } from '@/lib/project-progress'
-import { anthropic } from '@/lib/anthropic'
+import { generate, SYSTEM_PROMPTS } from '@/lib/gemini'
 import { query as dbQuery, getPool, isDbConfigured } from '@/lib/db'
 
 // ── Types for Meta webhook payload ───────────────────────────────────────────
@@ -213,11 +213,7 @@ Matching rules:
   let parsed: ParsedMsg | null = null
 
   try {
-    const aiRes = await anthropic.messages.create({
-      model:      'claude-haiku-4-5',
-      max_tokens: 500,
-      messages:   [{ role: 'user', content: prompt }],
-    })
+    const aiResText = await generate(prompt, 500)
     const raw   = aiRes.content[0].type === 'text' ? aiRes.content[0].text.trim() : ''
     const clean = raw.replace(/^```json\s*/i, '').replace(/\s*```$/, '').trim()
     parsed = JSON.parse(clean) as ParsedMsg

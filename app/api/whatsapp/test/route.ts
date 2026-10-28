@@ -17,7 +17,7 @@ export async function GET() {
     META_WHATSAPP_TOKEN:       token   ? `✅ Set (${token.slice(0, 20)}...)` : '❌ MISSING',
     META_WHATSAPP_PHONE_ID:    phoneId ? `✅ Set (${phoneId})`               : '❌ MISSING',
     META_WEBHOOK_VERIFY_TOKEN: process.env.META_WEBHOOK_VERIFY_TOKEN ? '✅ Set' : '❌ MISSING',
-    SAMA_AI_KEY:               process.env.SAMA_AI_KEY               ? '✅ Set' : '❌ MISSING',
+    SAMA_AI_KEY:               process.env.GOOGLE_API_KEY               ? '✅ Set' : '❌ MISSING',
     NEXT_PUBLIC_SUPABASE_URL:  process.env.NEXT_PUBLIC_SUPABASE_URL  ? '✅ Set' : '❌ MISSING',
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY ? '✅ Set' : '❌ MISSING',
   }

@@ -12,7 +12,7 @@
  * READ-ONLY — no QB API calls, no OAuth required, no data is written anywhere.
  */
 import { NextRequest, NextResponse } from 'next/server'
-import { anthropic }                 from '@/lib/anthropic'
+import { generate }                 from '@/lib/gemini'
 
 export const dynamic     = 'force-dynamic'
 export const maxDuration = 300
@@ -289,12 +289,7 @@ export async function POST(req: NextRequest) {
       }
 
       // Call Claude
-      const msg = await anthropic.messages.create({
-        model:      'claude-sonnet-4-6',
-        max_tokens: 16000,
-        system:     SYSTEM_PROMPT,
-        messages:   [{ role: 'user', content: userContent }],
-      })
+      const msgText = await generate(userContent, SYSTEM_PROMPT, 16000)
 
       if (msg.stop_reason === 'max_tokens') {
         console.warn('[Reconcile] Response truncated — too many transactions for one pass')

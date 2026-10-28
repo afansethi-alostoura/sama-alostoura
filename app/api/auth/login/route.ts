@@ -4,6 +4,20 @@ import crypto from 'crypto'
 const SECRET      = process.env.SESSION_SECRET ?? 'dev-secret-change-in-production'
 const SESSION_TTL = 7 * 24 * 60 * 60 * 1000
 
+// All users — add more rows here to create additional accounts
+const USERS: Array<{ usernameEnv: string; passwordEnv: string; defaultUser: string; defaultPass: string; role: string }> = [
+  {
+    usernameEnv: 'ADMIN_USERNAME', passwordEnv: 'ADMIN_PASSWORD',
+    defaultUser: 'Samaalostoura',  defaultPass:  'Alostoura1122@',
+    role: 'admin',
+  },
+  {
+    usernameEnv: 'ENGR_USERNAME',  passwordEnv: 'ENGR_PASSWORD',
+    defaultUser: 'SamaEngineer',   defaultPass:  'Sama@Engr2025',
+    role: 'engineer',
+  },
+]
+
 const loginAttempts = new Map<string, { count: number; resetAt: number }>()
 function isRateLimited(ip: string): boolean {
   const now = Date.now()
@@ -17,10 +31,11 @@ function hmac(data: string): string {
   return crypto.createHmac('sha256', SECRET).update(data).digest('base64url')
 }
 
-export function createSessionToken(): string {
+export function createSessionToken(role = 'admin'): string {
   const id      = crypto.randomBytes(32).toString('hex')
   const expiry  = Date.now() + SESSION_TTL
-  const payload = `${id}.${expiry}`
+  // payload includes role so it is signed and cannot be tampered
+  const payload = `${role}:${id}.${expiry}`
   return `${payload}.${hmac(payload)}`
 }
 
@@ -39,32 +54,42 @@ export async function POST(req: Request) {
   try {
     const { username, password } = await req.json()
 
-    const expectedUser = process.env.ADMIN_USERNAME ?? 'Samaalostoura'
-    const expectedPass = process.env.ADMIN_PASSWORD ?? 'Alostoura1122@'
+    // Try each configured user
+    let matchedRole: string | null = null
+    for (const u of USERS) {
+      const expectedUser = process.env[u.usernameEnv] ?? u.defaultUser
+      const expectedPass = process.env[u.passwordEnv] ?? u.defaultPass
+      let ok = false
+      try {
+        ok =
+          username?.length === expectedUser.length &&
+          crypto.timingSafeEqual(Buffer.from(username), Buffer.from(expectedUser)) &&
+          password?.length === expectedPass.length &&
+          crypto.timingSafeEqual(Buffer.from(password), Buffer.from(expectedPass))
+      } catch { ok = false }
+      if (ok) { matchedRole = u.role; break }
+    }
 
-    let ok = true
-    try {
-      ok =
-        username?.length === expectedUser.length &&
-        crypto.timingSafeEqual(Buffer.from(username), Buffer.from(expectedUser)) &&
-        password?.length === expectedPass.length &&
-        crypto.timingSafeEqual(Buffer.from(password), Buffer.from(expectedPass))
-    } catch { ok = false }
+    if (!matchedRole) return NextResponse.json({ error: 'Invalid username or password.' }, { status: 401 })
 
-    if (!ok) return NextResponse.json({ error: 'Invalid username or password.' }, { status: 401 })
-
-    // If no TOTP secret configured → log in directly (dev fallback)
-    if (!process.env.TOTP_SECRET) {
+    // Engineers skip TOTP (TOTP only applies to admin)
+    if (!process.env.TOTP_SECRET || matchedRole !== 'admin') {
       const res = NextResponse.json({ ok: true, step: 'done' })
-      res.cookies.set('sama-session', createSessionToken(), {
+      res.cookies.set('sama-session', createSessionToken(matchedRole), {
         httpOnly: true, secure: process.env.NODE_ENV === 'production',
         sameSite: 'lax', maxAge: SESSION_TTL / 1000, path: '/',
       })
       return res
     }
 
-    // Credentials valid — ask for Google Authenticator code
-    return NextResponse.json({ step: 'totp' })
+    // Admin with TOTP configured — ask for Google Authenticator code
+    // Store pending role in a short-lived cookie so verify-otp can embed it
+    const res = NextResponse.json({ step: 'totp' })
+    res.cookies.set('sama-pending-role', 'admin', {
+      httpOnly: true, secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax', maxAge: 300, path: '/',
+    })
+    return res
 
   } catch (err) {
     console.error('[login]', err)

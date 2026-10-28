@@ -12,7 +12,7 @@
  *               Civil Defence, ISO, Insurance Policies, VAT Certificate, etc.
  */
 import { NextRequest, NextResponse } from 'next/server'
-import { anthropic } from '@/lib/anthropic'
+import { generate, SYSTEM_PROMPTS } from '@/lib/gemini'
 
 export const dynamic    = 'force-dynamic'
 export const maxDuration = 30

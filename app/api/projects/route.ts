@@ -19,11 +19,18 @@ export async function GET() {
   const projects = allBase.map(p => {
     const prog = progressMap[p.id]
     const over = overridesMap[p.id] ?? {}
+    const storedPct = prog?.progress_percent ?? (over.progress_percent as number | undefined) ?? p.progress_percent
+    const receivedAmt  = (over.received_amount as number | undefined) ?? p.received_amount ?? 0
+    const contractVal  = p.contract_value ?? 0
+    // Fallback: estimate from received/contract when progress was never set and no BOQ drives it
+    const estimatedPct = (storedPct === 0 && receivedAmt > 0 && contractVal > 0)
+      ? Math.min(99, Math.round((receivedAmt / contractVal) * 100))
+      : storedPct
     return {
       ...p,
       ...over,
       status:           ((over.status ?? p.status) as string).replace('-', '_'),
-      progress_percent: prog?.progress_percent ?? (over.progress_percent as number | undefined) ?? p.progress_percent,
+      progress_percent: estimatedPct,
       current_stage:    prog?.current_stage    ?? (over.current_stage    as string | undefined) ?? p.current_stage,
       boq_sections:     prog?.boq_sections     ?? (p as any).boq_sections ?? [],
     }

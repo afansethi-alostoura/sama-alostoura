@@ -1,7 +1,7 @@
 'use client'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import Link from 'next/link'
-import { Building2, Plus, Search, ExternalLink, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react'
+import { Building2, Plus, Search, ExternalLink, RefreshCw, CheckCircle2, AlertCircle, Pencil } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 import { useAllProjects, broadcastProjectUpdate, type ProjectRow } from '@/hooks/useAllProjects'
 
@@ -29,6 +29,30 @@ export default function ProjectsPage() {
   const [filter, setFilter] = useState<string>('all')
   const [syncing, setSyncing]   = useState(false)
   const [syncMsg, setSyncMsg]   = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
+
+  // Inline progress editing
+  const [editingProgressId, setEditingProgressId] = useState<string | null>(null)
+  const [progressInput, setProgressInput]         = useState('')
+  const [savingProgressId, setSavingProgressId]   = useState<string | null>(null)
+  const progressInputRef = useRef<HTMLInputElement>(null)
+
+  async function saveProgress(projectId: string) {
+    const val = Math.max(0, Math.min(100, Number(progressInput)))
+    setSavingProgressId(projectId)
+    try {
+      await fetch(`/api/projects/${projectId}`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ progress_percent: val }),
+      })
+      refresh()
+      broadcastProjectUpdate()
+    } catch {}
+    finally {
+      setSavingProgressId(null)
+      setEditingProgressId(null)
+    }
+  }
 
   const syncFromQB = useCallback(async () => {
     setSyncing(true)
@@ -234,13 +258,45 @@ export default function ProjectsPage() {
                         : <span className="text-xs text-slate-300">—</span>
                       }
                     </td>
-                    <td className="px-3 py-3 w-28 hidden md:table-cell">
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                          <div className={`h-full rounded-full ${barC}`} style={{ width: `${pct}%` }} />
+                    <td className="px-3 py-3 w-36 hidden md:table-cell">
+                      {editingProgressId === project.id ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            ref={progressInputRef}
+                            type="number" min="0" max="100"
+                            value={progressInput}
+                            onChange={e => setProgressInput(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') saveProgress(project.id)
+                              if (e.key === 'Escape') setEditingProgressId(null)
+                            }}
+                            autoFocus
+                            className="w-14 text-center text-xs font-bold border border-slate-300 rounded-lg px-1.5 py-0.5 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                          />
+                          <span className="text-xs text-slate-400">%</span>
+                          <button
+                            onClick={() => saveProgress(project.id)}
+                            disabled={savingProgressId === project.id}
+                            className="text-[10px] bg-blue-600 text-white px-1.5 py-0.5 rounded disabled:opacity-60"
+                          >
+                            {savingProgressId === project.id ? '…' : 'OK'}
+                          </button>
                         </div>
-                        <span className="text-xs text-slate-500 w-7 text-right">{pct}%</span>
-                      </div>
+                      ) : (
+                        <div className="flex items-center gap-2 group/prog">
+                          <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full ${barC}`} style={{ width: `${pct}%` }} />
+                          </div>
+                          <span className="text-xs text-slate-500 w-7 text-right">{pct}%</span>
+                          <button
+                            onClick={() => { setProgressInput(String(pct)); setEditingProgressId(project.id) }}
+                            className="opacity-0 group-hover/prog:opacity-100 transition-opacity text-slate-400 hover:text-slate-700"
+                            title="Edit progress"
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                        </div>
+                      )}
                     </td>
                     <td className="px-3 py-3">
                       <StatusBadge status={project.status} />

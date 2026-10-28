@@ -34,7 +34,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const { id } = await params
   try {
     const body = await req.json()
-    const { progress_percent, current_stage, boq_sections, qb_class_name, company_boq_id, renovation_boq_id, received_amount, total_expenses, mbhre_approved_progress } = body
+    const { progress_percent, current_stage, boq_sections, qb_class_name, company_boq_id, renovation_boq_id, received_amount, total_expenses, mbhre_approved_progress, retention_amount } = body
 
     const base = await findBase(id)
     if (!base) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
@@ -72,13 +72,21 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       try { updateStoredProject(id, { mbhre_approved_progress: val } as any) } catch {}
     }
 
-    // Save progress to Supabase (works on Vercel; file system is read-only)
-    await saveProgress(
-      id,
-      Number(progress_percent ?? base.progress_percent),
-      String(current_stage   ?? base.current_stage ?? ''),
-      boq_sections           ?? [],
-    )
+    if (retention_amount !== undefined) {
+      const val = retention_amount === null ? null : Number(retention_amount)
+      await saveOverride(id, { retention_amount: val } as any)
+      try { updateStoredProject(id, { retention_amount: val } as any) } catch {}
+    }
+
+    // Only save progress when progress-related fields were explicitly sent
+    if (progress_percent !== undefined || current_stage !== undefined || boq_sections !== undefined) {
+      await saveProgress(
+        id,
+        Number(progress_percent ?? base.progress_percent),
+        String(current_stage   ?? base.current_stage ?? ''),
+        boq_sections           ?? [],
+      )
+    }
 
     return NextResponse.json({
       ...base,

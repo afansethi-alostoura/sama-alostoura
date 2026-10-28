@@ -22,23 +22,33 @@ const PUBLIC_PATHS = new Set([
   '/api/projects/sync-all',
 ])
 
-// ── HMAC session verification (Edge-compatible Web Crypto) ────────────────────
-// Token format: {randomHex}.{expiryMs}.{base64url_hmac}
-// Signature covers "{randomHex}.{expiryMs}" so expiry cannot be tampered.
-async function verifySession(cookie: string): Promise<boolean> {
+// Pages/APIs engineers cannot access (financial & admin-only)
+const ENGINEER_BLOCKED_PREFIXES = [
+  '/reconciliation',
+  '/api/reconcil',
+  '/api/quickbooks',
+  '/api/agents/accountant',
+  '/api/agents/ceo-dashboard',
+  '/settings',
+]
+
+// HMAC session verification (Edge-compatible Web Crypto)
+// Token format (new): {role}:{randomHex}.{expiry}.{base64url_hmac}
+// Token format (legacy): {randomHex}.{expiry}.{base64url_hmac}
+async function verifySession(cookie: string): Promise<{ valid: boolean; role: string }> {
   try {
     const secret = process.env.SESSION_SECRET ?? 'dev-secret-change-in-production'
 
     const lastDot = cookie.lastIndexOf('.')
-    if (lastDot === -1) return false
+    if (lastDot === -1) return { valid: false, role: '' }
     const payload   = cookie.slice(0, lastDot)
     const sigB64url = cookie.slice(lastDot + 1)
 
-    // Extract and check expiry from payload ({hex}.{expiry})
+    // Extract expiry from payload (last numeric segment before the sig dot)
     const dotIdx = payload.lastIndexOf('.')
-    if (dotIdx === -1) return false
+    if (dotIdx === -1) return { valid: false, role: '' }
     const expiry = parseInt(payload.slice(dotIdx + 1), 10)
-    if (!expiry || Date.now() > expiry) return false
+    if (!expiry || Date.now() > expiry) return { valid: false, role: '' }
 
     // Import HMAC key
     const key = await crypto.subtle.importKey(
@@ -49,14 +59,19 @@ async function verifySession(cookie: string): Promise<boolean> {
       ['verify'],
     )
 
-    // base64url → base64 → bytes
-    const b64     = sigB64url.replace(/-/g, '+').replace(/_/g, '/')
-    const padded  = b64 + '='.repeat((4 - (b64.length % 4)) % 4)
+    // base64url → bytes
+    const b64      = sigB64url.replace(/-/g, '+').replace(/_/g, '/')
+    const padded   = b64 + '='.repeat((4 - (b64.length % 4)) % 4)
     const sigBytes = Uint8Array.from(atob(padded), c => c.charCodeAt(0))
+    const valid    = await crypto.subtle.verify('HMAC', key, sigBytes, new TextEncoder().encode(payload))
 
-    return await crypto.subtle.verify('HMAC', key, sigBytes, new TextEncoder().encode(payload))
+    // Parse role — new tokens start with "{role}:" before the hex
+    const colonIdx = payload.indexOf(':')
+    const role = (valid && colonIdx !== -1) ? payload.slice(0, colonIdx) : 'admin'
+
+    return { valid, role }
   } catch {
-    return false
+    return { valid: false, role: '' }
   }
 }
 
@@ -83,7 +98,7 @@ export async function middleware(request: NextRequest) {
     }
 
     // Verify signature + expiry
-    const valid = await verifySession(cookie)
+    const { valid, role } = await verifySession(cookie)
     if (!valid) {
       const res = pathname.startsWith('/api/')
         ? NextResponse.json({ error: 'Session expired. Please log in again.' }, { status: 401 })
@@ -92,7 +107,21 @@ export async function middleware(request: NextRequest) {
       return res
     }
 
-    return NextResponse.next()
+    // Engineers cannot access financial/admin routes
+    if (role === 'engineer') {
+      const blocked = ENGINEER_BLOCKED_PREFIXES.some(p => pathname.startsWith(p))
+      if (blocked) {
+        if (pathname.startsWith('/api/')) {
+          return NextResponse.json({ error: 'Access denied.' }, { status: 403 })
+        }
+        return NextResponse.redirect(new URL('/projects', request.url))
+      }
+    }
+
+    // Pass role to downstream via header (pages can read via headers())
+    const res = NextResponse.next()
+    res.headers.set('x-user-role', role)
+    return res
   } catch (err) {
     console.error('Middleware error:', err)
     if (request.nextUrl.pathname.startsWith('/api/')) {
@@ -103,6 +132,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Cover ALL paths except Next.js static bundles and image optimiser
   matcher: ['/((?!_next/static|_next/image|favicon.ico).*)',],
 }

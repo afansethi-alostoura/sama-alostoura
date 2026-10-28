@@ -1,33 +1,33 @@
 /**
  * Meta WhatsApp Business API Webhook
- * GET  /api/whatsapp/webhook  — Meta verification handshake (one-time setup)
- * POST /api/whatsapp/webhook  — Receive incoming WhatsApp messages
+ * Handles: text messages, business card photos, technical report photos/PDFs, material requests
  *
- * Add these to .env.local and Vercel environment variables:
- *   META_WHATSAPP_TOKEN          — Permanent access token from Meta for Developers
- *   META_WHATSAPP_PHONE_ID       — Phone Number ID from Meta dashboard (NOT the phone number itself)
- *   META_WEBHOOK_VERIFY_TOKEN    — sama_alostoura_verify_2024  (must match what you enter in Meta dashboard)
- *
- * Webhook URL to enter in Meta dashboard:
- *   https://app.sabcconstruction.com/api/whatsapp/webhook
+ * Env vars required:
+ *   META_WHATSAPP_TOKEN       — permanent access token from Meta
+ *   META_WHATSAPP_PHONE_ID    — Phone Number ID from Meta dashboard
+ *   META_WEBHOOK_VERIFY_TOKEN — sama_alostoura_verify_2024
+ *   GOOGLE_API_KEY            — for Gemini AI (text + vision)
  */
 
 import { NextResponse } from 'next/server'
 import { getAllStoredProjects } from '@/lib/projects-store'
 import { getAllProgress, saveProgress } from '@/lib/project-progress'
-import { anthropic } from '@/lib/anthropic'
+import { generate, generateWithImage } from '@/lib/gemini'
 import { query as dbQuery, isDbConfigured } from '@/lib/db'
+
+const TOKEN    = () => process.env.META_WHATSAPP_TOKEN    ?? ''
+const PHONE_ID = () => process.env.META_WHATSAPP_PHONE_ID ?? ''
 
 // ─── Meta payload types ───────────────────────────────────────────────────────
 
-interface MetaTextMessage {
+interface MetaMessage {
   from: string
-  id: string
+  id:   string
   timestamp: string
   type: 'text' | 'image' | 'document' | 'audio' | 'video' | string
-  text?: { body: string }
-  image?: { caption?: string; id: string }
-  document?: { caption?: string; filename: string; id: string }
+  text?:     { body: string }
+  image?:    { caption?: string; id: string; mime_type?: string }
+  document?: { caption?: string; filename: string; id: string; mime_type?: string }
 }
 
 interface MetaWebhookBody {
@@ -40,7 +40,7 @@ interface MetaWebhookBody {
         messaging_product: string
         metadata: { display_phone_number: string; phone_number_id: string }
         contacts?: Array<{ profile: { name: string }; wa_id: string }>
-        messages?: MetaTextMessage[]
+        messages?: MetaMessage[]
         statuses?: unknown[]
       }
     }>
@@ -54,14 +54,10 @@ export async function GET(req: Request) {
   const mode      = searchParams.get('hub.mode')
   const token     = searchParams.get('hub.verify_token')
   const challenge = searchParams.get('hub.challenge')
-
   const verifyToken = process.env.META_WEBHOOK_VERIFY_TOKEN ?? 'sama_alostoura_verify_2024'
   if (mode === 'subscribe' && token === verifyToken) {
-    console.log('[WhatsApp] Webhook verified by Meta ✅')
     return new Response(challenge ?? '', { status: 200 })
   }
-
-  console.warn('[WhatsApp] Verification failed — token mismatch')
   return new Response('Forbidden', { status: 403 })
 }
 
@@ -69,74 +65,83 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   let body: MetaWebhookBody
-  let rawText = ''
-
   try {
-    rawText = await req.text()
-    body = JSON.parse(rawText) as MetaWebhookBody
+    body = JSON.parse(await req.text()) as MetaWebhookBody
   } catch {
-    console.error('[WhatsApp] POST received non-JSON body:', rawText.slice(0, 500))
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  // Log every POST so we can see it in Vercel logs
-  console.log('[WhatsApp] POST received — object:', body.object, '| entries:', body.entry?.length ?? 0)
-
-  // Always return 200 immediately — Meta will retry if we don't
   if (body.object !== 'whatsapp_business_account') {
-    console.log('[WhatsApp] Ignored — unexpected object type:', body.object)
     return NextResponse.json({ status: 'ignored' })
   }
 
-  let messageCount = 0
-
   for (const entry of body.entry ?? []) {
     for (const change of entry.changes ?? []) {
-      console.log('[WhatsApp] Change field:', change.field)
       if (change.field !== 'messages') continue
       const { messages, contacts } = change.value
-      console.log('[WhatsApp] Messages in payload:', messages?.length ?? 0)
       if (!messages?.length) continue
 
       for (const msg of messages) {
-        const text =
-          msg.text?.body ??
-          msg.image?.caption ??
-          msg.document?.caption ??
-          ''
-        if (!text.trim()) continue
-
         const from       = msg.from
         const senderName = contacts?.find(c => c.wa_id === from)?.profile.name ?? 'Unknown'
-        console.log(`[WhatsApp] Message from ${senderName} (${from}): "${text.slice(0, 100)}"`)
-        messageCount++
 
-        // Process synchronously — Vercel kills async work after response is sent
         try {
-          await handleMessage({ text: text.trim(), from, senderName })
+          if (msg.type === 'text') {
+            await handleTextMessage({ text: msg.text?.body?.trim() ?? '', from, senderName })
+
+          } else if (msg.type === 'image') {
+            await handleImageMessage({
+              mediaId:  msg.image!.id,
+              caption:  msg.image?.caption ?? '',
+              mimeType: (msg.image?.mime_type ?? 'image/jpeg') as any,
+              from, senderName,
+            })
+
+          } else if (msg.type === 'document') {
+            await handleDocumentMessage({
+              mediaId:  msg.document!.id,
+              filename: msg.document?.filename ?? '',
+              caption:  msg.document?.caption ?? '',
+              mimeType: msg.document?.mime_type ?? 'application/pdf',
+              from, senderName,
+            })
+          }
         } catch (err) {
-          console.error('[WhatsApp] handleMessage error:', err)
+          console.error('[WhatsApp] handler error:', err)
         }
       }
     }
   }
 
-  console.log(`[WhatsApp] Processed ${messageCount} message(s)`)
-  return NextResponse.json({ status: 'ok', processed: messageCount })
+  return NextResponse.json({ status: 'ok' })
 }
 
-// ─── Core message handler ─────────────────────────────────────────────────────
+// ─── Download media from Meta ─────────────────────────────────────────────────
 
-async function handleMessage({
-  text,
-  from,
-  senderName,
-}: {
-  text: string
-  from: string
-  senderName: string
-}) {
-  // 1. Load live project data
+async function downloadMedia(mediaId: string): Promise<{ base64: string; mimeType: string } | null> {
+  const token = TOKEN()
+  if (!token) return null
+  try {
+    // Step 1: get download URL
+    const meta = await fetch(`https://graph.facebook.com/v20.0/${mediaId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!meta.ok) return null
+    const { url, mime_type } = await meta.json()
+
+    // Step 2: download the actual bytes
+    const file = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+    if (!file.ok) return null
+    const buffer = Buffer.from(await file.arrayBuffer())
+    return { base64: buffer.toString('base64'), mimeType: mime_type ?? 'image/jpeg' }
+  } catch {
+    return null
+  }
+}
+
+// ─── 1. TEXT messages — progress updates, material requests, notes ────────────
+
+async function handleTextMessage({ text, from, senderName }: { text: string; from: string; senderName: string }) {
   const stored    = getAllStoredProjects()
   const overrides = await getAllProgress()
 
@@ -150,7 +155,6 @@ async function handleMessage({
     boq_sections:     overrides[p.id]?.boq_sections ?? (p as any).boq_sections ?? [],
   }))
 
-  // 2. Claude Haiku parses the message
   const aiPrompt = `You are the WhatsApp assistant for Sama Alostoura Building Contracting LLC, Dubai UAE.
 Message from ${senderName}: "${text}"
 
@@ -169,6 +173,7 @@ Return ONLY valid JSON:
     "current_stage":     "<string or null>",
     "payment_amount":    <AED number or null>,
     "materials":         "<string or null>",
+    "quantity":          "<string or null>",
     "issue_description": "<string or null>",
     "note":              "<string or null>"
   },
@@ -178,111 +183,316 @@ Return ONLY valid JSON:
 }`
 
   interface Parsed {
-    project_id:   string | null
-    project_name: string | null
-    action_type:  string
-    parsed_data: {
-      progress_percent:  number | null
-      current_stage:     string | null
-      payment_amount:    number | null
-      materials:         string | null
-      issue_description: string | null
-      note:              string | null
-    }
-    ai_summary:    string
-    confidence:    'high' | 'medium' | 'low'
-    reply_message: string
+    project_id: string | null; project_name: string | null; action_type: string
+    parsed_data: { progress_percent: number | null; current_stage: string | null; payment_amount: number | null; materials: string | null; quantity: string | null; issue_description: string | null; note: string | null }
+    ai_summary: string; confidence: 'high' | 'medium' | 'low'; reply_message: string
   }
 
   let parsed: Parsed | null = null
   try {
-    const res  = await anthropic.messages.create({
-      model:      'claude-haiku-4-5',
-      max_tokens: 500,
-      messages:   [{ role: 'user', content: aiPrompt }],
-    })
-    const raw   = res.content[0].type === 'text' ? res.content[0].text.trim() : ''
+    const raw   = (await generate(aiPrompt, undefined, 500)).trim()
     const clean = raw.replace(/^```json\s*/i, '').replace(/\s*```$/, '').trim()
     parsed = JSON.parse(clean)
   } catch (err) {
     console.error('[WhatsApp] AI parse error:', err)
   }
 
-    // 3. Save to Railway
+  // Save message log
   if (isDbConfigured()) {
     try {
       await dbQuery(
         `INSERT INTO whatsapp_messages (project_id, project_name, sender_name, action_type, ai_summary, auto_applied)
-         VALUES ($1, $2, $3, $4, $5, false)`,
+         VALUES ($1,$2,$3,$4,$5,false)`,
         [parsed?.project_id ?? null, parsed?.project_name ?? null, senderName, parsed?.action_type ?? 'note', parsed?.ai_summary ?? text],
       )
-    } catch (err) {
-      console.error('[WhatsApp] DB insert error:', err)
-    }
+    } catch {}
   }
 
-  // 4. Auto-apply progress update (high/medium confidence only)
+  // Auto-apply progress update
   let autoApplied = false
-  if (
-    parsed?.project_id &&
-    parsed.action_type === 'progress_update' &&
-    parsed.parsed_data.progress_percent !== null &&
-    parsed.confidence !== 'low'
-  ) {
+  if (parsed?.project_id && parsed.action_type === 'progress_update' && parsed.parsed_data.progress_percent !== null && parsed.confidence !== 'low') {
     const project = projects.find(p => p.id === parsed!.project_id)
     if (project) {
       try {
-        await saveProgress(
-          parsed.project_id,
-          parsed.parsed_data.progress_percent!,
-          parsed.parsed_data.current_stage ?? project.current_stage,
-          project.boq_sections as any,
-        )
+        await saveProgress(parsed.project_id, parsed.parsed_data.progress_percent!, parsed.parsed_data.current_stage ?? project.current_stage, project.boq_sections as any)
         autoApplied = true
-      } catch (err) {
-        console.error('[WhatsApp] saveProgress error:', err)
-      }
+      } catch {}
     }
   }
 
-  // 5. Send WhatsApp reply
-  const reply =
-    (parsed?.reply_message ?? '✅ Message received and logged.') +
-    (autoApplied ? '\n\n📊 Dashboard updated automatically.' : '')
+  // Auto-create PR for material requests
+  let prNumber: string | null = null
+  if (parsed?.action_type === 'material_request' && parsed.parsed_data.materials && isDbConfigured()) {
+    prNumber = await createPR({
+      material:    parsed.parsed_data.materials,
+      quantity:    parsed.parsed_data.quantity ?? '',
+      projectId:   parsed.project_id ?? '',
+      projectName: parsed.project_name ?? '',
+      description: text,
+      requestedBy: senderName,
+      from,
+    })
+  }
+
+  let reply = parsed?.reply_message ?? '✅ Message received and logged.'
+  if (autoApplied) reply += '\n\n📊 Dashboard updated automatically.'
+  if (prNumber)     reply += `\n\n🛒 *PR# ${prNumber} created* — procurement team notified.`
 
   await sendReply(from, reply)
+}
+
+// ─── 2. IMAGE messages — business cards + site photos + reports ───────────────
+
+async function handleImageMessage({
+  mediaId, caption, mimeType, from, senderName,
+}: { mediaId: string; caption: string; mimeType: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'; from: string; senderName: string }) {
+
+  const media = await downloadMedia(mediaId)
+  if (!media) {
+    await sendReply(from, '⚠️ Could not download the image. Please try again.')
+    return
+  }
+
+  // Ask Gemini what the image is
+  const classifyPrompt = `You are an assistant for a Dubai construction company. Classify this image.
+Caption from sender: "${caption}"
+
+Return ONLY valid JSON:
+{
+  "type": "<business_card|technical_report|site_photo|material_request|other>",
+  "confidence": "<high|medium|low>"
+}`
+
+  let imgType = 'other'
+  try {
+    const raw   = (await generateWithImage(classifyPrompt, media.base64, mimeType as any, undefined, 200)).trim()
+    const clean = raw.replace(/^```json\s*/i, '').replace(/\s*```$/, '').trim()
+    imgType = JSON.parse(clean).type ?? 'other'
+  } catch {}
+
+  // If caption mentions material/need → treat as material request
+  const captionLower = caption.toLowerCase()
+  if (captionLower.includes('need') || captionLower.includes('order') || captionLower.includes('cement') || captionLower.includes('steel') || captionLower.includes('material')) {
+    imgType = 'material_request'
+  }
+
+  if (imgType === 'business_card') {
+    await handleBusinessCard({ base64: media.base64, mimeType: mimeType as any, from, senderName })
+  } else if (imgType === 'technical_report') {
+    await handleTechnicalReport({ base64: media.base64, mimeType: mimeType as any, caption, filename: '', from, senderName })
+  } else if (imgType === 'material_request') {
+    await handleTextMessage({ text: caption || 'Material needed (see photo)', from, senderName })
+  } else {
+    // General site photo — log it
+    await sendReply(from, `✅ Photo received and logged, ${senderName}. Add a caption if you need something specific done with it.`)
+  }
+}
+
+// ─── 3. DOCUMENT messages — PDFs, reports ────────────────────────────────────
+
+async function handleDocumentMessage({
+  mediaId, filename, caption, mimeType, from, senderName,
+}: { mediaId: string; filename: string; caption: string; mimeType: string; from: string; senderName: string }) {
+
+  const filenameLower = filename.toLowerCase()
+  const captionLower  = caption.toLowerCase()
+  const isReport = ['report','inspection','technical','survey','test','certificate','permit'].some(
+    k => filenameLower.includes(k) || captionLower.includes(k)
+  )
+
+  if (isReport || mimeType === 'application/pdf') {
+    await handleTechnicalReport({ base64: null, mimeType: mimeType as any, caption, filename, from, senderName })
+  } else {
+    await sendReply(from, `✅ Document "${filename}" received and logged by ${senderName}.`)
+  }
+}
+
+// ─── Business card handler ────────────────────────────────────────────────────
+
+async function handleBusinessCard({
+  base64, mimeType, from, senderName,
+}: { base64: string; mimeType: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'; from: string; senderName: string }) {
+
+  const extractPrompt = `Extract all information from this business card for a Dubai construction company supplier directory.
+Return ONLY valid JSON:
+{
+  "person_name":  "<full name or empty>",
+  "company_name": "<company name or empty>",
+  "trade":        "<e.g. Electrical, Plumbing, Steel, Tiles, Glass, MEP, Carpentry, Painting, or empty>",
+  "phone":        "<phone number or empty>",
+  "email":        "<email or empty>",
+  "website":      "<website or empty>",
+  "address":      "<address or empty>"
+}`
+
+  let supplier: Record<string, string> = {}
+  try {
+    const raw   = (await generateWithImage(extractPrompt, base64, mimeType, undefined, 400)).trim()
+    const clean = raw.replace(/^```json\s*/i, '').replace(/\s*```$/, '').trim()
+    supplier = JSON.parse(clean)
+  } catch {
+    await sendReply(from, '⚠️ Could not read the business card clearly. Please retake the photo with better lighting.')
+    return
+  }
+
+  if (!supplier.company_name && !supplier.person_name) {
+    await sendReply(from, '⚠️ Could not read the business card. Please retake with better lighting or type the details.')
+    return
+  }
+
+  // Save to suppliers table
+  if (isDbConfigured()) {
+    try {
+      await dbQuery(`
+        CREATE TABLE IF NOT EXISTS suppliers (
+          id SERIAL PRIMARY KEY, company_name TEXT, person_name TEXT, trade TEXT,
+          phone TEXT, email TEXT, website TEXT, address TEXT,
+          source TEXT DEFAULT 'whatsapp', added_by TEXT, whatsapp_from TEXT,
+          created_at TIMESTAMPTZ DEFAULT NOW()
+        )`)
+      await dbQuery(
+        `INSERT INTO suppliers (company_name, person_name, trade, phone, email, website, address, source, added_by, whatsapp_from)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,'whatsapp',$8,$9)`,
+        [supplier.company_name, supplier.person_name, supplier.trade, supplier.phone, supplier.email, supplier.website, supplier.address, senderName, from],
+      )
+    } catch (err) {
+      console.error('[WhatsApp] Supplier insert error:', err)
+    }
+  }
+
+  const reply = [
+    `✅ *New Supplier Saved!*`,
+    supplier.company_name ? `🏢 *Company:* ${supplier.company_name}` : '',
+    supplier.person_name  ? `👤 *Contact:* ${supplier.person_name}`  : '',
+    supplier.trade        ? `🔧 *Trade:* ${supplier.trade}`           : '',
+    supplier.phone        ? `📞 *Phone:* ${supplier.phone}`           : '',
+    supplier.email        ? `📧 *Email:* ${supplier.email}`           : '',
+    ``,
+    `Added to supplier directory by ${senderName}.`,
+  ].filter(Boolean).join('\n')
+
+  await sendReply(from, reply)
+}
+
+// ─── Technical report handler ─────────────────────────────────────────────────
+
+async function handleTechnicalReport({
+  base64, mimeType, caption, filename, from, senderName,
+}: { base64: string | null; mimeType: any; caption: string; filename: string; from: string; senderName: string }) {
+
+  const stored   = getAllStoredProjects()
+  const projList = stored.map(p => `• ${p.name}`).join('\n')
+
+  let reportInfo: Record<string, string> = {}
+
+  if (base64) {
+    // Vision — extract from image
+    const prompt = `This is a technical/inspection report photo from a Dubai construction site.
+Projects in our system:\n${projList}
+
+Extract report details. Return ONLY valid JSON:
+{
+  "project_name":  "<matched project name or empty>",
+  "report_type":   "<e.g. Inspection Report | Soil Test | Concrete Test | Progress Report | Municipality Inspection | DEWA | other>",
+  "report_date":   "<YYYY-MM-DD if visible, else empty>",
+  "summary":       "<one sentence summary of what the report shows>"
+}`
+    try {
+      const raw   = (await generateWithImage(prompt, base64, mimeType, undefined, 400)).trim()
+      const clean = raw.replace(/^```json\s*/i, '').replace(/\s*```$/, '').trim()
+      reportInfo  = JSON.parse(clean)
+    } catch {}
+  } else {
+    // PDF/doc — use filename + caption to infer
+    reportInfo = {
+      project_name: stored.find(p => (caption + filename).toLowerCase().includes(p.name.toLowerCase()))?.name ?? '',
+      report_type:  filename || 'Document',
+      report_date:  '',
+      summary:      caption || filename,
+    }
+  }
+
+  // Save to project_documents table
+  if (isDbConfigured()) {
+    try {
+      await dbQuery(`
+        CREATE TABLE IF NOT EXISTS project_documents (
+          id SERIAL PRIMARY KEY, project_name TEXT, doc_type TEXT, filename TEXT,
+          description TEXT, filed_at DATE, source TEXT DEFAULT 'whatsapp',
+          whatsapp_from TEXT, added_by TEXT, created_at TIMESTAMPTZ DEFAULT NOW()
+        )`)
+      await dbQuery(
+        `INSERT INTO project_documents (project_name, doc_type, filename, description, filed_at, source, whatsapp_from, added_by)
+         VALUES ($1,$2,$3,$4,$5,'whatsapp',$6,$7)`,
+        [
+          reportInfo.project_name || null,
+          reportInfo.report_type  || 'Document',
+          filename || 'photo',
+          reportInfo.summary || caption,
+          reportInfo.report_date || new Date().toISOString().slice(0, 10),
+          from,
+          senderName,
+        ],
+      )
+    } catch (err) {
+      console.error('[WhatsApp] Document insert error:', err)
+    }
+  }
+
+  const reply = [
+    `✅ *Report Filed Successfully*`,
+    reportInfo.project_name ? `🏗️ *Project:* ${reportInfo.project_name}` : `🏗️ *Project:* Not identified — check dashboard`,
+    `📋 *Type:* ${reportInfo.report_type || 'Document'}`,
+    reportInfo.report_date  ? `📅 *Date:* ${reportInfo.report_date}` : '',
+    reportInfo.summary      ? `📝 ${reportInfo.summary}` : '',
+    ``,
+    `Saved by ${senderName}.`,
+  ].filter(Boolean).join('\n')
+
+  await sendReply(from, reply)
+}
+
+// ─── Create Purchase Request ──────────────────────────────────────────────────
+
+async function createPR({ material, quantity, projectId, projectName, description, requestedBy, from }: {
+  material: string; quantity: string; projectId: string; projectName: string; description: string; requestedBy: string; from: string
+}): Promise<string | null> {
+  try {
+    await dbQuery(`
+      CREATE TABLE IF NOT EXISTS procurement_prs (
+        id SERIAL PRIMARY KEY, pr_number TEXT NOT NULL, project_id TEXT,
+        project_name TEXT, title TEXT NOT NULL, description TEXT,
+        requested_by TEXT, date_requested DATE, date_needed DATE,
+        status TEXT DEFAULT 'requested', items JSONB DEFAULT '[]',
+        source TEXT DEFAULT 'manual', whatsapp_from TEXT, notes TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )`)
+    const prNumber = `WA-${Date.now().toString().slice(-6)}`
+    const title    = material + (projectName ? ` — ${projectName}` : '')
+    await dbQuery(
+      `INSERT INTO procurement_prs (pr_number,project_id,project_name,title,description,requested_by,date_requested,status,items,source,whatsapp_from)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'requested',$8,'whatsapp',$9)`,
+      [prNumber, projectId || null, projectName || null, title, description, requestedBy, new Date().toISOString().slice(0, 10), JSON.stringify([{ description: material, qty: quantity, unit: '', notes: '' }]), from],
+    )
+    return prNumber
+  } catch (err) {
+    console.error('[WhatsApp] createPR error:', err)
+    return null
+  }
 }
 
 // ─── Send reply via Meta Cloud API ───────────────────────────────────────────
 
 async function sendReply(to: string, message: string) {
-  const token   = process.env.META_WHATSAPP_TOKEN   ?? ''
-  const phoneId = process.env.META_WHATSAPP_PHONE_ID ?? ''
-
-  if (!token || !phoneId) {
-    console.warn('[WhatsApp] META_WHATSAPP_TOKEN or META_WHATSAPP_PHONE_ID not set')
-    return
-  }
-
+  const token   = TOKEN()
+  const phoneId = PHONE_ID()
+  if (!token || !phoneId) return
   try {
-    const res = await fetch(`https://graph.facebook.com/v20.0/${phoneId}/messages`, {
+    await fetch(`https://graph.facebook.com/v20.0/${phoneId}/messages`, {
       method:  'POST',
-      headers: {
-        Authorization:  `Bearer ${token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        messaging_product: 'whatsapp',
-        to,
-        type: 'text',
-        text: { body: message },
-      }),
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'text', text: { body: message } }),
     })
-
-    if (!res.ok) {
-      const err = await res.text()
-      console.error('[WhatsApp] Send reply failed:', res.status, err)
-    }
   } catch (err) {
     console.error('[WhatsApp] sendReply error:', err)
   }

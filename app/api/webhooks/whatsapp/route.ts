@@ -14,7 +14,7 @@
 import { NextResponse } from 'next/server'
 import { getAllStoredProjects } from '@/lib/projects-store'
 import { getAllProgress, saveProgress } from '@/lib/project-progress'
-import { anthropic } from '@/lib/anthropic'
+import { generate, SYSTEM_PROMPTS } from '@/lib/gemini'
 import { query as dbQuery, getPool, isDbConfigured } from '@/lib/db'
 import { twimlReply } from '@/lib/twilio'
 
@@ -114,11 +114,7 @@ Matching rules:
   let parsed: ParsedMessage | null = null
 
   try {
-    const aiRes = await anthropic.messages.create({
-      model:      'claude-haiku-4-5',
-      max_tokens: 600,
-      messages:   [{ role: 'user', content: parsePrompt }],
-    })
+    const aiResText = await generate(parsePrompt, 600)
     const text = aiRes.content[0].type === 'text' ? aiRes.content[0].text.trim() : ''
     // Strip any accidental markdown code fences
     const clean = text.replace(/^```json\n?/, '').replace(/\n?```$/, '').trim()

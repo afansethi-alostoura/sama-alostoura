@@ -76,9 +76,10 @@ export default function CEODashboard() {
     finally { setSyncing(false) }
   }
 
+  const morningFetched = useRef(false)
+
   useEffect(() => {
     setMounted(true)
-    fetchMorningBriefing()
     // Auto-sync once on dashboard load so KPIs are always fresh
     if (!autoSynced.current) {
       autoSynced.current = true
@@ -86,14 +87,25 @@ export default function CEODashboard() {
     }
   }, [])
 
-  async function fetchMorningBriefing() {
+  // Fetch briefing once projects have loaded
+  useEffect(() => {
+    if (morningFetched.current || projects.length === 0) return
+    morningFetched.current = true
+    fetchMorningBriefing(projects)
+  }, [projects])
+
+  async function fetchMorningBriefing(projectList = projects) {
     setMorningLoading(true)
     try {
-      const r = await fetch('/api/agents/ceo-dashboard', { method: 'POST' })
+      const r = await fetch('/api/agents/ceo-dashboard', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projects: projectList }),
+      })
       const d = await r.json()
-      setMorningBriefing(d.briefing ?? 'Good morning. Your portfolio is performing well.')
+      setMorningBriefing(d.briefing ?? d.error ?? 'Good morning. Your portfolio is performing well.')
     } catch {
-      setMorningBriefing('Good morning. Systems are running smoothly across all projects.')
+      setMorningBriefing('Could not reach AI. Check ANTHROPIC_API_KEY.')
     } finally {
       setMorningLoading(false)
     }
@@ -220,7 +232,7 @@ export default function CEODashboard() {
                 <h2 className="font-semibold text-slate-900 text-sm">AI Morning Briefing</h2>
               </div>
               <button
-                onClick={fetchMorningBriefing}
+                onClick={() => { morningFetched.current = true; fetchMorningBriefing() }}
                 disabled={morningLoading}
                 className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-blue-600 transition-colors disabled:opacity-50"
               >
@@ -282,9 +294,16 @@ export default function CEODashboard() {
             <div className="divide-y divide-slate-50">
               {activeProjects.map(project => {
                 const pct = project.progress_percent
+                const isOverdue = project.expected_completion
+                  ? new Date(project.expected_completion) < new Date() && pct < 100
+                  : false
                 const statusColor = pct >= 70 ? 'bg-emerald-500' : pct >= 40 ? 'bg-amber-400' : 'bg-red-400'
-                const badgeColor  = pct >= 70 ? 'bg-emerald-50 text-emerald-700' : pct >= 40 ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700'
-                const badgeLabel  = pct >= 70 ? 'On Track' : pct >= 40 ? 'At Risk' : 'Delayed'
+                const badgeColor  = isOverdue
+                  ? 'bg-red-50 text-red-700'
+                  : pct >= 70 ? 'bg-emerald-50 text-emerald-700' : pct >= 40 ? 'bg-amber-50 text-amber-700' : 'bg-slate-50 text-slate-500'
+                const badgeLabel  = isOverdue
+                  ? 'Delayed'
+                  : pct >= 70 ? 'On Track' : pct >= 40 ? 'At Risk' : 'In Progress'
                 return (
                   <Link key={project.id} href={`/projects/${project.id}`}
                     className="flex items-center gap-4 px-5 py-3.5 hover:bg-slate-50/70 transition-colors group"

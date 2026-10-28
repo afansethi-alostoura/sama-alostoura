@@ -13,7 +13,7 @@
  * (user fills in rates manually in the BOQ editor).
  */
 import { NextRequest, NextResponse } from 'next/server'
-import { anthropic } from '@/lib/anthropic'
+import { generate, SYSTEM_PROMPTS } from '@/lib/gemini'
 import { supabaseAdmin } from '@/lib/supabase'
 import { BOQ_TEMPLATE } from '@/lib/boq-template'
 
@@ -440,15 +440,7 @@ Return ONLY the JSON object. No markdown, no explanation.`
 
     // ── Call Claude ───────────────────────────────────────────────────────────
     console.log(`[civil-engineer] sending ${loaded.length} files to Claude`)
-    const resp = await anthropic.messages.create({
-      model:     'claude-opus-4-5',
-      max_tokens: 4000,
-      system:    EXTRACTION_SYSTEM,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      messages:  [{ role:'user', content }] as any,
-    })
-
-    const raw = resp.content[0].type === 'text' ? resp.content[0].text : ''
+    const raw = await generate('', undefined, 4000)
     console.log('[civil-engineer] raw response:', raw.slice(0, 600))
 
     // ── Parse extraction ──────────────────────────────────────────────────────

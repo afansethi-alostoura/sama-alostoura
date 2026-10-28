@@ -1,5 +1,5 @@
 import { NextResponse }    from 'next/server'
-import { anthropic }       from '@/lib/anthropic'
+import { generate }        from '@/lib/gemini'
 import type { QBInvoice, QBPayment, QBSnapshot } from '@/lib/quickbooks/types'
 import { DEMO_PROJECTS }   from '@/lib/demo-data'
 import fs                  from 'fs'
@@ -35,7 +35,7 @@ function daysOverdue(dueDate: string): number {
 }
 
 export async function POST() {
-  if (!process.env.SAMA_AI_KEY) {
+  if (!process.env.GOOGLE_API_KEY) {
     return NextResponse.json({ briefing: '⚠️ SAMA_AI_KEY not set in .env.local' })
   }
 
@@ -117,17 +117,7 @@ MBHRE PAYMENT NOTES:
 `
 
   try {
-    const message = await anthropic.messages.create({
-      model:      'claude-sonnet-4-6',
-      max_tokens: 900,
-      system:     ACCOUNTANT_PROMPT,
-      messages: [{
-        role:    'user',
-        content: `Generate my financial briefing:\n${qbContext}\n${projectContext}`,
-      }],
-    })
-
-    const briefing = message.content[0].type === 'text' ? message.content[0].text : ''
+    const briefing = await generate(`Generate my financial briefing:\n${qbContext}\n${projectContext}`, ACCOUNTANT_PROMPT, 900)
     return NextResponse.json({ briefing, has_qb_data: !!snapshot })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error'

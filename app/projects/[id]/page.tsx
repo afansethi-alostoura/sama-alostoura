@@ -33,6 +33,7 @@ interface ProjectData {
   scope_changes?: string
   mbhre_approved_amount?: number
   mbhre_approved_progress?: number
+  retention_amount?: number | null
   plot_number?: string
   company_boq_id?: string
   renovation_boq_id?: string
@@ -74,8 +75,9 @@ export default function ProjectPage() {
   const [boqRecord,   setBoqRecord]   = useState<any>(null)
   const [boqExpanded,   setBoqExpanded]   = useState(false)
   const [boqCreating,   setBoqCreating]   = useState(false)
-  const saveTimer       = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const boqInitSynced   = useRef(false)
+  const saveTimer          = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const boqInitSynced      = useRef(false)
+  const renovInitSynced    = useRef(false)
 
   // Renovation BOQ
   const [renovationBoq,      setRenovationBoq]      = useState<any>(null)
@@ -106,6 +108,12 @@ export default function ProjectPage() {
   const [mbhreEditMode,    setMbhreEditMode]    = useState(false)
   const [mbhreSaving,      setMbhreSaving]      = useState(false)
   const [mbhreSaved,       setMbhreSaved]       = useState(false)
+
+  // Retention override
+  const [retentionInput,    setRetentionInput]    = useState<string>('')
+  const [retentionEditMode, setRetentionEditMode] = useState(false)
+  const [retentionSaving,   setRetentionSaving]   = useState(false)
+  const [retentionSaved,    setRetentionSaved]    = useState(false)
 
   // Documents — only count loaded here; full UI is on /documents sub-pages
   const [documents, setDocuments] = useState<{ id: string }[]>([])
@@ -200,6 +208,25 @@ export default function ProjectPage() {
       broadcastProjectUpdate()
     } catch {}
     finally { setMbhreSaving(false) }
+  }
+
+  async function saveRetention() {
+    if (!project) return
+    setRetentionSaving(true)
+    try {
+      const val = retentionInput === '' ? null : Math.max(0, Number(retentionInput))
+      await fetch(`/api/projects/${project.id}`, {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ retention_amount: val }),
+      })
+      setProject(prev => prev ? { ...prev, retention_amount: val } : prev)
+      setRetentionEditMode(false)
+      setRetentionSaved(true)
+      setTimeout(() => setRetentionSaved(false), 3000)
+      broadcastProjectUpdate()
+    } catch {}
+    finally { setRetentionSaving(false) }
   }
 
   async function saveQbClass() {
@@ -342,6 +369,22 @@ export default function ProjectPage() {
       broadcastProjectUpdate()
     }).catch(() => {})
   }, [boqItems, project, boqRecord])
+
+  // ── Auto-sync Renovation BOQ progress → project.progress_percent on first load
+  useEffect(() => {
+    if (renovInitSynced.current || !project || !renovationBoq || renovationRows.length === 0) return
+    renovInitSynced.current = true
+    const newPct = renovOverallPct(renovationRows, renovationCols)
+    if (newPct === project.progress_percent) return
+    fetch(`/api/projects/${project.id}`, {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ progress_percent: newPct, current_stage: project.current_stage ?? '' }),
+    }).then(() => {
+      setProject(prev => prev ? { ...prev, progress_percent: newPct } : prev)
+      broadcastProjectUpdate()
+    }).catch(() => {})
+  }, [renovationRows, renovationBoq, project, renovationCols])
 
   // ── Load Documents count (for badge on button) ─────────────────────────────
   useEffect(() => {
@@ -494,7 +537,12 @@ export default function ProjectPage() {
   const outstanding  = project.contract_value - project.received_amount
   const pctCollected = Math.round((project.received_amount / project.contract_value) * 100)
   const isMBHRE      = project.mbhre_approved_amount !== undefined
-  const effectivePct = project.company_boq_id && boqItems.length > 0 ? overallBOQPct : project.progress_percent
+  const renovPct     = renovationBoq && renovationRows.length > 0 ? renovOverallPct(renovationRows, renovationCols) : null
+  const effectivePct = project.company_boq_id && boqItems.length > 0
+    ? overallBOQPct
+    : renovPct !== null
+    ? renovPct
+    : project.progress_percent
 
   // Grouped BOQ sections
   const boqSections = boqItems.reduce<Record<string, { items: BOQItem[]; indices: number[]; section_no: number }>>((acc, item, idx) => {
@@ -804,8 +852,59 @@ export default function ProjectPage() {
             <p className="font-bold text-slate-900 mt-0.5">{formatCurrency(outstanding)}</p>
           </div>
           <div className="bg-slate-50 rounded-lg px-4 py-3">
-            <p className="text-xs text-slate-600">Retention (10%)</p>
-            <p className="font-bold text-slate-900 mt-0.5">{formatCurrency(project.received_amount * 0.1)}</p>
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-slate-600">
+                Retention {project.retention_amount == null ? '(10%)' : '(manual)'}
+              </p>
+              <div className="flex items-center gap-1">
+                {retentionSaved && <span className="text-[10px] text-emerald-600 font-semibold">Saved ✓</span>}
+                {!retentionEditMode && (
+                  <button
+                    onClick={() => {
+                      setRetentionInput(
+                        project.retention_amount != null
+                          ? String(project.retention_amount)
+                          : String(Math.round(project.received_amount * 0.1))
+                      )
+                      setRetentionEditMode(true)
+                    }}
+                    className="text-slate-400 hover:text-slate-700 p-0.5 rounded"
+                    title="Edit retention amount"
+                  >
+                    <Pencil className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            </div>
+            {retentionEditMode ? (
+              <div className="flex items-center gap-1.5 mt-1">
+                <input
+                  type="number" min="0"
+                  value={retentionInput}
+                  onChange={e => setRetentionInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') saveRetention(); if (e.key === 'Escape') setRetentionEditMode(false) }}
+                  autoFocus
+                  className="w-28 text-sm font-bold border border-slate-300 rounded-lg px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-slate-400"
+                  placeholder="AED amount"
+                />
+                <button
+                  onClick={saveRetention} disabled={retentionSaving}
+                  className="text-xs bg-slate-700 text-white px-2 py-0.5 rounded-lg disabled:opacity-60"
+                >
+                  {retentionSaving ? '…' : 'Save'}
+                </button>
+                <button
+                  onClick={() => setRetentionEditMode(false)}
+                  className="text-slate-400 hover:text-slate-700"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
+              <p className="font-bold text-slate-900 mt-0.5">
+                {formatCurrency(project.retention_amount ?? project.received_amount * 0.1)}
+              </p>
+            )}
           </div>
           <div className="bg-blue-50 rounded-lg px-4 py-3">
             <p className="text-xs text-slate-600">Expected End</p>

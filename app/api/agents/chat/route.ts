@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { anthropic } from '@/lib/anthropic'
+import { generate, SYSTEM_PROMPTS } from '@/lib/gemini'
 
 const SYSTEM_PROMPTS: Record<string, string> = {
   'construction-ops': `You are a Senior Construction Operations Engineer with 25+ years of experience in villa construction, building construction, MEP works, finishing works, project planning, quantity surveying, and construction management working for Sama Alostoura Building Contracting LLC in Dubai, UAE.
@@ -51,7 +51,7 @@ You are in an ongoing conversation. Answer follow-up questions with the same dep
 const DEFAULT_PROMPT = `You are an AI assistant for Sama Alostoura Building Contracting LLC, a villa construction company in Dubai, UAE. Be helpful, specific, and use AED for all amounts.`
 
 export async function POST(req: Request) {
-  if (!process.env.SAMA_AI_KEY) {
+  if (!process.env.GOOGLE_API_KEY) {
     return NextResponse.json({ reply: '⚠️ SAMA_AI_KEY not configured.' })
   }
 
@@ -64,14 +64,7 @@ export async function POST(req: Request) {
     const projectContext = buildProjectContext(projects ?? [])
     const fullSystem = systemPrompt + (projectContext ? `\n\n${projectContext}` : '')
 
-    const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 2000,
-      system: fullSystem,
-      messages: messages ?? [],
-    })
-
-    const reply = message.content[0].type === 'text' ? message.content[0].text : ''
+    const reply = await generate('', fullSystem, 2000)
     return NextResponse.json({ reply })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error'

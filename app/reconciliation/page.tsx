@@ -250,40 +250,60 @@ function parseBankCSV(text: string): { txns: BankTxn[]; openingBalance: number |
   let openingBalance: number | null = null
   let closingBalance: number | null = null
 
-  // 1. Balance column in transaction rows — FIRST non-zero = opening, LAST non-zero = closing
+  // 1. Balance column — collect FIRST and LAST valid balance rows, then apply
+  //    order-aware logic (CSV may be ascending OR descending by date).
   if (balCol >= 0) {
+    let firstBal: number | null = null, firstAmt = 0
+    let lastBal:  number | null = null, lastAmt  = 0
+
     for (let r = headerIdx + 1; r < rows.length; r++) {
       const c = rows[r]
       if (!c || c.length <= balCol) continue
+      const dateRaw = (c[dateCol] ?? '').trim()
+      if (!dateRaw || !/\d/.test(dateRaw)) continue          // skip non-data rows (e.g. "Total")
       const val = parseNum(c[balCol] ?? '')
-      if (val !== 0) {
-        // Opening balance = balance BEFORE the first transaction = first balance - first txn amount
-        const dateRaw = (c[dateCol] ?? '').trim()
-        const date    = dateRaw ? parseDateToISO(dateRaw) : null
-        if (date) {
-          let txnAmt = 0
-          if (amtCol >= 0 && c[amtCol]) { txnAmt = parseNum(c[amtCol]) }
-          else {
-            const wd  = parseNum(wdCol  >= 0 ? c[wdCol]  ?? '' : '')
-            const dep = parseNum(depCol >= 0 ? c[depCol] ?? '' : '')
-            txnAmt = dep > 0 ? dep : (wd > 0 ? -wd : 0)
-          }
-          openingBalance = val - txnAmt
-        }
-        break
+      if (val === 0) continue
+
+      let txnAmt = 0
+      if (amtCol >= 0 && c[amtCol]) { txnAmt = parseNum(c[amtCol]) }
+      else {
+        const wd  = parseNum(wdCol  >= 0 ? c[wdCol]  ?? '' : '')
+        const dep = parseNum(depCol >= 0 ? c[depCol] ?? '' : '')
+        txnAmt = dep > 0 ? dep : (wd > 0 ? -wd : 0)
       }
+
+      if (firstBal === null) { firstBal = val; firstAmt = txnAmt }
+      lastBal = val; lastAmt = txnAmt
     }
-    for (let r = rows.length - 1; r > headerIdx; r--) {
-      const c = rows[r]
-      if (!c || c.length <= balCol) continue
-      const val = parseNum(c[balCol] ?? '')
-      if (val !== 0) { closingBalance = val; break }
+
+    if (firstBal !== null && lastBal !== null) {
+      // Detect CSV order: compare first and last parsed transaction dates
+      const isDescending = results.length >= 2 &&
+        results[0].date > results[results.length - 1].date
+
+      if (isDescending) {
+        // Newest-first CSV: first row = newest (closing side), last row = oldest (opening side)
+        closingBalance = firstBal
+        openingBalance = lastBal - lastAmt
+      } else {
+        // Oldest-first CSV: standard ascending order
+        openingBalance = firstBal - firstAmt
+        closingBalance = lastBal
+      }
     }
   }
 
-  // 2. Summary rows labelled "opening balance" / "closing balance"
-  const openLabels  = ['opening balance','beginning balance','opening ledger','brought forward']
-  const closeLabels = ['closing balance','ending balance','statement balance','closing ledger']
+  // 2. Summary rows labelled "opening balance" / "closing balance" (bank + credit card formats)
+  const openLabels  = [
+    'opening balance','beginning balance','opening ledger','brought forward',
+    'previous statement payment due','previous balance','previous statement balance',
+    'opening balance due','prior balance',
+  ]
+  const closeLabels = [
+    'closing balance','ending balance','statement balance','closing ledger',
+    'total payment due','total amount due','new balance',
+    'current balance due','closing balance due',
+  ]
   for (let r = 0; r < rows.length; r++) {
     const c = rows[r]
     if (!c) continue
@@ -666,7 +686,7 @@ function BalanceVerificationCard({
                 <p className={`text-base font-bold ${bankClose !== null ? 'text-slate-800' : 'text-slate-400'}`}>
                   {bankClose !== null ? `AED ${aed(bankClose)}` : '—'}
                 </p>
-                {bankClose === null && <p className="text-xs text-amber-600">Enter in Setup ↑</p>}
+                {bankClose === null && <p className="text-xs text-amber-600">Enter in Setup ↑ (credit card: Total Payment Due)</p>}
               </div>
               <div className="bg-white/70 rounded-lg px-4 py-2.5">
                 <p className="text-xs text-slate-500 mb-0.5">QuickBooks Closing Balance</p>
@@ -828,14 +848,27 @@ export default function ReconciliationPage() {
       }
       const { txns: bank, openingBalance: csvOpen, closingBalance: csvBalance } = parseBankCSV(await csvFile.text())
       setBankTxns(bank)
-      const manualOpenVal = manualOpenBalance.trim() ? parseFloat(manualOpenBalance.replace(/,/g,'')) : null
-      const bankOpen      = (!isNaN(manualOpenVal as number) && manualOpenVal !== null) ? manualOpenVal : csvOpen
-      if (bankOpen !== null) setBankOpeningBalance(bankOpen)
 
-      // Use manual input if provided, otherwise use auto-detected CSV balance
-      const manualVal = manualBankBalance.trim() ? parseFloat(manualBankBalance.replace(/,/g,'')) : null
-      const bankBal   = (!isNaN(manualVal as number) && manualVal !== null) ? manualVal : csvBalance
-      setBankEndingBalance(bankBal)
+      // Net change of all parsed transactions (positive = charges/debits, negative = payments/credits)
+      const netChange = bank.reduce((s, t) => s + t.amount, 0)
+
+      const manualOpenVal  = manualOpenBalance.trim()  ? parseFloat(manualOpenBalance.replace(/,/g,''))  : null
+      const manualCloseVal = manualBankBalance.trim()  ? parseFloat(manualBankBalance.replace(/,/g,''))  : null
+
+      // Resolve opening: manual → CSV → derive from closing - net
+      const resolvedOpen  = (manualOpenVal  !== null && !isNaN(manualOpenVal))  ? manualOpenVal
+                          : csvOpen !== null                                     ? csvOpen
+                          : (manualCloseVal !== null && !isNaN(manualCloseVal)) ? manualCloseVal - netChange
+                          : null
+
+      // Resolve closing: manual → CSV → derive from opening + net
+      const resolvedClose = (manualCloseVal !== null && !isNaN(manualCloseVal)) ? manualCloseVal
+                          : csvBalance !== null                                  ? csvBalance
+                          : resolvedOpen !== null                                ? resolvedOpen + netChange
+                          : null
+
+      if (resolvedOpen  !== null) setBankOpeningBalance(resolvedOpen)
+      if (resolvedClose !== null) setBankEndingBalance(resolvedClose)
 
       // Step 2: fetch QB transactions
       if (globalMode) {
@@ -1064,7 +1097,7 @@ export default function ReconciliationPage() {
               </div>
               <p className="text-xs text-slate-400 mt-1.5 flex items-start gap-1">
                 <Info className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                Auto-detected from CSV if available — enter manually to override.
+                Auto-detected from CSV if available. For credit cards (Deem, ADCB, etc.) enter one balance — the other is calculated automatically from your transactions.
               </p>
             </div>
           </div>

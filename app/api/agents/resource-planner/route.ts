@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
-import { anthropic } from '@/lib/anthropic'
+import { generate, SYSTEM_PROMPTS } from '@/lib/gemini'
 import { supabaseAdmin, isSupabaseConfigured } from '@/lib/supabase'
 
 export async function POST(req: Request) {
-  if (!process.env.SAMA_AI_KEY) {
+  if (!process.env.GOOGLE_API_KEY) {
     return NextResponse.json({ briefing: '⚠️ SAMA_AI_KEY not configured.' })
   }
 
@@ -31,10 +31,7 @@ ${active.map((p: any) => `PROJECT: ${p.name}
 
 Analyze team and schedule optimization across all active projects.`
 
-    const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 1000,
-      system: `You are a Resource Planning AI for Sama Alostoura Building Contracting LLC, a villa construction company in Dubai, UAE.
+    const briefing = await generate(context, `You are a Resource Planning AI for Sama Alostoura Building Contracting LLC, a villa construction company in Dubai, UAE.
 
 Analyze the active projects and provide:
 1. **Workforce Allocation** — which projects need more manpower right now based on progress and stage
@@ -43,11 +40,7 @@ Analyze the active projects and provide:
 4. **Resource Gaps** — flag any stages that typically need specialist subcontractors (MEP, tiling, painting)
 5. **This Week's Focus** — top 3 resource actions to take this week
 
-Be specific with project names. Use AED for amounts. Format with ### headers and bullet points.`,
-      messages: [{ role: 'user', content: context }],
-    })
-
-    const briefing = message.content[0].type === 'text' ? message.content[0].text : ''
+Be specific with project names. Use AED for amounts. Format with ### headers and bullet points.`, 1000)
     return NextResponse.json({ briefing })
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Unknown error'

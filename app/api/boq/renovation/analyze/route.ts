@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { anthropic } from '@/lib/anthropic'
+import { generate, SYSTEM_PROMPTS } from '@/lib/gemini'
 
 export const maxDuration = 60
 
@@ -55,14 +55,7 @@ export async function POST(req: NextRequest) {
       text: 'Analyze these documents and generate the renovation BOQ as specified.',
     })
 
-    const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 8096,
-      system: SYSTEM,
-      messages: [{ role: 'user', content }],
-    })
-
-    const text = message.content[0].type === 'text' ? message.content[0].text : ''
+    const text = await generate('', SYSTEM, 8096)
     const jsonMatch = text.match(/\[[\s\S]*\]/)
     if (!jsonMatch) {
       return NextResponse.json({ error: 'AI returned no structured data. Try a clearer document.' }, { status: 500 })
