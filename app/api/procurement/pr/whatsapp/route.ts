@@ -96,11 +96,11 @@ Return ONLY valid JSON (no markdown):
     let projectName = parsed.project || ''
     if (parsed.project && isDbConfigured()) {
       try {
-        const res = await query(
+        const res = await query<{ id: string; name: string }>(
           `SELECT id, name FROM projects WHERE name ILIKE $1 LIMIT 1`,
           [`%${parsed.project}%`],
         )
-        if (res.rows[0]) { projectId = res.rows[0].id; projectName = res.rows[0].name }
+        if (res[0]) { projectId = res[0].id; projectName = res[0].name }
       } catch {}
     }
 
