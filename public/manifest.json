@@ -1,0 +1,26 @@
+{
+  "name": "Sama Alostoura AI OS",
+  "short_name": "Sama OS",
+  "description": "AI Construction Operating System — Sama Alostoura Building Contracting LLC",
+  "start_url": "/projects",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["business", "productivity"],
+  "lang": "en"
+}
