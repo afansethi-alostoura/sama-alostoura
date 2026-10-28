@@ -1,0 +1,8 @@
+{
+  "functions": {
+    "app/api/whatsapp/webhook/route.ts": { "maxDuration": 60 },
+    "app/api/meta/whatsapp/webhook/route.ts": { "maxDuration": 60 },
+    "app/api/procurement/pr/whatsapp/route.ts": { "maxDuration": 60 },
+    "app/api/agents/**": { "maxDuration": 60 }
+  }
+}

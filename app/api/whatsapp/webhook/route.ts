@@ -258,9 +258,12 @@ async function handleImageMessage({
   mediaId, caption, mimeType, from, senderName,
 }: { mediaId: string; caption: string; mimeType: 'image/jpeg' | 'image/png' | 'image/webp' | 'image/gif'; from: string; senderName: string }) {
 
+  // Acknowledge immediately so user knows it was received
+  await sendReply(from, '📷 Image received — analyzing...')
+
   const media = await downloadMedia(mediaId)
   if (!media) {
-    await sendReply(from, '⚠️ Could not download the image. Please try again.')
+    await sendReply(from, '⚠️ Could not download the image. Please retake and resend, or type the details manually.')
     return
   }
 
