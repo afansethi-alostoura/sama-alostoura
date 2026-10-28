@@ -159,9 +159,20 @@ async function handleTextMessage({ text, from, senderName }: { text: string; fro
 Message from ${senderName}: "${text}"
 
 PROJECTS:
-${projects.map(p =>
-  `• ID: ${p.id} | ${p.name} | Client: ${p.client_name} | Location: ${p.location} | Progress: ${p.progress_percent}% | Stage: ${p.current_stage}`
-).join('\n')}
+${projects.map(p => {
+  const sp = stored.find(s => s.id === p.id)
+  const lines = [
+    `• ID: ${p.id} | ${p.name} | Client: ${p.client_name} | Location: ${p.location} | Progress: ${p.progress_percent}% | Stage: ${p.current_stage}`,
+    `  Contract: AED ${sp?.contract_value?.toLocaleString() ?? '?'} | Received: AED ${sp?.received_amount?.toLocaleString() ?? '?'}`,
+  ]
+  if (sp?.mbhre_approved_amount)   lines.push(`  MBHRE Approved: AED ${sp.mbhre_approved_amount.toLocaleString()} (${sp.mbhre_approved_progress ?? '?'}%)`)
+  if (sp?.mbhre_payment_1)         lines.push(`  MBHRE Payment 1: AED ${sp.mbhre_payment_1.toLocaleString()} | Retention: AED ${sp.mbhre_payment_1_retention?.toLocaleString() ?? '?'}`)
+  if (sp?.mbhre_payment_2)         lines.push(`  MBHRE Payment 2: AED ${sp.mbhre_payment_2.toLocaleString()} | Retention: AED ${sp.mbhre_payment_2_retention?.toLocaleString() ?? '?'}`)
+  if (sp?.total_retention_held)    lines.push(`  Total Retention Held: AED ${sp.total_retention_held.toLocaleString()}`)
+  if (sp?.outstanding_to_collect)  lines.push(`  Outstanding to Collect: AED ${sp.outstanding_to_collect.toLocaleString()}`)
+  if (sp?.next_payment_claimable)  lines.push(`  Next MBHRE Claimable: AED ${sp.next_payment_claimable.toLocaleString()}`)
+  return lines.join('\n')
+}).join('\n')}
 
 Return ONLY valid JSON:
 {
