@@ -1,11 +1,12 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
+import Link from 'next/link'
 import {
   Users, Plus, Search, Clock, Phone, Calendar, Banknote,
   Pencil, Trash2, X, Shield, CreditCard, FileText, UserCheck,
   ChevronDown, AlertCircle, Car, Building2, AlertTriangle,
   CheckCircle2, Tag, Hash, Wrench, ScanLine, Upload, Sparkles,
-  RotateCcw, Save, ChevronRight, Info,
+  RotateCcw, Save, ChevronRight, Info, Receipt,
 } from 'lucide-react'
 
 // ── Shared expiry helpers ─────────────────────────────────────────────────────
@@ -1339,6 +1340,7 @@ const TABS = [
   { id: 'vehicles',     label: 'Vehicles',            icon: Car       },
   { id: 'company-docs', label: 'Company Documents',   icon: Building2 },
   { id: 'scan',         label: 'Scan Document',       icon: ScanLine  },
+  { id: 'salary',       label: 'Salary Card',         icon: Receipt   },
 ] as const
 
 type TabId = typeof TABS[number]['id']
@@ -1378,6 +1380,21 @@ export default function HRPage() {
       {tab === 'vehicles'     && <VehiclesTab/>}
       {tab === 'company-docs' && <CompanyDocsTab/>}
       {tab === 'scan'         && <ScanDocumentTab/>}
+      {tab === 'salary'       && (
+        <div className="flex flex-col items-center justify-center py-16 gap-4">
+          <div className="w-16 h-16 bg-emerald-100 rounded-2xl flex items-center justify-center">
+            <Receipt className="w-8 h-8 text-emerald-600" />
+          </div>
+          <div className="text-center">
+            <h2 className="text-lg font-bold text-slate-800 dark:text-white">Salary Card Scanner</h2>
+            <p className="text-sm text-slate-500 mt-1">Take a photo of a handwritten attendance card → AI generates QuickBooks transaction</p>
+          </div>
+          <Link href="/hr/salary-card"
+            className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-2xl transition-colors flex items-center gap-2">
+            <Receipt className="w-5 h-5" /> Open Salary Card Scanner
+          </Link>
+        </div>
+      )}
     </div>
   )
 }
