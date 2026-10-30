@@ -20,6 +20,8 @@ const PUBLIC_PATHS = new Set([
   '/api/trigger-sync',
   '/api/quickbooks/sync',
   '/api/projects/sync-all',
+  '/api/whatsapp/webhook',
+  '/api/test-ai',
 ])
 
 // Pages/APIs engineers cannot access (financial & admin-only)
