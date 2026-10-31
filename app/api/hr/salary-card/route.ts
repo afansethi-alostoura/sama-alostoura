@@ -54,24 +54,35 @@ export async function POST(req: NextRequest) {
     }
 
     // Ask Gemini to read the salary card
-    const prompt = `Read this handwritten Dubai construction attendance card.
-Columns: DATE, project site columns (e.g. Khalid, Fahid, Mansoor, Madinat Hind), Advance AED.
-"L" in a project column = worked there. "OFF" = day off. Number in Advance column = cash advance in AED.
+    const monthName = cardMonth
+      ? new Date(parseInt(cardMonth.split('-')[0]), parseInt(cardMonth.split('-')[1]) - 1).toLocaleString('en', { month: 'long' })
+      : ''
+    const expectedDays = (calYear && calMonth) ? new Date(calYear, calMonth, 0).getDate() : 31
 
-First line: EMPLOYEE_NAME|MONTH|YEAR|COMPANY
-Then one line per date: DATE|PROJECT|ADVANCE
-- PROJECT = project column name where L appears, or OFF or ABSENT
-- ADVANCE = number (0 if none)
+    // Build column list from the projectMap sent by the client (or fallback)
+    const projectNames = projectMap ? Object.keys(projectMap) : ['Khalid', 'Fahid', 'Mansoor', 'Madinat Hind']
 
-Example:
-VenKatesh Beema|August|2026|Sama Alostoura
-1-Aug|Khalid|0
-2-Aug|OFF|0
-3-Aug|Fahid|100
+    const prompt = `This is a handwritten construction worker attendance card for ${monthName || 'the month shown'} with ${expectedDays} rows.
 
-Output ONLY the data lines, no explanation, no markdown.`
+COLUMN ORDER (left to right): DATE | ${projectNames.join(' | ')} | Advance AED
 
-    const raw = await generateWithImage(prompt, imageBase64, mimeType ?? 'image/jpeg', undefined, 2000)
+How to read each row:
+- "L" written in a project column = worker was present at that site that day → use the project column NAME
+- "OFF", "OFE", "OEE", "OE", dashes (—) = day off → write OFF
+- Numbers or "=100=" or "100" in the LAST column (Advance AED) = cash advance amount
+- Blank row with no marks = absent → write ABSENT
+
+Output format — line 1 is the header, then EXACTLY ONE LINE PER DAY from day 1 to day ${expectedDays}:
+EMPLOYEE_NAME|MONTH|YEAR|COMPANY
+1-${monthName.slice(0,3)}|PROJECT_OR_OFF|ADVANCE_NUMBER
+
+Rules:
+- PROJECT = exact column header name (e.g. Khalid, Fahid, Mansoor, Madinat Hind)
+- ADVANCE = number only, 0 if none
+- You MUST output all ${expectedDays} lines, one per day, in order. Do NOT skip any day.
+- Output ONLY the lines, no explanation, no markdown, no blank lines.`
+
+    const raw = await generateWithImage(prompt, imageBase64, mimeType ?? 'image/jpeg', undefined, 3000)
     const lines = raw.trim().split('\n').map(l => l.trim()).filter(Boolean)
 
     // Parse header line
