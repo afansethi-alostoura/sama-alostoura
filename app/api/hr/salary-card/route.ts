@@ -58,7 +58,14 @@ Extract and return ONLY valid JSON (no markdown):
 }`
 
     const raw = await generateWithImage(prompt, imageBase64, mimeType ?? 'image/jpeg', undefined, 2000)
-    const clean = raw.trim().replace(/^```json\s*/i, '').replace(/\s*```$/, '').trim()
+    // Clean up response: strip markdown fences, trailing commas, comments
+    let clean = raw.trim()
+    clean = clean.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/m, '').trim()
+    clean = clean.replace(/,\s*([}\]])/g, '$1')  // remove trailing commas
+    clean = clean.replace(/\/\/[^\n]*/g, '')       // remove // comments
+    // Extract JSON object if wrapped in extra text
+    const jsonMatch = clean.match(/\{[\s\S]*\}/)
+    if (jsonMatch) clean = jsonMatch[0]
     const parsed = JSON.parse(clean)
 
     const attendance: Array<{ date: string; project: string | null; status: string; advance: number }> = parsed.attendance ?? []
