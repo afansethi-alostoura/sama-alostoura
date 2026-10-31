@@ -80,6 +80,19 @@ const EMP_EMPTY: Omit<Employee,'id'> = {
   labour_card_expiry:'',status:'active',notes:'',
 }
 
+function ModalField({ label, value, type = 'text', required = false, onChange }: {
+  label: string; value: string; type?: string; required?: boolean
+  onChange: React.ChangeEventHandler<HTMLInputElement>
+}) {
+  return (
+    <div>
+      <label className="block text-xs font-medium text-slate-600 mb-1">{label}{required && <span className="text-red-500 ml-0.5">*</span>}</label>
+      <input type={type} value={value} required={required} onChange={onChange}
+        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400" />
+    </div>
+  )
+}
+
 function EmpModal({ initial, onSave, onClose }: {
   initial: Omit<Employee,'id'> & { id?: string }
   onSave:  (d: Omit<Employee,'id'> & { id?: string }) => Promise<void>
@@ -93,15 +106,6 @@ function EmpModal({ initial, onSave, onClose }: {
     e.preventDefault(); setSaving(true); await onSave(form); setSaving(false)
   }
 
-  const Field = ({ label, name, type='text', required=false }: { label:string; name: keyof typeof form; type?:string; required?:boolean }) => (
-    <div>
-      <label className="block text-xs font-medium text-slate-600 mb-1">{label}{required && <span className="text-red-500 ml-0.5">*</span>}</label>
-      <input type={type} value={String(form[name] ?? '')}
-        onChange={e => set(name, type==='number' ? Number(e.target.value) : e.target.value)}
-        required={required}
-        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400" />
-    </div>
-  )
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -114,7 +118,7 @@ function EmpModal({ initial, onSave, onClose }: {
           <div>
             <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Basic Information</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label="Full Name" name="name" required />
+              <ModalField label="Full Name" value={String(form.name ?? '')} onChange={e => set('name', e.target.value)} required />
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Role <span className="text-red-500">*</span></label>
                 <select value={form.role} onChange={e => set('role', e.target.value)} required
@@ -123,10 +127,10 @@ function EmpModal({ initial, onSave, onClose }: {
                   {EMP_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
                 </select>
               </div>
-              <Field label="Nationality"          name="nationality" />
-              <Field label="Phone"                name="phone" type="tel" />
-              <Field label="Monthly Salary (AED)" name="salary" type="number" />
-              <Field label="Join Date"            name="join_date" type="date" />
+              <ModalField label="Nationality" value={String(form.nationality ?? '')} onChange={e => set('nationality', e.target.value)} />
+              <ModalField label="Phone" type="tel" value={String(form.phone ?? '')} onChange={e => set('phone', e.target.value)} />
+              <ModalField label="Monthly Salary (AED)" type="number" value={String(form.salary ?? '')} onChange={e => set('salary', Number(e.target.value))} />
+              <ModalField label="Join Date" type="date" value={String(form.join_date ?? '')} onChange={e => set('join_date', e.target.value)} />
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
                 <select value={form.status} onChange={e => set('status', e.target.value)}
@@ -140,10 +144,10 @@ function EmpModal({ initial, onSave, onClose }: {
           <div>
             <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Document Expiry Dates</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label="Visa Expiry"        name="visa_expiry"        type="date" />
-              <Field label="Emirates ID Expiry" name="emirates_id_expiry" type="date" />
-              <Field label="Passport Expiry"    name="passport_expiry"    type="date" />
-              <Field label="Labour Card Expiry" name="labour_card_expiry" type="date" />
+              <ModalField label="Visa Expiry" type="date" value={String(form.visa_expiry ?? '')} onChange={e => set('visa_expiry', e.target.value)} />
+              <ModalField label="Emirates ID Expiry" type="date" value={String(form.emirates_id_expiry ?? '')} onChange={e => set('emirates_id_expiry', e.target.value)} />
+              <ModalField label="Passport Expiry" type="date" value={String(form.passport_expiry ?? '')} onChange={e => set('passport_expiry', e.target.value)} />
+              <ModalField label="Labour Card Expiry" type="date" value={String(form.labour_card_expiry ?? '')} onChange={e => set('labour_card_expiry', e.target.value)} />
             </div>
           </div>
           <div>
@@ -393,15 +397,6 @@ function VehModal({ initial, onSave, onClose }: {
     e.preventDefault(); setSaving(true); await onSave(form); setSaving(false)
   }
 
-  const Field = ({ label, name, type='text', required=false }: { label:string; name: keyof typeof form; type?:string; required?:boolean }) => (
-    <div>
-      <label className="block text-xs font-medium text-slate-600 mb-1">{label}{required && <span className="text-red-500 ml-0.5">*</span>}</label>
-      <input type={type} value={String(form[name] ?? '')}
-        onChange={e => set(name, type==='number' ? (e.target.value ? Number(e.target.value) : null) : e.target.value)}
-        required={required}
-        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"/>
-    </div>
-  )
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -414,7 +409,7 @@ function VehModal({ initial, onSave, onClose }: {
           <div>
             <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Vehicle Details</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Field label="Plate Number" name="plate_number" required />
+              <ModalField label="Plate Number" value={String(form.plate_number ?? '')} onChange={e => set('plate_number', e.target.value)} required />
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Type</label>
                 <select value={form.type} onChange={e => set('type', e.target.value)}
@@ -422,10 +417,10 @@ function VehModal({ initial, onSave, onClose }: {
                   {VEH_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
               </div>
-              <Field label="Make (e.g. Toyota)" name="make" required />
-              <Field label="Model (e.g. Hilux)" name="model" required />
-              <Field label="Year"  name="year"  type="number" />
-              <Field label="Color" name="color" />
+              <ModalField label="Make (e.g. Toyota)" value={String(form.make ?? '')} onChange={e => set('make', e.target.value)} required />
+              <ModalField label="Model (e.g. Hilux)" value={String(form.model ?? '')} onChange={e => set('model', e.target.value)} required />
+              <ModalField label="Year" type="number" value={String(form.year ?? '')} onChange={e => set('year', e.target.value ? Number(e.target.value) : null)} />
+              <ModalField label="Color" value={String(form.color ?? '')} onChange={e => set('color', e.target.value)} />
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
                 <select value={form.status} onChange={e => set('status', e.target.value)}
@@ -439,9 +434,9 @@ function VehModal({ initial, onSave, onClose }: {
           <div>
             <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Document Expiry Dates</p>
             <div className="grid grid-cols-1 gap-4">
-              <Field label="Mulkiya (Registration) Expiry" name="registration_expiry" type="date" />
-              <Field label="Insurance Expiry"              name="insurance_expiry"    type="date" />
-              <Field label="RTA Test / Inspection Expiry"  name="rta_test_expiry"     type="date" />
+              <ModalField label="Mulkiya (Registration) Expiry" type="date" value={String(form.registration_expiry ?? '')} onChange={e => set('registration_expiry', e.target.value)} />
+              <ModalField label="Insurance Expiry" type="date" value={String(form.insurance_expiry ?? '')} onChange={e => set('insurance_expiry', e.target.value)} />
+              <ModalField label="RTA Test / Inspection Expiry" type="date" value={String(form.rta_test_expiry ?? '')} onChange={e => set('rta_test_expiry', e.target.value)} />
             </div>
           </div>
           <div>
@@ -652,15 +647,6 @@ function DocModal({ initial, onSave, onClose }: {
     e.preventDefault(); setSaving(true); await onSave(form); setSaving(false)
   }
 
-  const Field = ({ label, name, type='text', required=false }: { label:string; name: keyof typeof form; type?:string; required?:boolean }) => (
-    <div>
-      <label className="block text-xs font-medium text-slate-600 mb-1">{label}{required && <span className="text-red-500 ml-0.5">*</span>}</label>
-      <input type={type} value={String(form[name] ?? '')}
-        onChange={e => set(name, type==='number' ? Number(e.target.value) : e.target.value)}
-        required={required}
-        className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"/>
-    </div>
-  )
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -671,7 +657,7 @@ function DocModal({ initial, onSave, onClose }: {
         </div>
         <form onSubmit={submit} className="p-6 space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="col-span-1 sm:col-span-2"><Field label="Document Name" name="name" required /></div>
+            <div className="col-span-1 sm:col-span-2"><ModalField label="Document Name" value={String(form.name ?? '')} onChange={e => set('name', e.target.value)} required /></div>
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Category <span className="text-red-500">*</span></label>
               <select value={form.category} onChange={e => set('category', e.target.value)} required
@@ -679,15 +665,15 @@ function DocModal({ initial, onSave, onClose }: {
                 {DOC_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
-            <Field label="Issuing Authority" name="issuing_authority" />
-            <Field label="Document Number"   name="doc_number" />
+            <ModalField label="Issuing Authority" value={String(form.issuing_authority ?? '')} onChange={e => set('issuing_authority', e.target.value)} />
+            <ModalField label="Document Number" value={String(form.doc_number ?? '')} onChange={e => set('doc_number', e.target.value)} />
             <div>
               <label className="block text-xs font-medium text-slate-600 mb-1">Alert before expiry (days)</label>
               <input type="number" value={form.reminder_days} onChange={e => set('reminder_days', Number(e.target.value))} min={1} max={365}
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"/>
             </div>
-            <Field label="Issue Date"  name="issue_date"  type="date" />
-            <Field label="Expiry Date" name="expiry_date" type="date" />
+            <ModalField label="Issue Date" type="date" value={String(form.issue_date ?? '')} onChange={e => set('issue_date', e.target.value)} />
+            <ModalField label="Expiry Date" type="date" value={String(form.expiry_date ?? '')} onChange={e => set('expiry_date', e.target.value)} />
           </div>
           <div>
             <label className="block text-xs font-medium text-slate-600 mb-1">Notes</label>
