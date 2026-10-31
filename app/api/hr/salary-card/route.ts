@@ -31,33 +31,15 @@ export async function POST(req: NextRequest) {
     if (!imageBase64) return NextResponse.json({ error: 'No image' }, { status: 400 })
 
     // Ask Gemini to read the salary card
-    const prompt = `You are reading a handwritten monthly salary/attendance card for a Dubai construction company.
+    const prompt = `Read this handwritten Dubai construction attendance card. Columns: DATE, project sites (Khalid/Fahid/Mansoor/etc), Advance AED.
+Rules: "L" in a project column = worked there. "OFF" = day off. Number in Advance = cash advance in AED.
 
-The card has columns: DATE, and then project site columns (e.g. Khalid, Fahid, Mansoor, Madinat Hind, etc.), and an Advance AED column.
+Return ONLY this JSON, no markdown, no extra text:
+{"employee_name":"","month":"","year":"","company":"","project_columns":[],"attendance":[{"date":"1-Aug","project":"Khalid","status":"worked","advance":0}]}
 
-For each date row:
-- "L" or a checkmark in a project column = worked at that project that day
-- "OFF" = day off
-- A number in the Advance column = cash advance taken that day in AED
+Fill all 31 days. status = worked|off|absent. project = column name or null. advance = number or 0.`
 
-Extract and return ONLY valid JSON (no markdown):
-{
-  "employee_name": "<name on card>",
-  "month": "<month name>",
-  "year": "<year>",
-  "company": "<company name if shown>",
-  "project_columns": ["<col1>", "<col2>", ...],
-  "attendance": [
-    {
-      "date": "<e.g. 1-Aug>",
-      "project": "<project column name where L appears, or null if OFF/absent>",
-      "status": "<worked|off|absent>",
-      "advance": <AED number or 0>
-    }
-  ]
-}`
-
-    const raw = await generateWithImage(prompt, imageBase64, mimeType ?? 'image/jpeg', undefined, 2000)
+    const raw = await generateWithImage(prompt, imageBase64, mimeType ?? 'image/jpeg', undefined, 4000)
     // Clean up response: strip markdown fences, trailing commas, comments
     let clean = raw.trim()
     clean = clean.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/m, '').trim()
