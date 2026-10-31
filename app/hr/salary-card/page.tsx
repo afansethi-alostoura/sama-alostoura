@@ -1,32 +1,34 @@
 'use client'
-import { useState, useRef } from 'react'
-import { Camera, Upload, Loader2, Download, Save, CheckCircle2, ArrowLeft, Banknote, User, Calendar, Building2 } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { Camera, Upload, Loader2, Download, CheckCircle2, ArrowLeft, Banknote, User, Calendar, Building2, Plus, X, Users } from 'lucide-react'
 import Link from 'next/link'
 
-interface AttendanceRow {
-  date: string
-  project: string | null
-  status: string
-  advance: number
-}
-interface QBLine {
-  date: string; category: string; description: string
-  amount: number; tax: string; class: string; day: string; advance: number
-}
+interface Worker { id: number; name: string; monthly_salary: number; position: string }
+interface AttendanceRow { date: string; project: string | null; status: string; advance: number }
+interface QBLine { date: string; category: string; description: string; amount: number; tax: string; class: string; day: string; advance: number }
 interface Result {
   employee_name: string; month: string; company: string
   project_columns: string[]; attendance: AttendanceRow[]
-  working_days: number; daily_rate: number
+  days_in_month: number | null; sunday_count: number
+  working_days: number; present_days: number; absent_days: number
+  daily_rate: number; absent_deduction: number; salary_earned: number
   total_advances: number; net_payment: number
   qb_lines: QBLine[]
 }
 
-// Known project name → QB class mapping
 const DEFAULT_PROJECT_MAP: Record<string, string> = {
-  'Khalid':      'KHALID MOHD ALAMERI',
-  'Fahid':       'Fahad Bin Rashed Bin Essa Bin Abdull',
-  'Mansoor':     'Mansoor',
-  'Madinat Hind': 'Madinat Hind',
+  'Khalid':        'KHALID MOHD ALAMERI',
+  'Fahid':         'Fahad Bin Rashed Bin Essa Bin Abdull',
+  'Mansoor':       'Mansoor',
+  'Madinat Hind':  'Madinat Hind',
+}
+
+// Badge colours per status
+function StatusBadge({ status }: { status: string }) {
+  if (status === 'worked')  return <span className="text-blue-600 dark:text-blue-400 font-medium">Worked</span>
+  if (status === 'sunday')  return <span className="text-slate-400 text-[10px] uppercase">Sunday</span>
+  if (status === 'absent')  return <span className="text-red-500 text-[10px] uppercase font-semibold">Absent</span>
+  return <span className="text-slate-400 text-[10px] uppercase">{status}</span>
 }
 
 export default function SalaryCardPage() {
@@ -35,15 +37,61 @@ export default function SalaryCardPage() {
   const [imageBase64, setImageBase64]   = useState<string>('')
   const [mimeType, setMimeType]         = useState<string>('image/jpeg')
 
+  // Workers
+  const [workers,      setWorkers]      = useState<Worker[]>([])
+  const [selectedId,   setSelectedId]   = useState<number | null>(null)
+  const [showAdd,      setShowAdd]      = useState(false)
+  const [newName,      setNewName]      = useState('')
+  const [newSalary,    setNewSalary]    = useState('')
+  const [newPosition,  setNewPosition]  = useState('Laborer')
+  const [savingWorker, setSavingWorker] = useState(false)
+
+  // Payment settings
   const [salary,        setSalary]        = useState('')
+  const [cardMonth,     setCardMonth]     = useState(() => {
+    const now = new Date()
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  })
   const [paymentDate,   setPaymentDate]   = useState(new Date().toISOString().slice(0, 10))
   const [paymentAcct,   setPaymentAcct]   = useState('Cash')
   const [paymentMethod, setPaymentMethod] = useState('Cash')
 
-  const [loading,  setLoading]  = useState(false)
-  const [saved,    setSaved]    = useState(false)
-  const [error,    setError]    = useState('')
-  const [result,   setResult]   = useState<Result | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [saved,   setSaved]   = useState(false)
+  const [error,   setError]   = useState('')
+  const [result,  setResult]  = useState<Result | null>(null)
+
+  useEffect(() => {
+    fetch('/api/hr/workers').then(r => r.json()).then(d => { if (Array.isArray(d)) setWorkers(d) }).catch(() => {})
+  }, [])
+
+  function selectWorker(id: number) {
+    setSelectedId(id)
+    const w = workers.find(w => w.id === id)
+    if (w) setSalary(String(w.monthly_salary))
+  }
+
+  async function addWorker() {
+    if (!newName || !newSalary) return
+    setSavingWorker(true)
+    try {
+      const res = await fetch('/api/hr/workers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newName, monthly_salary: newSalary, position: newPosition }),
+      })
+      const w = await res.json()
+      if (w.id) {
+        setWorkers(prev => [...prev, w].sort((a, b) => a.name.localeCompare(b.name)))
+        setSelectedId(w.id)
+        setSalary(String(w.monthly_salary))
+        setShowAdd(false)
+        setNewName(''); setNewSalary(''); setNewPosition('Laborer')
+      }
+    } finally {
+      setSavingWorker(false)
+    }
+  }
 
   function handleFile(file: File) {
     setMimeType(file.type || 'image/jpeg')
@@ -58,24 +106,22 @@ export default function SalaryCardPage() {
   }
 
   async function analyse() {
-    if (!imageBase64) { setError('Please upload a photo first'); return }
-    if (!salary)      { setError('Enter the monthly salary amount'); return }
+    if (!imageBase64)  { setError('Please upload a photo first'); return }
+    if (!salary)       { setError('Enter or select monthly salary'); return }
     setLoading(true); setError('')
     try {
       const res = await fetch('/api/hr/salary-card', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          imageBase64, mimeType,
-          monthlySalary: salary,
-          paymentDate, paymentAccount: paymentAcct, paymentMethod,
+          imageBase64, mimeType, monthlySalary: salary,
+          cardMonth, paymentDate, paymentAccount: paymentAcct, paymentMethod,
           projectMap: DEFAULT_PROJECT_MAP,
         }),
       })
       const data = await res.json()
       if (data.error) throw new Error(data.error)
-      setResult(data)
-      setSaved(true)
+      setResult(data); setSaved(true)
     } catch (e: unknown) {
       setError(String(e instanceof Error ? e.message : e))
     } finally {
@@ -91,7 +137,7 @@ export default function SalaryCardPage() {
       l.amount.toFixed(2), l.tax, l.class, l.advance > 0 ? l.advance.toFixed(2) : '',
     ])
     const totalsRow = ['','','TOTAL','',
-      result.qb_lines.reduce((s, l) => s + l.amount, 0).toFixed(2),'','',
+      result.qb_lines.reduce((s, l) => s + l.amount, 0).toFixed(2), '','',
       result.total_advances.toFixed(2),
     ]
     const csv = [header, ...rows, [], totalsRow]
@@ -99,11 +145,9 @@ export default function SalaryCardPage() {
       .join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
     const url  = URL.createObjectURL(blob)
-    const a    = document.createElement('a')
-    a.href = url
+    const a    = document.createElement('a'); a.href = url
     a.download = `salary_${result.employee_name?.replace(/\s+/g, '_')}_${result.month?.replace(/\s+/g, '_')}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
+    a.click(); URL.revokeObjectURL(url)
   }
 
   return (
@@ -123,7 +167,7 @@ export default function SalaryCardPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
-          {/* LEFT — Upload + Settings */}
+          {/* LEFT */}
           <div className="space-y-4">
 
             {/* Photo upload */}
@@ -153,17 +197,81 @@ export default function SalaryCardPage() {
               </button>
             )}
 
-            {/* Payment settings */}
+            {/* Settings */}
             <div className="bg-white dark:bg-slate-800 rounded-2xl p-4 space-y-3 shadow-sm">
               <h2 className="font-semibold text-slate-800 dark:text-white flex items-center gap-2">
                 <Banknote className="w-4 h-4 text-emerald-500" /> Payment Details
               </h2>
 
+              {/* Worker selector */}
+              <div>
+                <label className="text-xs text-slate-500 mb-1 block flex items-center gap-1">
+                  <Users className="w-3 h-3" /> Worker
+                </label>
+                <div className="flex gap-2">
+                  <select
+                    value={selectedId ?? ''}
+                    onChange={e => { const v = e.target.value; v ? selectWorker(Number(v)) : setSelectedId(null) }}
+                    className="flex-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-white text-sm"
+                  >
+                    <option value="">— select worker —</option>
+                    {workers.map(w => (
+                      <option key={w.id} value={w.id}>{w.name} · AED {w.monthly_salary.toLocaleString()}</option>
+                    ))}
+                  </select>
+                  <button onClick={() => setShowAdd(v => !v)}
+                    className="p-2 rounded-xl border border-slate-200 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors"
+                    title="Add new worker">
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Add worker form */}
+              {showAdd && (
+                <div className="bg-slate-50 dark:bg-slate-700 rounded-xl p-3 space-y-2 border border-slate-200 dark:border-slate-600">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">Add New Worker</span>
+                    <button onClick={() => setShowAdd(false)}><X className="w-3.5 h-3.5 text-slate-400" /></button>
+                  </div>
+                  <input type="text" placeholder="Full name" value={newName} onChange={e => setNewName(e.target.value)}
+                    className="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white" />
+                  <div className="flex gap-2">
+                    <input type="number" placeholder="Monthly salary (AED)" value={newSalary} onChange={e => setNewSalary(e.target.value)}
+                      className="flex-1 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white" />
+                    <select value={newPosition} onChange={e => setNewPosition(e.target.value)}
+                      className="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm text-slate-900 dark:text-white">
+                      <option>Laborer</option>
+                      <option>Mason</option>
+                      <option>Carpenter</option>
+                      <option>Electrician</option>
+                      <option>Plumber</option>
+                      <option>Painter</option>
+                      <option>Driver</option>
+                      <option>Supervisor</option>
+                    </select>
+                  </div>
+                  <button onClick={addWorker} disabled={!newName || !newSalary || savingWorker}
+                    className="w-full py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold transition-colors flex items-center justify-center gap-1">
+                    {savingWorker ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />} Save Worker
+                  </button>
+                </div>
+              )}
+
+              {/* Monthly salary */}
               <div>
                 <label className="text-xs text-slate-500 mb-1 block">Monthly Salary (AED) *</label>
                 <input type="number" placeholder="e.g. 1800" value={salary} onChange={e => setSalary(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-white text-sm" />
               </div>
+
+              {/* Card month */}
+              <div>
+                <label className="text-xs text-slate-500 mb-1 block">Card Month (for Sunday calculation)</label>
+                <input type="month" value={cardMonth} onChange={e => setCardMonth(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 text-slate-900 dark:text-white text-sm" />
+              </div>
+
               <div>
                 <label className="text-xs text-slate-500 mb-1 block">Payment Date</label>
                 <input type="date" value={paymentDate} onChange={e => setPaymentDate(e.target.value)}
@@ -214,20 +322,25 @@ export default function SalaryCardPage() {
                     {result.company && <> · <Building2 className="w-3 h-3" /> {result.company}</>}
                   </p>
 
-                  <div className="grid grid-cols-2 gap-3">
-                    {[
-                      { label: 'Working Days', value: result.working_days },
-                      { label: 'Daily Rate',   value: `AED ${result.daily_rate.toFixed(2)}` },
-                      { label: 'Advances',     value: `AED ${result.total_advances.toFixed(2)}`, red: true },
-                      { label: 'Net Payment',  value: `AED ${result.net_payment.toFixed(2)}`, green: true },
-                    ].map(({ label, value, red, green }) => (
-                      <div key={label} className="bg-slate-50 dark:bg-slate-700 rounded-xl p-3">
-                        <p className="text-xs text-slate-500 mb-1">{label}</p>
-                        <p className={`font-bold text-sm ${red ? 'text-red-600' : green ? 'text-emerald-600' : 'text-slate-800 dark:text-white'}`}>
-                          {value}
-                        </p>
-                      </div>
-                    ))}
+                  {/* Breakdown grid */}
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    {result.days_in_month && (
+                      <StatBox label="Total Days" value={result.days_in_month} />
+                    )}
+                    {result.sunday_count > 0 && (
+                      <StatBox label="Sundays (off)" value={result.sunday_count} />
+                    )}
+                    <StatBox label="Working Days" value={result.working_days} />
+                    <StatBox label="Days Present" value={result.present_days} blue />
+                    {result.absent_days > 0 && (
+                      <StatBox label="Days Absent" value={result.absent_days} red />
+                    )}
+                    <StatBox label="Daily Rate" value={`AED ${result.daily_rate.toFixed(2)}`} />
+                    {result.absent_deduction > 0 && (
+                      <StatBox label="Absent Deduction" value={`AED ${result.absent_deduction.toFixed(2)}`} red />
+                    )}
+                    <StatBox label="Advances" value={`AED ${result.total_advances.toFixed(2)}`} red />
+                    <StatBox label="Net Payment" value={`AED ${result.net_payment.toFixed(2)}`} green large />
                   </div>
 
                   <button onClick={downloadCSV}
@@ -246,23 +359,28 @@ export default function SalaryCardPage() {
                       <thead className="bg-slate-50 dark:bg-slate-700 sticky top-0">
                         <tr>
                           <th className="px-3 py-2 text-left text-slate-500">Date</th>
-                          <th className="px-3 py-2 text-left text-slate-500">Project</th>
+                          <th className="px-3 py-2 text-left text-slate-500">Status / Project</th>
                           <th className="px-3 py-2 text-right text-slate-500">Amount</th>
                           <th className="px-3 py-2 text-right text-slate-500">Advance</th>
                         </tr>
                       </thead>
                       <tbody>
                         {result.attendance.map((row, i) => (
-                          <tr key={i} className={`border-t border-slate-50 dark:border-slate-700/50 ${row.status === 'off' ? 'opacity-40' : ''}`}>
+                          <tr key={i} className={`border-t border-slate-50 dark:border-slate-700/50 ${row.status !== 'worked' ? 'opacity-50' : ''} ${row.status === 'absent' ? '!opacity-100 bg-red-50 dark:bg-red-900/10' : ''}`}>
                             <td className="px-3 py-1.5 text-slate-700 dark:text-slate-300">{row.date}</td>
                             <td className="px-3 py-1.5">
                               {row.status === 'worked'
                                 ? <span className="text-blue-600 dark:text-blue-400">{row.project}</span>
-                                : <span className="text-slate-400 uppercase text-[10px]">{row.status}</span>
+                                : <StatusBadge status={row.status} />
                               }
                             </td>
                             <td className="px-3 py-1.5 text-right text-slate-700 dark:text-slate-300">
-                              {row.status === 'worked' ? `${result.daily_rate.toFixed(2)}` : '—'}
+                              {row.status === 'worked'
+                                ? result.daily_rate.toFixed(2)
+                                : row.status === 'absent'
+                                  ? <span className="text-red-500">-{result.daily_rate.toFixed(2)}</span>
+                                  : '—'
+                              }
                             </td>
                             <td className="px-3 py-1.5 text-right">
                               {row.advance > 0
@@ -274,9 +392,9 @@ export default function SalaryCardPage() {
                       </tbody>
                       <tfoot className="bg-slate-50 dark:bg-slate-700 sticky bottom-0">
                         <tr className="border-t-2 border-slate-200 dark:border-slate-600">
-                          <td colSpan={2} className="px-3 py-2 font-semibold text-slate-700 dark:text-slate-300">TOTAL</td>
-                          <td className="px-3 py-2 text-right font-bold text-slate-900 dark:text-white">
-                            {(result.working_days * result.daily_rate).toFixed(2)}
+                          <td colSpan={2} className="px-3 py-2 font-semibold text-slate-700 dark:text-slate-300">Net Payment</td>
+                          <td className="px-3 py-2 text-right font-bold text-emerald-600">
+                            {result.net_payment.toFixed(2)}
                           </td>
                           <td className="px-3 py-2 text-right font-bold text-red-500">
                             {result.total_advances.toFixed(2)}
@@ -298,6 +416,17 @@ export default function SalaryCardPage() {
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+function StatBox({ label, value, red, green, blue, large }: { label: string; value: string | number; red?: boolean; green?: boolean; blue?: boolean; large?: boolean }) {
+  return (
+    <div className={`bg-slate-50 dark:bg-slate-700 rounded-xl p-3 ${large ? 'col-span-2' : ''}`}>
+      <p className="text-xs text-slate-500 mb-1">{label}</p>
+      <p className={`font-bold ${large ? 'text-base' : 'text-sm'} ${red ? 'text-red-600' : green ? 'text-emerald-600' : blue ? 'text-blue-600' : 'text-slate-800 dark:text-white'}`}>
+        {value}
+      </p>
     </div>
   )
 }

@@ -23,12 +23,35 @@ async function ensureTable() {
   `)
 }
 
+// Returns Set of day-of-month numbers that are Sundays (e.g. {6, 13, 20, 27} for Aug 2026)
+function getSundaysInMonth(year: number, month: number): Set<number> {
+  const sundays = new Set<number>()
+  const daysInMonth = new Date(year, month, 0).getDate()
+  for (let d = 1; d <= daysInMonth; d++) {
+    if (new Date(year, month - 1, d).getDay() === 0) sundays.add(d)
+  }
+  return sundays
+}
+
+// Extract leading day number from strings like "1-Aug", "15", "15-08"
+function parseDayNum(dateStr: string): number {
+  const m = dateStr.match(/^(\d+)/)
+  return m ? parseInt(m[1]) : 0
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { imageBase64, mimeType, monthlySalary, paymentDate, paymentAccount, paymentMethod, projectMap } = body
+    const { imageBase64, mimeType, monthlySalary, paymentDate, paymentAccount, paymentMethod, projectMap, cardMonth } = body
 
     if (!imageBase64) return NextResponse.json({ error: 'No image' }, { status: 400 })
+
+    // Parse cardMonth (format "YYYY-MM") for Sunday calculation
+    let calYear = 0, calMonth = 0
+    if (cardMonth) {
+      const [y, m] = cardMonth.split('-').map(Number)
+      calYear = y; calMonth = m
+    }
 
     // Ask Gemini to read the salary card
     const prompt = `Read this handwritten Dubai construction attendance card.
@@ -68,36 +91,46 @@ Output ONLY the data lines, no explanation, no markdown.`
       const proj    = parts[1].trim()
       const advance = parseFloat(parts[2]) || 0
       const isOff   = /^off$/i.test(proj) || /^absent$/i.test(proj) || proj === '-' || proj === ''
-      const status  = isOff ? (proj.toLowerCase() === 'absent' ? 'absent' : 'off') : 'worked'
+      const status  = isOff ? 'off' : 'worked'
       const project = isOff ? null : proj
       if (project) projectColumnsSet.add(project)
       attendance.push({ date, project, status, advance })
     }
 
-    const parsed = {
-      employee_name:   employeeName,
-      month, year, company,
-      project_columns: Array.from(projectColumnsSet),
-      attendance,
+    // If we know the calendar month, reclassify off days as sunday vs absent
+    const sundays = (calYear && calMonth) ? getSundaysInMonth(calYear, calMonth) : new Set<number>()
+    const daysInMonth = (calYear && calMonth) ? new Date(calYear, calMonth, 0).getDate() : 0
+
+    if (sundays.size > 0) {
+      for (const row of attendance) {
+        if (row.status === 'off') {
+          const dayNum = parseDayNum(row.date)
+          row.status = sundays.has(dayNum) ? 'sunday' : 'absent'
+        }
+      }
     }
 
-    const workingDays = attendance.filter(d => d.status === 'worked').length
-    const totalAdvances = attendance.reduce((s: number, d) => s + (d.advance ?? 0), 0)
-
+    // Salary calculation
     const salary = parseFloat(monthlySalary) || 0
-    const dailyRate = workingDays > 0 ? Math.round((salary / workingDays) * 100) / 100 : 0
-    const netPayment = salary - totalAdvances
+    const sundayCount   = sundays.size
+    const workingDays   = daysInMonth > 0 ? daysInMonth - sundayCount : attendance.filter(d => d.status === 'worked').length
+    const presentDays   = attendance.filter(d => d.status === 'worked').length
+    const absentDays    = Math.max(0, workingDays - presentDays)
+    const dailyRate     = workingDays > 0 ? Math.round((salary / workingDays) * 100) / 100 : 0
+    const absentDeduction = Math.round(absentDays * dailyRate * 100) / 100
+    const salaryEarned  = salary - absentDeduction
+    const totalAdvances = attendance.reduce((s: number, d) => s + (d.advance ?? 0), 0)
+    const netPayment    = salaryEarned - totalAdvances
 
-    // Build QB line items (one per working day)
+    // Build QB line items (one per worked day)
     const qbLines = attendance
       .filter(d => d.status === 'worked')
       .map(d => {
-        // Map short project name to full QB class name
         const fullClass = (projectMap && projectMap[d.project ?? '']) ?? d.project ?? ''
         return {
           date:        paymentDate ?? new Date().toISOString().slice(0, 10),
           category:    'Wage expenses',
-          description: parsed.employee_name ?? '',
+          description: employeeName,
           amount:      dailyRate,
           tax:         'ZR Zero Rated',
           class:       fullClass,
@@ -116,7 +149,7 @@ Output ONLY the data lines, no explanation, no markdown.`
             attendance_data, qb_lines)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
         [
-          parsed.employee_name, `${parsed.month} ${parsed.year}`,
+          employeeName, `${month} ${year}`,
           salary, workingDays, dailyRate, totalAdvances, netPayment,
           paymentDate || null, paymentAccount || 'Cash', paymentMethod || 'Cash',
           JSON.stringify(attendance), JSON.stringify(qbLines),
@@ -125,16 +158,22 @@ Output ONLY the data lines, no explanation, no markdown.`
     }
 
     return NextResponse.json({
-      employee_name:  parsed.employee_name,
-      month:          `${parsed.month} ${parsed.year}`,
-      company:        parsed.company,
-      project_columns: parsed.project_columns,
+      employee_name:    employeeName,
+      month:            `${month} ${year}`,
+      company,
+      project_columns:  Array.from(projectColumnsSet),
       attendance,
-      working_days:   workingDays,
-      daily_rate:     dailyRate,
-      total_advances: totalAdvances,
-      net_payment:    netPayment,
-      qb_lines:       qbLines,
+      days_in_month:    daysInMonth || null,
+      sunday_count:     sundayCount,
+      working_days:     workingDays,
+      present_days:     presentDays,
+      absent_days:      absentDays,
+      daily_rate:       dailyRate,
+      absent_deduction: absentDeduction,
+      salary_earned:    salaryEarned,
+      total_advances:   totalAdvances,
+      net_payment:      netPayment,
+      qb_lines:         qbLines,
     })
 
   } catch (e) {
