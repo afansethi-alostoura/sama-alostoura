@@ -31,26 +31,56 @@ export async function POST(req: NextRequest) {
     if (!imageBase64) return NextResponse.json({ error: 'No image' }, { status: 400 })
 
     // Ask Gemini to read the salary card
-    const prompt = `Read this handwritten Dubai construction attendance card. Columns: DATE, project sites (Khalid/Fahid/Mansoor/etc), Advance AED.
-Rules: "L" in a project column = worked there. "OFF" = day off. Number in Advance = cash advance in AED.
+    const prompt = `Read this handwritten Dubai construction attendance card.
+Columns: DATE, project site columns (e.g. Khalid, Fahid, Mansoor, Madinat Hind), Advance AED.
+"L" in a project column = worked there. "OFF" = day off. Number in Advance column = cash advance in AED.
 
-Return ONLY this JSON, no markdown, no extra text:
-{"employee_name":"","month":"","year":"","company":"","project_columns":[],"attendance":[{"date":"1-Aug","project":"Khalid","status":"worked","advance":0}]}
+First line: EMPLOYEE_NAME|MONTH|YEAR|COMPANY
+Then one line per date: DATE|PROJECT|ADVANCE
+- PROJECT = project column name where L appears, or OFF or ABSENT
+- ADVANCE = number (0 if none)
 
-Fill all 31 days. status = worked|off|absent. project = column name or null. advance = number or 0.`
+Example:
+VenKatesh Beema|August|2026|Sama Alostoura
+1-Aug|Khalid|0
+2-Aug|OFF|0
+3-Aug|Fahid|100
 
-    const raw = await generateWithImage(prompt, imageBase64, mimeType ?? 'image/jpeg', undefined, 4000)
-    // Clean up response: strip markdown fences, trailing commas, comments
-    let clean = raw.trim()
-    clean = clean.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/m, '').trim()
-    clean = clean.replace(/,\s*([}\]])/g, '$1')  // remove trailing commas
-    clean = clean.replace(/\/\/[^\n]*/g, '')       // remove // comments
-    // Extract JSON object if wrapped in extra text
-    const jsonMatch = clean.match(/\{[\s\S]*\}/)
-    if (jsonMatch) clean = jsonMatch[0]
-    const parsed = JSON.parse(clean)
+Output ONLY the data lines, no explanation, no markdown.`
 
-    const attendance: Array<{ date: string; project: string | null; status: string; advance: number }> = parsed.attendance ?? []
+    const raw = await generateWithImage(prompt, imageBase64, mimeType ?? 'image/jpeg', undefined, 2000)
+    const lines = raw.trim().split('\n').map(l => l.trim()).filter(Boolean)
+
+    // Parse header line
+    const header = lines[0].split('|')
+    const employeeName = header[0]?.trim() ?? ''
+    const month        = header[1]?.trim() ?? ''
+    const year         = header[2]?.trim() ?? ''
+    const company      = header[3]?.trim() ?? ''
+
+    // Parse attendance lines
+    const attendance: Array<{ date: string; project: string | null; status: string; advance: number }> = []
+    const projectColumnsSet = new Set<string>()
+    for (const line of lines.slice(1)) {
+      const parts = line.split('|')
+      if (parts.length < 2) continue
+      const date    = parts[0].trim()
+      const proj    = parts[1].trim()
+      const advance = parseFloat(parts[2]) || 0
+      const isOff   = /^off$/i.test(proj) || /^absent$/i.test(proj) || proj === '-' || proj === ''
+      const status  = isOff ? (proj.toLowerCase() === 'absent' ? 'absent' : 'off') : 'worked'
+      const project = isOff ? null : proj
+      if (project) projectColumnsSet.add(project)
+      attendance.push({ date, project, status, advance })
+    }
+
+    const parsed = {
+      employee_name:   employeeName,
+      month, year, company,
+      project_columns: Array.from(projectColumnsSet),
+      attendance,
+    }
+
     const workingDays = attendance.filter(d => d.status === 'worked').length
     const totalAdvances = attendance.reduce((s: number, d) => s + (d.advance ?? 0), 0)
 
