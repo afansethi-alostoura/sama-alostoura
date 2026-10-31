@@ -2,23 +2,38 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || '')
 
-export const MODEL = 'gemini-3.8-flash'
+export const MODEL         = 'gemini-2.5-flash'
+const FALLBACK_MODEL       = 'gemini-1.5-flash'
 
-export function getModel(systemInstruction?: string) {
+function is503(e: unknown) {
+  const msg = String(e)
+  return msg.includes('503') || msg.includes('Service Unavailable') || msg.includes('high demand')
+}
+
+async function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)) }
+
+export function getModel(modelName: string, systemInstruction?: string) {
   return genAI.getGenerativeModel({
-    model: MODEL,
+    model: modelName,
     ...(systemInstruction ? { systemInstruction } : {}),
   })
 }
 
-/** Single-turn text generation — drop-in replacement for anthropic.messages.create */
+/** Single-turn text generation — retries on 503, falls back to gemini-1.5-flash */
 export async function generate(prompt: string, system?: string, maxTokens = 1200): Promise<string> {
-  const model = getModel(system)
-  const result = await model.generateContent({
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { maxOutputTokens: maxTokens },
-  })
-  return result.response.text()
+  const contents = [{ role: 'user' as const, parts: [{ text: prompt }] }]
+  const config   = { maxOutputTokens: maxTokens }
+  // Try primary model up to 2 times, then fallback
+  for (const [attempt, modelName] of [[0, MODEL], [1, MODEL], [2, FALLBACK_MODEL]] as [number, string][]) {
+    try {
+      const result = await getModel(modelName, system).generateContent({ contents, generationConfig: config })
+      return result.response.text()
+    } catch (e) {
+      if (is503(e) && attempt < 2) { await sleep(2000 * (attempt + 1)); continue }
+      throw e
+    }
+  }
+  throw new Error('AI unavailable')
 }
 
 /** Vision — analyze an image (base64) alongside a text prompt */
@@ -29,18 +44,24 @@ export async function generateWithImage(
   system?: string,
   maxTokens = 1000,
 ): Promise<string> {
-  const model = getModel(system)
-  const result = await model.generateContent({
-    contents: [{
-      role: 'user',
-      parts: [
-        { inlineData: { mimeType, data: imageBase64 } },
-        { text: prompt },
-      ],
-    }],
-    generationConfig: { maxOutputTokens: maxTokens },
-  })
-  return result.response.text()
+  const contents = [{
+    role: 'user' as const,
+    parts: [
+      { inlineData: { mimeType, data: imageBase64 } },
+      { text: prompt },
+    ],
+  }]
+  const config = { maxOutputTokens: maxTokens }
+  for (const [attempt, modelName] of [[0, MODEL], [1, MODEL], [2, FALLBACK_MODEL]] as [number, string][]) {
+    try {
+      const result = await getModel(modelName, system).generateContent({ contents, generationConfig: config })
+      return result.response.text()
+    } catch (e) {
+      if (is503(e) && attempt < 2) { await sleep(2000 * (attempt + 1)); continue }
+      throw e
+    }
+  }
+  throw new Error('AI unavailable')
 }
 
 export const SYSTEM_PROMPTS = {
