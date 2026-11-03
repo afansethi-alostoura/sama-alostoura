@@ -24,6 +24,12 @@ const PUBLIC_PATHS = new Set([
   '/api/test-ai',
 ])
 
+// Public path prefixes (no auth needed for anything starting with these)
+const PUBLIC_PREFIXES = [
+  '/verify/',       // public document verification pages
+  '/api/hr/letters/', // letter download/metadata for verify page
+]
+
 // Pages/APIs engineers cannot access (financial & admin-only)
 const ENGINEER_BLOCKED_PREFIXES = [
   '/reconciliation',
@@ -81,8 +87,11 @@ export async function middleware(request: NextRequest) {
   try {
     const { pathname } = request.nextUrl
 
-    // Always allow public paths
+    // Always allow public paths (exact match)
     if (PUBLIC_PATHS.has(pathname)) return NextResponse.next()
+
+    // Always allow public prefixes (verify pages, letter downloads)
+    if (PUBLIC_PREFIXES.some(p => pathname.startsWith(p))) return NextResponse.next()
 
     // Always allow Next.js internals
     if (pathname.startsWith('/_next/') || pathname.startsWith('/favicon')) {
