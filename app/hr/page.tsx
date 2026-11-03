@@ -7,6 +7,7 @@ import {
   ChevronDown, AlertCircle, Car, Building2, AlertTriangle,
   CheckCircle2, Tag, Hash, Wrench, ScanLine, Upload, Sparkles,
   RotateCcw, Save, ChevronRight, Info, Receipt, Download, FolderOpen, Loader2,
+  PenLine, Printer, ChevronUp, Type, AlignLeft,
 } from 'lucide-react'
 
 // ── Shared expiry helpers ─────────────────────────────────────────────────────
@@ -1407,6 +1408,261 @@ function ScanDocumentTab() {
 }
 
 // ════════════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
+// LETTER WRITER TAB
+// ════════════════════════════════════════════════════════════════════════════════
+
+function LetterWriterTab() {
+  const today = new Date().toISOString().slice(0, 10)
+  const [letterDate,  setLetterDate]  = useState(today)
+  const [refNo,       setRefNo]       = useState('')
+  const [toName,      setToName]      = useState('')
+  const [toAddress,   setToAddress]   = useState('')
+  const [subject,     setSubject]     = useState('')
+  const [body,        setBody]        = useState('')
+  const [signName,    setSignName]    = useState('')
+  const [signTitle,   setSignTitle]   = useState('')
+  const [fontSize,    setFontSize]    = useState(13)
+  const [pageCount,   setPageCount]   = useState(1)
+  const [printing,    setPrinting]    = useState(false)
+
+  const fmtDate = (d: string) => {
+    if (!d) return ''
+    const dt = new Date(d)
+    return dt.toLocaleDateString('en-AE', { day: '2-digit', month: 'long', year: 'numeric' })
+  }
+
+  function buildPageHtml(isFirst: boolean): string {
+    const fs = fontSize + 'px'
+    if (!isFirst) {
+      return '<div class="letter-page"><div class="letter-content" style="font-size:' + fs + '"></div></div>'
+    }
+    let inner = '<div class="letter-header-row">'
+    if (refNo) inner += '<div class="ref-no">Ref No: ' + refNo + '</div>'
+    inner += '<div class="letter-date">' + fmtDate(letterDate) + '</div></div>'
+    if (toName || toAddress) {
+      inner += '<div class="to-block">'
+      if (toName)    inner += '<div class="to-name">' + toName + '</div>'
+      if (toAddress) inner += '<div class="to-address">' + toAddress.replace(/\n/g, '<br/>') + '</div>'
+      inner += '</div>'
+    }
+    if (subject) inner += '<div class="subject-line"><strong>Subject: ' + subject + '</strong></div>'
+    inner += '<div class="body-text">' + body.replace(/\n/g, '<br/>') + '</div>'
+    inner += '<div class="sign-block">'
+    if (signName)  inner += '<div class="sign-name">' + signName + '</div>'
+    if (signTitle) inner += '<div class="sign-title">' + signTitle + '</div>'
+    inner += '</div>'
+    return '<div class="letter-page"><div class="letter-content" style="font-size:' + fs + '">' + inner + '</div></div>'
+  }
+
+  function handlePrint() {
+    setPrinting(true)
+    setTimeout(() => {
+      const pages = Array.from({ length: pageCount }, (_, i) => buildPageHtml(i === 0)).join('')
+      const css = [
+        '* { margin: 0; padding: 0; box-sizing: border-box; }',
+        "body { font-family: 'Times New Roman', Times, serif; background: #ccc; }",
+        '@page { size: A4; margin: 0; }',
+        '.letter-page { width: 210mm; height: 297mm; position: relative;',
+        "  background: url('/letterhead.jpg') no-repeat center center / cover;",
+        '  page-break-after: always; margin: 0 auto 10mm; }',
+        '.letter-page:last-child { page-break-after: avoid; margin-bottom: 0; }',
+        '.letter-content { position: absolute; top: 48mm; left: 20mm; right: 20mm; bottom: 28mm;',
+        "  font-family: 'Times New Roman', Times, serif; color: #1a1a1a; overflow: hidden; }",
+        '.letter-header-row { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8mm; }',
+        '.ref-no { font-size: 0.9em; color: #444; }',
+        '.letter-date { text-align: right; margin-left: auto; }',
+        '.to-block { margin-bottom: 8mm; line-height: 1.6; }',
+        '.to-name { font-weight: bold; }',
+        '.to-address { color: #333; }',
+        '.subject-line { margin-bottom: 8mm; padding-bottom: 2mm; border-bottom: 1px solid #ccc; }',
+        '.body-text { line-height: 1.8; white-space: pre-wrap; }',
+        '.sign-block { margin-top: 14mm; }',
+        '.sign-name { font-weight: bold; }',
+        '.sign-title { color: #555; font-size: 0.95em; }',
+        '@media print { body { background: none; } .letter-page { margin: 0; } }',
+      ].join('\n')
+      const title = 'Letter' + (refNo ? ' - ' + refNo : '')
+      const html = '<!DOCTYPE html><html><head><meta charset="utf-8"/><title>' + title +
+        '</title><style>' + css + '</style></head><body>' + pages + '</body></html>'
+      const win = window.open('', '_blank', 'width=900,height=1100')
+      if (win) {
+        win.document.write(html)
+        win.document.close()
+        win.onload = () => { win.focus(); win.print() }
+      }
+      setPrinting(false)
+    }, 50)
+  }
+
+  const previewPages = Array.from({ length: pageCount }, (_, i) => i)
+
+  return (
+    <div className="max-w-5xl mx-auto space-y-5">
+      {/* Toolbar */}
+      <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Type className="w-4 h-4 text-slate-400" />
+            <span className="text-xs text-slate-500 font-medium">Font Size</span>
+            <input
+              type="range" min={10} max={18} value={fontSize}
+              onChange={e => setFontSize(Number(e.target.value))}
+              className="w-24"
+            />
+            <span className="text-xs font-mono text-slate-700 w-6">{fontSize}</span>
+          </div>
+          <div className="w-px h-5 bg-slate-200"/>
+          <div className="flex items-center gap-2">
+            <AlignLeft className="w-4 h-4 text-slate-400" />
+            <span className="text-xs text-slate-500 font-medium">Pages</span>
+            <button onClick={() => setPageCount(p => Math.max(1, p - 1))}
+              className="w-6 h-6 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 text-sm flex items-center justify-center font-bold">−</button>
+            <span className="w-6 text-center text-sm font-bold text-slate-700">{pageCount}</span>
+            <button onClick={() => setPageCount(p => Math.min(20, p + 1))}
+              className="w-6 h-6 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 text-sm flex items-center justify-center font-bold">+</button>
+          </div>
+          <div className="ml-auto">
+            <button
+              onClick={handlePrint}
+              disabled={printing}
+              className="flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-60"
+            >
+              <Printer className="w-4 h-4" />
+              {printing ? 'Preparing…' : 'Print / Save PDF'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex gap-5">
+        {/* Letter Fields */}
+        <div className="w-72 shrink-0 space-y-3">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Letter Details</p>
+            <div>
+              <label className="text-xs text-slate-500 mb-1 block">Date</label>
+              <input type="date" value={letterDate} onChange={e => setLetterDate(e.target.value)}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+            </div>
+            <div>
+              <label className="text-xs text-slate-500 mb-1 block">Reference No.</label>
+              <input value={refNo} onChange={e => setRefNo(e.target.value)} placeholder="e.g. SA/HR/2024/001"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Addressed To</p>
+            <div>
+              <label className="text-xs text-slate-500 mb-1 block">Name / Organization</label>
+              <input value={toName} onChange={e => setToName(e.target.value)} placeholder="To whom it may concern"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+            </div>
+            <div>
+              <label className="text-xs text-slate-500 mb-1 block">Address</label>
+              <textarea value={toAddress} onChange={e => setToAddress(e.target.value)} rows={3} placeholder="City, Country"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"/>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Subject</p>
+            <input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Letter subject…"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Signature</p>
+            <div>
+              <label className="text-xs text-slate-500 mb-1 block">Name</label>
+              <input value={signName} onChange={e => setSignName(e.target.value)} placeholder="Your name"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+            </div>
+            <div>
+              <label className="text-xs text-slate-500 mb-1 block">Title / Position</label>
+              <input value={signTitle} onChange={e => setSignTitle(e.target.value)} placeholder="General Manager"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+            </div>
+          </div>
+        </div>
+
+        {/* Live Preview */}
+        <div className="flex-1 space-y-4">
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Live Preview</p>
+          {previewPages.map(i => (
+            <div key={i}
+              className="relative shadow-xl rounded-sm overflow-hidden"
+              style={{ width: '100%', paddingTop: '141.4%' }}
+            >
+              <div
+                className="absolute inset-0"
+                style={{
+                  backgroundImage: "url('/letterhead.jpg')",
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center',
+                }}
+              />
+              {i === 0 && (
+                <div
+                  className="absolute"
+                  style={{
+                    top: '16.2%', left: '9.5%', right: '9.5%', bottom: '9.4%',
+                    fontFamily: "'Times New Roman', Times, serif",
+                    fontSize: `${fontSize * 0.52}px`,
+                    color: '#1a1a1a',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3%' }}>
+                    {refNo && <span style={{ color: '#555' }}>Ref No: {refNo}</span>}
+                    <span style={{ marginLeft: 'auto' }}>{fmtDate(letterDate)}</span>
+                  </div>
+                  {(toName || toAddress) && (
+                    <div style={{ marginBottom: '3%', lineHeight: 1.5 }}>
+                      {toName    && <div style={{ fontWeight: 'bold' }}>{toName}</div>}
+                      {toAddress && <div style={{ color: '#444' }}>{toAddress}</div>}
+                    </div>
+                  )}
+                  {subject && (
+                    <div style={{ marginBottom: '3%', paddingBottom: '1%', borderBottom: '1px solid #ccc', fontWeight: 600 }}>
+                      Subject: {subject}
+                    </div>
+                  )}
+                  <div style={{ lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
+                    <textarea
+                      value={body}
+                      onChange={e => setBody(e.target.value)}
+                      placeholder="Type your letter content here…"
+                      style={{
+                        width: '100%', height: '55%',
+                        border: 'none', outline: 'none',
+                        background: 'transparent',
+                        fontFamily: 'inherit', fontSize: 'inherit',
+                        color: 'inherit', resize: 'none',
+                        lineHeight: 1.7,
+                      }}
+                    />
+                  </div>
+                  {(signName || signTitle) && (
+                    <div style={{ marginTop: '5%' }}>
+                      {signName  && <div style={{ fontWeight: 'bold' }}>{signName}</div>}
+                      {signTitle && <div style={{ color: '#555', fontSize: '0.95em' }}>{signTitle}</div>}
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="absolute bottom-1 right-2 text-xs text-slate-400 opacity-50">
+                Page {i + 1}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ROOT PAGE
 // ════════════════════════════════════════════════════════════════════════════════
 
@@ -1416,6 +1672,7 @@ const TABS = [
   { id: 'company-docs', label: 'Company Documents',   icon: Building2 },
   { id: 'scan',         label: 'Scan Document',       icon: ScanLine  },
   { id: 'salary',       label: 'Salary Card',         icon: Receipt   },
+  { id: 'letter',       label: 'Letter Writer',       icon: PenLine   },
 ] as const
 
 type TabId = typeof TABS[number]['id']
@@ -1441,7 +1698,7 @@ export default function HRPage() {
               tab === id
                 ? 'border-blue-600 text-blue-700'
                 : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
-            } ${id === 'scan' ? 'ml-auto' : ''}`}
+            }`}
           >
             <Icon className="w-4 h-4"/>
             {label}
@@ -1470,6 +1727,7 @@ export default function HRPage() {
           </Link>
         </div>
       )}
+      {tab === 'letter' && <LetterWriterTab/>}
     </div>
   )
 }
