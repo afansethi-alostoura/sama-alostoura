@@ -15,15 +15,16 @@ interface Result {
   total_advances: number; net_payment: number
   qb_lines: QBLine[]
 }
+interface Project { id: string; name: string; qb_class_name?: string }
+const STATUS_OPTIONS = ['worked', 'absent', 'sunday', 'off']
 
-const DEFAULT_PROJECT_MAP: Record<string, string> = {
-  'Khalid':       'KHALID MOHD ALAMERI',
-  'Fahid':        'Fahad Bin Rashed Bin Essa Bin Abdull',
-  'Mansoor':      'Mansoor',
-  'Madinat Hind': 'Madinat Hind',
-}
-const PROJECT_OPTIONS = ['Khalid', 'Fahid', 'Mansoor', 'Madinat Hind']
-const STATUS_OPTIONS  = ['worked', 'absent', 'sunday', 'off']
+// fallback if projects API returns nothing
+const FALLBACK_PROJECTS: Project[] = [
+  { id: 'khalid',  name: 'Khalid',       qb_class_name: 'KHALID MOHD ALAMERI' },
+  { id: 'fahid',   name: 'Fahid',        qb_class_name: 'Fahad Bin Rashed Bin Essa Bin Abdull' },
+  { id: 'mansoor', name: 'Mansoor',      qb_class_name: 'Mansoor' },
+  { id: 'madinat', name: 'Madinat Hind', qb_class_name: 'Madinat Hind' },
+]
 
 function getSundays(year: number, month: number): Set<number> {
   const s = new Set<number>()
@@ -32,7 +33,7 @@ function getSundays(year: number, month: number): Set<number> {
   return s
 }
 
-function buildManualAttendance(cardMonth: string): AttendanceRow[] {
+function buildManualAttendance(cardMonth: string, firstProject: string | null): AttendanceRow[] {
   if (!cardMonth) return []
   const [y, m] = cardMonth.split('-').map(Number)
   const days = new Date(y, m, 0).getDate()
@@ -40,7 +41,7 @@ function buildManualAttendance(cardMonth: string): AttendanceRow[] {
   const monthShort = new Date(y, m - 1).toLocaleString('en', { month: 'short' })
   return Array.from({ length: days }, (_, i) => {
     const d = i + 1
-    return { date: `${d}-${monthShort}`, project: sundays.has(d) ? null : PROJECT_OPTIONS[0], status: sundays.has(d) ? 'sunday' : 'worked', advance: 0 }
+    return { date: `${d}-${monthShort}`, project: sundays.has(d) ? null : firstProject, status: sundays.has(d) ? 'sunday' : 'worked', advance: 0 }
   })
 }
 
@@ -59,6 +60,7 @@ export default function SalaryCardPage() {
   const [imageBase64, setImageBase64]   = useState<string>('')
   const [mimeType, setMimeType]         = useState<string>('image/jpeg')
 
+  const [projects,     setProjects]     = useState<Project[]>(FALLBACK_PROJECTS)
   const [workers,      setWorkers]      = useState<Worker[]>([])
   const [selectedId,   setSelectedId]   = useState<number | null>(null)
   const [showAdd,      setShowAdd]      = useState(false)
@@ -87,6 +89,9 @@ export default function SalaryCardPage() {
 
   useEffect(() => {
     fetch('/api/hr/workers').then(r => r.json()).then(d => { if (Array.isArray(d)) setWorkers(d) }).catch(() => {})
+    fetch('/api/projects').then(r => r.json()).then((d: Project[]) => {
+      if (Array.isArray(d) && d.length > 0) setProjects(d)
+    }).catch(() => {})
   }, [])
 
   // Sync editable attendance when result arrives (upload mode)
@@ -94,10 +99,10 @@ export default function SalaryCardPage() {
     if (result) setEditedAttendance(result.attendance.map(r => ({ ...r })))
   }, [result])
 
-  // Manual mode: rebuild attendance grid when month changes
+  // Manual mode: rebuild attendance grid when month or projects change
   useEffect(() => {
-    if (mode === 'manual') setEditedAttendance(buildManualAttendance(cardMonth))
-  }, [cardMonth, mode])
+    if (mode === 'manual') setEditedAttendance(buildManualAttendance(cardMonth, projects[0]?.name ?? null))
+  }, [cardMonth, mode, projects])
 
   // Derived month info for manual mode
   const manualMonthInfo = useMemo(() => {
@@ -137,7 +142,7 @@ export default function SalaryCardPage() {
       if (idx !== i) return r
       const updated = { ...r, [field]: value }
       if (field === 'status' && value !== 'worked') updated.project = null
-      if (field === 'status' && value === 'worked' && !updated.project) updated.project = PROJECT_OPTIONS[0]
+      if (field === 'status' && value === 'worked' && !updated.project) updated.project = projects[0]?.name ?? null
       return updated
     }))
   }
@@ -213,7 +218,8 @@ export default function SalaryCardPage() {
     const header = ['Date','Day','Category','Employee','Daily Rate (AED)','Tax','Project/Class','Advance (AED)']
     const worked = editedAttendance.filter(d => d.status === 'worked')
     const rows = worked.map(d => {
-      const fullClass = DEFAULT_PROJECT_MAP[d.project ?? ''] ?? d.project ?? ''
+      const proj = projects.find(p => p.name === d.project)
+      const fullClass = proj?.qb_class_name ?? d.project ?? ''
       return [paymentDate, d.date, 'Wage expenses', employeeName, computed.dailyRate.toFixed(2), 'ZR Zero Rated', fullClass, d.advance > 0 ? d.advance.toFixed(2) : '']
     })
     const totalsRow = ['','','TOTAL','', (worked.length * computed.dailyRate).toFixed(2), '','', computed.totalAdvances.toFixed(2)]
@@ -289,7 +295,7 @@ export default function SalaryCardPage() {
             <Camera className="w-4 h-4" /> Card Upload
           </button>
           <button
-            onClick={() => { setMode('manual'); setSaved(false); setError(''); setEditedAttendance(buildManualAttendance(cardMonth)) }}
+            onClick={() => { setMode('manual'); setSaved(false); setError(''); setEditedAttendance(buildManualAttendance(cardMonth, projects[0]?.name ?? null)) }}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors ${mode === 'manual' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}>
             <ClipboardList className="w-4 h-4" /> Manual Entry
           </button>
@@ -511,7 +517,11 @@ export default function SalaryCardPage() {
                                     {row.status === 'worked' && (
                                       <select value={row.project ?? ''} onChange={e => updateRow(i, 'project', e.target.value)}
                                         className="px-1 py-0.5 rounded border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-white text-xs">
-                                        {PROJECT_OPTIONS.map(p => <option key={p} value={p}>{p}</option>)}
+                                        {projects.map(p => (
+                                          <option key={p.id} value={p.name}>
+                                            {p.name}{p.qb_class_name && p.qb_class_name !== p.name ? ` — ${p.qb_class_name}` : ''}
+                                          </option>
+                                        ))}
                                       </select>
                                     )}
                                   </div>
