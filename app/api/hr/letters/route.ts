@@ -99,13 +99,14 @@ export async function POST(req: NextRequest) {
       x: stampX + 74, y: stampY + 63, size: fontSize,
       color: rgb(0.05, 0.3, 0.6),
     })
-    lastPage.drawText('L.L.C  — DUBAI, UAE', {
+    lastPage.drawText('L.L.C - DUBAI, UAE', {
       x: stampX + 74, y: stampY + 54, size: fontSize,
       color: rgb(0.05, 0.3, 0.6),
     })
-    lastPage.drawText('─────────────────', {
-      x: stampX + 74, y: stampY + 47, size: fontSize,
-      color: rgb(0.6, 0.6, 0.6),
+    lastPage.drawLine({
+      start: { x: stampX + 74, y: stampY + 46 },
+      end:   { x: stampX + stampW - 4, y: stampY + 46 },
+      thickness: 0.5, color: rgb(0.75, 0.75, 0.75),
     })
     lastPage.drawText('VERIFIED DOCUMENT', {
       x: stampX + 74, y: stampY + 38, size: fontSize,
