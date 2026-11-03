@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { PDFDocument, rgb, degrees } from 'pdf-lib'
 import QRCode from 'qrcode'
-import path from 'path'
-import fs from 'fs'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,18 +21,36 @@ async function ensureTable() {
 }
 
 function genId() {
-  const yr = new Date().getFullYear()
+  const yr   = new Date().getFullYear()
   const rand = Math.random().toString(36).slice(2, 7).toUpperCase()
   return `SA-${yr}-${rand}`
 }
 
-function readPublicFile(name: string): Buffer | null {
+// 9-point grid: position id → (xPct, yPct) from bottom-left of page
+const POS_MAP: Record<string, [number, number]> = {
+  TL: [0.04, 0.82], TC: [0.37, 0.82], TR: [0.70, 0.82],
+  ML: [0.04, 0.46], MC: [0.37, 0.46], MR: [0.70, 0.46],
+  BL: [0.04, 0.04], BC: [0.37, 0.04], BR: [0.70, 0.04],
+}
+
+async function loadAsset(type: string): Promise<Buffer | null> {
   try {
-    const p = path.join(process.cwd(), 'public', name)
-    return fs.readFileSync(p)
-  } catch {
-    return null
-  }
+    const rows = await query(`SELECT file_data FROM hr_letter_assets WHERE type=$1`, [type])
+    if (!rows.length) return null
+    return Buffer.from((rows[0] as { file_data: string }).file_data, 'base64')
+  } catch { return null }
+}
+
+async function embedAsset(pdfDoc: PDFDocument, buf: Buffer, mime: string) {
+  if (mime.includes('png') || buf[0] === 0x89) return pdfDoc.embedPng(buf)
+  return pdfDoc.embedJpg(buf)
+}
+
+async function getMime(type: string): Promise<string> {
+  try {
+    const rows = await query(`SELECT mime_type FROM hr_letter_assets WHERE type=$1`, [type])
+    return rows.length ? (rows[0] as { mime_type: string }).mime_type : 'image/png'
+  } catch { return 'image/png' }
 }
 
 export async function GET() {
@@ -53,7 +69,8 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     await ensureTable()
-    const form        = await req.formData()
+    const form = await req.formData()
+
     const file        = form.get('file')        as File | null
     const title       = (form.get('title')       as string) || ''
     const issued_to   = (form.get('issued_to')   as string) || ''
@@ -61,79 +78,78 @@ export async function POST(req: NextRequest) {
     const ref_no      = (form.get('ref_no')      as string) || ''
     const letter_date = (form.get('letter_date') as string) || new Date().toISOString().slice(0, 10)
 
+    const addSig   = form.get('add_signature') === 'true'
+    const addStamp = form.get('add_stamp')     === 'true'
+    const addQr    = form.get('add_qr')        !== 'false'   // default true
+    const sigPos   = (form.get('sig_pos')   as string) || 'BL'
+    const stPos    = (form.get('stamp_pos') as string) || 'BR'
+    const qrPos    = (form.get('qr_pos')    as string) || 'BR'
+
     if (!file) return NextResponse.json({ error: 'PDF file required' }, { status: 400 })
     if (file.size > 20 * 1024 * 1024) return NextResponse.json({ error: 'Max 20 MB' }, { status: 400 })
 
-    const id = genId()
-    const siteUrl  = req.headers.get('origin') || 'https://sama-alostoura.vercel.app'
+    const id        = genId()
+    const siteUrl   = req.headers.get('origin') || 'https://sama-alostoura.vercel.app'
     const verifyUrl = `${siteUrl}/verify/${id}`
 
-    // Load original PDF
-    const bytes   = await file.arrayBuffer()
-    const pdfDoc  = await PDFDocument.load(bytes)
-    const pages   = pdfDoc.getPages()
+    const bytes    = await file.arrayBuffer()
+    const pdfDoc   = await PDFDocument.load(bytes)
+    const pages    = pdfDoc.getPages()
     const lastPage = pages[pages.length - 1]
     const { width, height } = lastPage.getSize()
 
-    // ── QR code (PNG) ────────────────────────────────────────────────────────
-    const qrDataUrl = await QRCode.toDataURL(verifyUrl, { width: 150, margin: 1 })
-    const qrBytes   = Buffer.from(qrDataUrl.replace('data:image/png;base64,', ''), 'base64')
-    const qrImage   = await pdfDoc.embedPng(qrBytes)
-
-    // ── Company round stamp (JPG) ─────────────────────────────────────────────
-    const stampBytes = readPublicFile('stamp.jpg')
-    const stampImage = stampBytes ? await pdfDoc.embedJpg(stampBytes) : null
-
-    // ── Signature (JPG) ───────────────────────────────────────────────────────
-    const sigBytes = readPublicFile('signature.jpg')
-    const sigImage = sigBytes ? await pdfDoc.embedJpg(sigBytes) : null
-
-    // ── Layout constants (points) ─────────────────────────────────────────────
-    // Bottom band: signature left, round stamp centre-right, QR top-right corner
-    const margin  = 36        // 12.7mm from edge
-    const sigW    = 110
-    const sigH    = 55
-    const sigX    = margin
-    const sigY    = margin
-
-    const stW     = 90
-    const stH     = 90
-    const stX     = width / 2 - stW / 2   // centred
-    const stY     = margin - 5
-
-    const qrSize  = 72
-    const qrX     = width - margin - qrSize
-    const qrY     = margin + 4
-
-    // ── Draw signature ────────────────────────────────────────────────────────
-    if (sigImage) {
-      lastPage.drawImage(sigImage, { x: sigX, y: sigY, width: sigW, height: sigH })
+    const resolve = (posId: string, w: number, h: number) => {
+      const [xp, yp] = POS_MAP[posId] ?? POS_MAP['BL']
+      return { x: xp * width, y: yp * height + (yp < 0.3 ? 0 : -h) }
     }
 
-    // ── Draw round stamp ─────────────────────────────────────────────────────
-    if (stampImage) {
-      lastPage.drawImage(stampImage, { x: stX, y: stY, width: stW, height: stH, opacity: 0.88 })
+    // ── Signature ────────────────────────────────────────────────────────────
+    if (addSig) {
+      const sigBuf  = await loadAsset('signature')
+      const sigMime = await getMime('signature')
+      if (sigBuf) {
+        const sigImg = await embedAsset(pdfDoc, sigBuf, sigMime)
+        const sigW = 110, sigH = 55
+        const { x, y } = resolve(sigPos, sigW, sigH)
+        lastPage.drawImage(sigImg, { x, y, width: sigW, height: sigH })
+      }
     }
 
-    // ── Draw QR code ──────────────────────────────────────────────────────────
-    lastPage.drawImage(qrImage, { x: qrX, y: qrY, width: qrSize, height: qrSize })
+    // ── Round stamp ───────────────────────────────────────────────────────────
+    if (addStamp) {
+      const stBuf  = await loadAsset('stamp')
+      const stMime = await getMime('stamp')
+      if (stBuf) {
+        const stImg = await embedAsset(pdfDoc, stBuf, stMime)
+        const stW = 90, stH = 90
+        const { x, y } = resolve(stPos, stW, stH)
+        lastPage.drawImage(stImg, { x, y, width: stW, height: stH, opacity: 0.9 })
+      }
+    }
 
-    // Small "Scan to verify" label under QR
-    lastPage.drawText('Scan to verify', {
-      x: qrX + 8, y: qrY - 9, size: 6, color: rgb(0.45, 0.45, 0.45),
-    })
-    lastPage.drawText(id, {
-      x: qrX - 2, y: qrY - 17, size: 5, color: rgb(0.35, 0.35, 0.35),
-    })
+    // ── QR code ───────────────────────────────────────────────────────────────
+    if (addQr) {
+      const qrDataUrl = await QRCode.toDataURL(verifyUrl, { width: 150, margin: 1 })
+      const qrBytes   = Buffer.from(qrDataUrl.replace('data:image/png;base64,', ''), 'base64')
+      const qrImg     = await pdfDoc.embedPng(qrBytes)
+      const qrSize    = 72
+      const { x, y } = resolve(qrPos, qrSize, qrSize)
+      lastPage.drawImage(qrImg, { x, y, width: qrSize, height: qrSize })
+      lastPage.drawText('Scan to verify', {
+        x: x + 6, y: y - 10, size: 6, color: rgb(0.4, 0.4, 0.4),
+      })
+      lastPage.drawText(id, {
+        x: x - 2, y: y - 18, size: 5, color: rgb(0.35, 0.35, 0.35),
+      })
+    }
 
-    // ── Subtle diagonal watermark ─────────────────────────────────────────────
+    // ── Subtle watermark ─────────────────────────────────────────────────────
     lastPage.drawText('OFFICIALLY ISSUED', {
       x: width / 2 - 100, y: height / 2 - 20,
       size: 42, color: rgb(0.88, 0.88, 0.93),
       opacity: 0.07, rotate: degrees(45),
     })
 
-    // ── Save & store ──────────────────────────────────────────────────────────
     const stampedBytes = await pdfDoc.save()
     const fileData     = Buffer.from(stampedBytes).toString('base64')
 

@@ -1417,6 +1417,84 @@ interface SavedLetter {
   issued_to: string | null; issued_by: string | null; letter_date: string; created_at: string
 }
 
+type PosId = 'TL'|'TC'|'TR'|'ML'|'MC'|'MR'|'BL'|'BC'|'BR'
+
+const POS_GRID: PosId[][] = [
+  ['TL','TC','TR'],
+  ['ML','MC','MR'],
+  ['BL','BC','BR'],
+]
+
+function PosPicker({ value, onChange, color }: { value: PosId; onChange: (p: PosId) => void; color: string }) {
+  return (
+    <div className="inline-grid grid-cols-3 gap-0.5 bg-slate-100 rounded-lg p-1">
+      {POS_GRID.flat().map(pos => (
+        <button key={pos} onClick={() => onChange(pos)}
+          className={`w-6 h-6 rounded text-[9px] font-bold transition-all ${
+            value === pos
+              ? `${color} text-white shadow-sm scale-110`
+              : 'bg-white text-slate-300 hover:text-slate-500 hover:bg-slate-50'
+          }`}
+          title={pos}
+        />
+      ))}
+    </div>
+  )
+}
+
+function AssetUploader({ type, label, preview, onUploaded, onDeleted }: {
+  type: 'signature'|'stamp'; label: string; preview: string|null
+  onUploaded: () => void; onDeleted: () => void
+}) {
+  const ref = useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = useState(false)
+
+  async function upload(f: File) {
+    setUploading(true)
+    const fd = new FormData()
+    fd.append('type', type)
+    fd.append('file', f)
+    await fetch('/api/hr/letters/assets', { method: 'POST', body: fd })
+    setUploading(false)
+    onUploaded()
+  }
+
+  async function del() {
+    await fetch('/api/hr/letters/assets?type=' + type, { method: 'DELETE' })
+    onDeleted()
+  }
+
+  return (
+    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center gap-3">
+      <div
+        onClick={() => ref.current?.click()}
+        className="w-24 h-14 border-2 border-dashed border-slate-300 rounded-lg flex items-center justify-center cursor-pointer hover:border-blue-400 overflow-hidden bg-white shrink-0"
+        style={{ backgroundImage: 'repeating-conic-gradient(#f1f5f9 0% 25%, white 0% 50%) 0 0 / 8px 8px' }}
+      >
+        <input ref={ref} type="file" accept="image/png,image/jpeg" className="hidden"
+          onChange={e => { const f = e.target.files?.[0]; if (f) upload(f) }}/>
+        {uploading ? (
+          <Loader2 className="w-5 h-5 text-blue-400 animate-spin"/>
+        ) : preview ? (
+          <img src={preview} alt={label} className="max-w-full max-h-full object-contain"/>
+        ) : (
+          <Upload className="w-5 h-5 text-slate-300"/>
+        )}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-slate-700">{label}</p>
+        <p className="text-[11px] text-slate-400 mt-0.5">PNG with transparent background recommended</p>
+        <div className="flex gap-2 mt-2">
+          <button onClick={() => ref.current?.click()} className="text-[11px] text-blue-600 hover:underline font-medium">
+            {preview ? 'Replace' : 'Upload PNG'}
+          </button>
+          {preview && <button onClick={del} className="text-[11px] text-red-500 hover:underline">Remove</button>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function LetterWriterTab() {
   const today = new Date().toISOString().slice(0, 10)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -1433,6 +1511,27 @@ function LetterWriterTab() {
   const [letters,     setLetters]     = useState<SavedLetter[]>([])
   const [loadingList, setLoadingList] = useState(true)
 
+  // stamp/signature options
+  const [addSig,   setAddSig]   = useState(false)
+  const [addStamp, setAddStamp] = useState(false)
+  const [addQr,    setAddQr]    = useState(true)
+  const [sigPos,   setSigPos]   = useState<PosId>('BL')
+  const [stPos,    setStPos]    = useState<PosId>('BR')
+  const [qrPos,    setQrPos]    = useState<PosId>('BR')
+
+  // asset previews
+  const [sigPreview,   setSigPreview]   = useState<string|null>(null)
+  const [stampPreview, setStampPreview] = useState<string|null>(null)
+
+  const loadAssetPreview = useCallback(async (type: 'signature'|'stamp') => {
+    try {
+      const r = await fetch('/api/hr/letters/assets?type=' + type)
+      const d = await r.json()
+      if (type === 'signature') setSigPreview(d.exists ? d.data_url : null)
+      else setStampPreview(d.exists ? d.data_url : null)
+    } catch {}
+  }, [])
+
   const loadLetters = useCallback(async () => {
     setLoadingList(true)
     try {
@@ -1442,7 +1541,11 @@ function LetterWriterTab() {
     setLoadingList(false)
   }, [])
 
-  useEffect(() => { loadLetters() }, [loadLetters])
+  useEffect(() => {
+    loadLetters()
+    loadAssetPreview('signature')
+    loadAssetPreview('stamp')
+  }, [loadLetters, loadAssetPreview])
 
   async function handleUpload() {
     if (!file) { setError('Please select a PDF file first'); return }
@@ -1455,6 +1558,12 @@ function LetterWriterTab() {
       fd.append('issued_to', issuedTo)
       fd.append('issued_by', issuedBy)
       fd.append('letter_date', letterDate)
+      fd.append('add_signature', String(addSig))
+      fd.append('add_stamp',     String(addStamp))
+      fd.append('add_qr',        String(addQr))
+      fd.append('sig_pos',       sigPos)
+      fd.append('stamp_pos',     stPos)
+      fd.append('qr_pos',        qrPos)
       const r = await fetch('/api/hr/letters', { method: 'POST', body: fd })
       const data = await r.json()
       if (!r.ok) { setError(data.error || 'Upload failed'); return }
@@ -1480,6 +1589,21 @@ function LetterWriterTab() {
   return (
     <div className="max-w-4xl mx-auto space-y-6">
 
+      {/* Assets Panel */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-3">
+        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Signature &amp; Stamp Assets</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <AssetUploader type="signature" label="Signature"
+            preview={sigPreview}
+            onUploaded={() => loadAssetPreview('signature')}
+            onDeleted={() => setSigPreview(null)}/>
+          <AssetUploader type="stamp" label="Company Stamp"
+            preview={stampPreview}
+            onUploaded={() => loadAssetPreview('stamp')}
+            onDeleted={() => setStampPreview(null)}/>
+        </div>
+      </div>
+
       {/* Upload Card */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-5">
         <div className="flex items-center gap-3">
@@ -1488,7 +1612,7 @@ function LetterWriterTab() {
           </div>
           <div>
             <h2 className="font-bold text-slate-800">Upload Official Letter</h2>
-            <p className="text-xs text-slate-400 mt-0.5">Write in Word → Export as PDF → Upload here to get QR stamp &amp; verification</p>
+            <p className="text-xs text-slate-400 mt-0.5">Write in Word → Export as PDF → Upload here to get stamp &amp; verification</p>
           </div>
         </div>
 
@@ -1546,6 +1670,72 @@ function LetterWriterTab() {
               <p className="text-xs text-slate-400 mt-1">Write your letter in Word → Save as PDF → Upload here</p>
             </div>
           )}
+        </div>
+
+        {/* Stamp / Signature / QR options */}
+        <div className="border border-slate-200 rounded-xl p-4 space-y-4 bg-slate-50">
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">What to add to this document</p>
+
+          {/* Signature row */}
+          <div className="flex items-center gap-4 flex-wrap">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" checked={addSig} onChange={e => setAddSig(e.target.checked)}
+                className="w-4 h-4 rounded accent-blue-600"/>
+              <span className="text-sm font-semibold text-slate-700">Signature</span>
+              {sigPreview
+                ? <img src={sigPreview} alt="sig" className="h-6 object-contain"/>
+                : <span className="text-[11px] text-amber-500 font-medium">No signature uploaded</span>}
+            </label>
+            {addSig && (
+              <div className="flex items-center gap-2 ml-auto">
+                <span className="text-xs text-slate-500">Position:</span>
+                <PosPicker value={sigPos} onChange={setSigPos} color="bg-blue-500"/>
+              </div>
+            )}
+          </div>
+
+          {/* Stamp row */}
+          <div className="flex items-center gap-4 flex-wrap">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" checked={addStamp} onChange={e => setAddStamp(e.target.checked)}
+                className="w-4 h-4 rounded accent-blue-600"/>
+              <span className="text-sm font-semibold text-slate-700">Company Stamp</span>
+              {stampPreview
+                ? <img src={stampPreview} alt="stamp" className="h-6 object-contain"/>
+                : <span className="text-[11px] text-amber-500 font-medium">No stamp uploaded</span>}
+            </label>
+            {addStamp && (
+              <div className="flex items-center gap-2 ml-auto">
+                <span className="text-xs text-slate-500">Position:</span>
+                <PosPicker value={stPos} onChange={setStPos} color="bg-indigo-500"/>
+              </div>
+            )}
+          </div>
+
+          {/* QR code row */}
+          <div className="flex items-center gap-4 flex-wrap">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" checked={addQr} onChange={e => setAddQr(e.target.checked)}
+                className="w-4 h-4 rounded accent-blue-600"/>
+              <span className="text-sm font-semibold text-slate-700">QR Verification Code</span>
+              <span className="text-[11px] text-slate-400">Links to public verify page</span>
+            </label>
+            {addQr && (
+              <div className="flex items-center gap-2 ml-auto">
+                <span className="text-xs text-slate-500">Position:</span>
+                <PosPicker value={qrPos} onChange={setQrPos} color="bg-emerald-500"/>
+              </div>
+            )}
+          </div>
+
+          {/* Position legend */}
+          <div className="text-[10px] text-slate-400 flex gap-3 flex-wrap pt-1 border-t border-slate-200">
+            <span className="font-semibold">Grid guide:</span>
+            <span>Top row = top of page</span>
+            <span>Middle row = centre</span>
+            <span>Bottom row = bottom</span>
+            <span>Left / Centre / Right column</span>
+          </div>
         </div>
 
         {error && (
