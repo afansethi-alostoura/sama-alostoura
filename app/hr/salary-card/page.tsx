@@ -519,7 +519,7 @@ export default function SalaryCardPage() {
                                         className="px-1 py-0.5 rounded border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-white text-xs">
                                         {projects.map(p => (
                                           <option key={p.id} value={p.name}>
-                                            {p.name}{p.qb_class_name && p.qb_class_name !== p.name ? ` — ${p.qb_class_name}` : ''}
+                                            {p.qb_class_name ?? p.name}
                                           </option>
                                         ))}
                                       </select>
