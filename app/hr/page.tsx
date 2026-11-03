@@ -6,7 +6,7 @@ import {
   Pencil, Trash2, X, Shield, CreditCard, FileText, UserCheck,
   ChevronDown, AlertCircle, Car, Building2, AlertTriangle,
   CheckCircle2, Tag, Hash, Wrench, ScanLine, Upload, Sparkles,
-  RotateCcw, Save, ChevronRight, Info, Receipt,
+  RotateCcw, Save, ChevronRight, Info, Receipt, Download, FolderOpen, Loader2,
 } from 'lucide-react'
 
 // ── Shared expiry helpers ─────────────────────────────────────────────────────
@@ -167,6 +167,91 @@ function EmpModal({ initial, onSave, onClose }: {
   )
 }
 
+const DOC_LABELS = ['Visa', 'Emirates ID', 'Passport', 'Labour Card', 'Contract', 'Other']
+
+interface HrDoc { id: string; label: string | null; file_name: string; file_type: string; file_size: number; created_at: string }
+
+function DocPanel({ entityId, entityType }: { entityId: string; entityType: string }) {
+  const [docs, setDocs]       = useState<HrDoc[]>([])
+  const [loading, setLoading] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [label, setLabel]     = useState('Visa')
+  const fileRef               = useRef<HTMLInputElement>(null)
+
+  async function loadDocs() {
+    setLoading(true)
+    try {
+      const r = await fetch(`/api/hr/documents?entity_id=${entityId}&entity_type=${entityType}`)
+      const d = await r.json(); if (Array.isArray(d)) setDocs(d)
+    } finally { setLoading(false) }
+  }
+
+  useEffect(() => { loadDocs() }, [entityId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function upload(file: File) {
+    setUploading(true)
+    try {
+      const form = new FormData()
+      form.append('entity_id', entityId)
+      form.append('entity_type', entityType)
+      form.append('label', label)
+      form.append('file', file)
+      await fetch('/api/hr/documents', { method: 'POST', body: form })
+      await loadDocs()
+    } finally { setUploading(false) }
+  }
+
+  async function del(id: string) {
+    await fetch(`/api/hr/documents/${id}`, { method: 'DELETE' })
+    setDocs(d => d.filter(x => x.id !== id))
+  }
+
+  return (
+    <div className="border-t border-slate-100 px-4 py-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1"><FolderOpen className="w-3 h-3"/>Documents</span>
+        <div className="flex items-center gap-1.5">
+          <select value={label} onChange={e => setLabel(e.target.value)}
+            className="text-[10px] border border-slate-200 rounded-md px-1.5 py-0.5 bg-white text-slate-600">
+            {DOC_LABELS.map(l => <option key={l} value={l}>{l}</option>)}
+          </select>
+          <button onClick={() => fileRef.current?.click()} disabled={uploading}
+            className="flex items-center gap-1 text-[10px] font-medium bg-blue-50 text-blue-600 hover:bg-blue-100 px-2 py-1 rounded-md transition-colors disabled:opacity-50">
+            {uploading ? <Loader2 className="w-3 h-3 animate-spin"/> : <Upload className="w-3 h-3"/>} Upload
+          </button>
+          <input ref={fileRef} type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) { upload(f); e.target.value = '' } }} />
+        </div>
+      </div>
+      {loading ? (
+        <p className="text-[10px] text-slate-400">Loading…</p>
+      ) : docs.length === 0 ? (
+        <p className="text-[10px] text-slate-400">No documents uploaded yet</p>
+      ) : (
+        <div className="space-y-1">
+          {docs.map(doc => (
+            <div key={doc.id} className="flex items-center justify-between gap-2 bg-slate-50 rounded-lg px-2.5 py-1.5">
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold text-slate-700 truncate">{doc.label ?? 'Document'}</p>
+                <p className="text-[9px] text-slate-400 truncate">{doc.file_name} · {Math.round((doc.file_size||0)/1024)}KB</p>
+              </div>
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <a href={`/api/hr/documents/${doc.id}`} target="_blank" rel="noopener noreferrer"
+                  className="p-1 rounded hover:bg-emerald-100 text-slate-400 hover:text-emerald-600 transition-colors" title="Download">
+                  <Download className="w-3 h-3"/>
+                </a>
+                <button onClick={() => del(doc.id)} className="p-1 rounded hover:bg-red-100 text-slate-400 hover:text-red-500 transition-colors" title="Delete">
+                  <Trash2 className="w-3 h-3"/>
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function EmpCard({ emp, onEdit, onDelete }: { emp: Employee; onEdit: () => void; onDelete: () => void }) {
   const [expanded, setExpanded] = useState(false)
   const docs = [
@@ -221,6 +306,7 @@ function EmpCard({ emp, onEdit, onDelete }: { emp: Employee; onEdit: () => void;
         )}
         {expanded && emp.notes && <p className="mt-1.5 text-[11px] text-slate-500 bg-slate-50 rounded-lg px-3 py-2">{emp.notes}</p>}
       </div>
+      <DocPanel entityId={emp.id} entityType="employee" />
       <div className="border-t border-slate-100 px-4 py-2.5 flex justify-end gap-2 bg-slate-50/50">
         <button onClick={onEdit}   className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-blue-600 px-2.5 py-1.5 rounded-lg hover:bg-blue-50"><Pencil className="w-3 h-3"/>Edit</button>
         <button onClick={onDelete} className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-red-600 px-2.5 py-1.5 rounded-lg hover:bg-red-50"><Trash2 className="w-3 h-3"/>Remove</button>
