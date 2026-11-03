@@ -7,7 +7,7 @@ import {
   ChevronDown, AlertCircle, Car, Building2, AlertTriangle,
   CheckCircle2, Tag, Hash, Wrench, ScanLine, Upload, Sparkles,
   RotateCcw, Save, ChevronRight, Info, Receipt, Download, FolderOpen, Loader2,
-  PenLine, Printer, ChevronUp, Type, AlignLeft,
+  PenLine,
 } from 'lucide-react'
 
 // ── Shared expiry helpers ─────────────────────────────────────────────────────
@@ -1412,252 +1412,223 @@ function ScanDocumentTab() {
 // LETTER WRITER TAB
 // ════════════════════════════════════════════════════════════════════════════════
 
+interface SavedLetter {
+  id: string; ref_no: string | null; title: string | null
+  issued_to: string | null; issued_by: string | null; letter_date: string; created_at: string
+}
+
 function LetterWriterTab() {
   const today = new Date().toISOString().slice(0, 10)
-  const [letterDate,  setLetterDate]  = useState(today)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const [title,       setTitle]       = useState('')
   const [refNo,       setRefNo]       = useState('')
-  const [toName,      setToName]      = useState('')
-  const [toAddress,   setToAddress]   = useState('')
-  const [subject,     setSubject]     = useState('')
-  const [body,        setBody]        = useState('')
-  const [signName,    setSignName]    = useState('')
-  const [signTitle,   setSignTitle]   = useState('')
-  const [fontSize,    setFontSize]    = useState(13)
-  const [pageCount,   setPageCount]   = useState(1)
-  const [printing,    setPrinting]    = useState(false)
+  const [issuedTo,    setIssuedTo]    = useState('')
+  const [issuedBy,    setIssuedBy]    = useState('')
+  const [letterDate,  setLetterDate]  = useState(today)
+  const [file,        setFile]        = useState<File | null>(null)
+  const [uploading,   setUploading]   = useState(false)
+  const [result,      setResult]      = useState<{ id: string; verify_url: string } | null>(null)
+  const [error,       setError]       = useState('')
+  const [letters,     setLetters]     = useState<SavedLetter[]>([])
+  const [loadingList, setLoadingList] = useState(true)
 
-  const fmtDate = (d: string) => {
-    if (!d) return ''
-    const dt = new Date(d)
-    return dt.toLocaleDateString('en-AE', { day: '2-digit', month: 'long', year: 'numeric' })
-  }
+  const loadLetters = useCallback(async () => {
+    setLoadingList(true)
+    try {
+      const r = await fetch('/api/hr/letters')
+      setLetters(await r.json())
+    } catch {}
+    setLoadingList(false)
+  }, [])
 
-  function buildPageHtml(isFirst: boolean): string {
-    const fs = fontSize + 'px'
-    if (!isFirst) {
-      return '<div class="letter-page"><div class="letter-content" style="font-size:' + fs + '"></div></div>'
+  useEffect(() => { loadLetters() }, [loadLetters])
+
+  async function handleUpload() {
+    if (!file) { setError('Please select a PDF file first'); return }
+    setError(''); setResult(null); setUploading(true)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('title', title)
+      fd.append('ref_no', refNo)
+      fd.append('issued_to', issuedTo)
+      fd.append('issued_by', issuedBy)
+      fd.append('letter_date', letterDate)
+      const r = await fetch('/api/hr/letters', { method: 'POST', body: fd })
+      const data = await r.json()
+      if (!r.ok) { setError(data.error || 'Upload failed'); return }
+      setResult({ id: data.id, verify_url: data.verify_url })
+      setFile(null)
+      if (fileRef.current) fileRef.current.value = ''
+      loadLetters()
+    } catch (e) {
+      setError(String(e))
+    } finally {
+      setUploading(false)
     }
-    let inner = '<div class="letter-header-row">'
-    if (refNo) inner += '<div class="ref-no">Ref No: ' + refNo + '</div>'
-    inner += '<div class="letter-date">' + fmtDate(letterDate) + '</div></div>'
-    if (toName || toAddress) {
-      inner += '<div class="to-block">'
-      if (toName)    inner += '<div class="to-name">' + toName + '</div>'
-      if (toAddress) inner += '<div class="to-address">' + toAddress.replace(/\n/g, '<br/>') + '</div>'
-      inner += '</div>'
-    }
-    if (subject) inner += '<div class="subject-line"><strong>Subject: ' + subject + '</strong></div>'
-    inner += '<div class="body-text">' + body.replace(/\n/g, '<br/>') + '</div>'
-    inner += '<div class="sign-block">'
-    if (signName)  inner += '<div class="sign-name">' + signName + '</div>'
-    if (signTitle) inner += '<div class="sign-title">' + signTitle + '</div>'
-    inner += '</div>'
-    return '<div class="letter-page"><div class="letter-content" style="font-size:' + fs + '">' + inner + '</div></div>'
   }
 
-  function handlePrint() {
-    setPrinting(true)
-    setTimeout(() => {
-      const pages = Array.from({ length: pageCount }, (_, i) => buildPageHtml(i === 0)).join('')
-      const css = [
-        '* { margin: 0; padding: 0; box-sizing: border-box; }',
-        "body { font-family: 'Times New Roman', Times, serif; background: #ccc; }",
-        '@page { size: A4; margin: 0; }',
-        '.letter-page { width: 210mm; height: 297mm; position: relative;',
-        "  background: url('/letterhead.jpg') no-repeat center center / cover;",
-        '  page-break-after: always; margin: 0 auto 10mm; }',
-        '.letter-page:last-child { page-break-after: avoid; margin-bottom: 0; }',
-        '.letter-content { position: absolute; top: 48mm; left: 20mm; right: 20mm; bottom: 28mm;',
-        "  font-family: 'Times New Roman', Times, serif; color: #1a1a1a; overflow: hidden; }",
-        '.letter-header-row { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8mm; }',
-        '.ref-no { font-size: 0.9em; color: #444; }',
-        '.letter-date { text-align: right; margin-left: auto; }',
-        '.to-block { margin-bottom: 8mm; line-height: 1.6; }',
-        '.to-name { font-weight: bold; }',
-        '.to-address { color: #333; }',
-        '.subject-line { margin-bottom: 8mm; padding-bottom: 2mm; border-bottom: 1px solid #ccc; }',
-        '.body-text { line-height: 1.8; white-space: pre-wrap; }',
-        '.sign-block { margin-top: 14mm; }',
-        '.sign-name { font-weight: bold; }',
-        '.sign-title { color: #555; font-size: 0.95em; }',
-        '@media print { body { background: none; } .letter-page { margin: 0; } }',
-      ].join('\n')
-      const title = 'Letter' + (refNo ? ' - ' + refNo : '')
-      const html = '<!DOCTYPE html><html><head><meta charset="utf-8"/><title>' + title +
-        '</title><style>' + css + '</style></head><body>' + pages + '</body></html>'
-      const win = window.open('', '_blank', 'width=900,height=1100')
-      if (win) {
-        win.document.write(html)
-        win.document.close()
-        win.onload = () => { win.focus(); win.print() }
-      }
-      setPrinting(false)
-    }, 50)
+  async function deleteLetter(id: string) {
+    await fetch('/api/hr/letters/' + id, { method: 'DELETE' })
+    loadLetters()
   }
 
-  const previewPages = Array.from({ length: pageCount }, (_, i) => i)
+  const fmtDate = (d: string) =>
+    d ? new Date(d).toLocaleDateString('en-AE', { day: '2-digit', month: 'long', year: 'numeric' }) : '—'
 
   return (
-    <div className="max-w-5xl mx-auto space-y-5">
-      {/* Toolbar */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2">
-            <Type className="w-4 h-4 text-slate-400" />
-            <span className="text-xs text-slate-500 font-medium">Font Size</span>
-            <input
-              type="range" min={10} max={18} value={fontSize}
-              onChange={e => setFontSize(Number(e.target.value))}
-              className="w-24"
-            />
-            <span className="text-xs font-mono text-slate-700 w-6">{fontSize}</span>
+    <div className="max-w-4xl mx-auto space-y-6">
+
+      {/* Upload Card */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-5">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
+            <PenLine className="w-5 h-5 text-blue-600"/>
           </div>
-          <div className="w-px h-5 bg-slate-200"/>
-          <div className="flex items-center gap-2">
-            <AlignLeft className="w-4 h-4 text-slate-400" />
-            <span className="text-xs text-slate-500 font-medium">Pages</span>
-            <button onClick={() => setPageCount(p => Math.max(1, p - 1))}
-              className="w-6 h-6 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 text-sm flex items-center justify-center font-bold">−</button>
-            <span className="w-6 text-center text-sm font-bold text-slate-700">{pageCount}</span>
-            <button onClick={() => setPageCount(p => Math.min(20, p + 1))}
-              className="w-6 h-6 rounded bg-slate-100 hover:bg-slate-200 text-slate-600 text-sm flex items-center justify-center font-bold">+</button>
-          </div>
-          <div className="ml-auto">
-            <button
-              onClick={handlePrint}
-              disabled={printing}
-              className="flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-60"
-            >
-              <Printer className="w-4 h-4" />
-              {printing ? 'Preparing…' : 'Print / Save PDF'}
-            </button>
+          <div>
+            <h2 className="font-bold text-slate-800">Upload Official Letter</h2>
+            <p className="text-xs text-slate-400 mt-0.5">Write in Word → Export as PDF → Upload here to get QR stamp &amp; verification</p>
           </div>
         </div>
-      </div>
 
-      <div className="flex gap-5">
-        {/* Letter Fields */}
-        <div className="w-72 shrink-0 space-y-3">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Letter Details</p>
-            <div>
-              <label className="text-xs text-slate-500 mb-1 block">Date</label>
-              <input type="date" value={letterDate} onChange={e => setLetterDate(e.target.value)}
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-            </div>
-            <div>
-              <label className="text-xs text-slate-500 mb-1 block">Reference No.</label>
-              <input value={refNo} onChange={e => setRefNo(e.target.value)} placeholder="e.g. SA/HR/2024/001"
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Addressed To</p>
-            <div>
-              <label className="text-xs text-slate-500 mb-1 block">Name / Organization</label>
-              <input value={toName} onChange={e => setToName(e.target.value)} placeholder="To whom it may concern"
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-            </div>
-            <div>
-              <label className="text-xs text-slate-500 mb-1 block">Address</label>
-              <textarea value={toAddress} onChange={e => setToAddress(e.target.value)} rows={3} placeholder="City, Country"
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"/>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Subject</p>
-            <input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Letter subject…"
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="text-xs font-semibold text-slate-500 mb-1 block">Document Title</label>
+            <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Salary Certificate"
               className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
           </div>
-
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 space-y-3">
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Signature</p>
-            <div>
-              <label className="text-xs text-slate-500 mb-1 block">Name</label>
-              <input value={signName} onChange={e => setSignName(e.target.value)} placeholder="Your name"
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-            </div>
-            <div>
-              <label className="text-xs text-slate-500 mb-1 block">Title / Position</label>
-              <input value={signTitle} onChange={e => setSignTitle(e.target.value)} placeholder="General Manager"
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
-            </div>
+          <div>
+            <label className="text-xs font-semibold text-slate-500 mb-1 block">Reference No.</label>
+            <input value={refNo} onChange={e => setRefNo(e.target.value)} placeholder="e.g. SA/HR/2024/001"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-slate-500 mb-1 block">Issued To</label>
+            <input value={issuedTo} onChange={e => setIssuedTo(e.target.value)} placeholder="Employee / Organization name"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-slate-500 mb-1 block">Issued By</label>
+            <input value={issuedBy} onChange={e => setIssuedBy(e.target.value)} placeholder="Manager name / position"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
+          </div>
+          <div>
+            <label className="text-xs font-semibold text-slate-500 mb-1 block">Letter Date</label>
+            <input type="date" value={letterDate} onChange={e => setLetterDate(e.target.value)}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"/>
           </div>
         </div>
 
-        {/* Live Preview */}
-        <div className="flex-1 space-y-4">
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Live Preview</p>
-          {previewPages.map(i => (
-            <div key={i}
-              className="relative shadow-xl rounded-sm overflow-hidden"
-              style={{ width: '100%', paddingTop: '141.4%' }}
-            >
-              <div
-                className="absolute inset-0"
-                style={{
-                  backgroundImage: "url('/letterhead.jpg')",
-                  backgroundSize: 'cover',
-                  backgroundPosition: 'center',
-                }}
-              />
-              {i === 0 && (
-                <div
-                  className="absolute"
-                  style={{
-                    top: '16.2%', left: '9.5%', right: '9.5%', bottom: '9.4%',
-                    fontFamily: "'Times New Roman', Times, serif",
-                    fontSize: `${fontSize * 0.52}px`,
-                    color: '#1a1a1a',
-                    overflow: 'hidden',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3%' }}>
-                    {refNo && <span style={{ color: '#555' }}>Ref No: {refNo}</span>}
-                    <span style={{ marginLeft: 'auto' }}>{fmtDate(letterDate)}</span>
-                  </div>
-                  {(toName || toAddress) && (
-                    <div style={{ marginBottom: '3%', lineHeight: 1.5 }}>
-                      {toName    && <div style={{ fontWeight: 'bold' }}>{toName}</div>}
-                      {toAddress && <div style={{ color: '#444' }}>{toAddress}</div>}
-                    </div>
-                  )}
-                  {subject && (
-                    <div style={{ marginBottom: '3%', paddingBottom: '1%', borderBottom: '1px solid #ccc', fontWeight: 600 }}>
-                      Subject: {subject}
-                    </div>
-                  )}
-                  <div style={{ lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
-                    <textarea
-                      value={body}
-                      onChange={e => setBody(e.target.value)}
-                      placeholder="Type your letter content here…"
-                      style={{
-                        width: '100%', height: '55%',
-                        border: 'none', outline: 'none',
-                        background: 'transparent',
-                        fontFamily: 'inherit', fontSize: 'inherit',
-                        color: 'inherit', resize: 'none',
-                        lineHeight: 1.7,
-                      }}
-                    />
-                  </div>
-                  {(signName || signTitle) && (
-                    <div style={{ marginTop: '5%' }}>
-                      {signName  && <div style={{ fontWeight: 'bold' }}>{signName}</div>}
-                      {signTitle && <div style={{ color: '#555', fontSize: '0.95em' }}>{signTitle}</div>}
-                    </div>
-                  )}
-                </div>
-              )}
-              <div className="absolute bottom-1 right-2 text-xs text-slate-400 opacity-50">
-                Page {i + 1}
+        {/* Drop zone */}
+        <div
+          onClick={() => fileRef.current?.click()}
+          className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${
+            file ? 'border-blue-400 bg-blue-50' : 'border-slate-200 hover:border-blue-300 hover:bg-slate-50'
+          }`}
+        >
+          <input ref={fileRef} type="file" accept="application/pdf" className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) setFile(f) }}/>
+          {file ? (
+            <div className="flex items-center justify-center gap-3">
+              <FileText className="w-8 h-8 text-blue-500"/>
+              <div className="text-left">
+                <p className="font-semibold text-blue-700 text-sm">{file.name}</p>
+                <p className="text-xs text-slate-400">{(file.size / 1024).toFixed(0)} KB</p>
               </div>
+              <button onClick={e => { e.stopPropagation(); setFile(null); if (fileRef.current) fileRef.current.value = '' }}
+                className="ml-2 text-slate-400 hover:text-red-500"><X className="w-4 h-4"/></button>
             </div>
-          ))}
+          ) : (
+            <div>
+              <Upload className="w-8 h-8 text-slate-300 mx-auto mb-2"/>
+              <p className="text-sm font-semibold text-slate-500">Click to select PDF</p>
+              <p className="text-xs text-slate-400 mt-1">Write your letter in Word → Save as PDF → Upload here</p>
+            </div>
+          )}
         </div>
+
+        {error && (
+          <div className="flex items-center gap-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2">
+            <AlertCircle className="w-4 h-4 shrink-0"/> {error}
+          </div>
+        )}
+
+        {result && (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 space-y-3">
+            <div className="flex items-center gap-2 text-emerald-700 font-semibold">
+              <CheckCircle2 className="w-5 h-5"/> Letter registered &amp; QR stamp applied!
+            </div>
+            <div className="text-sm text-slate-600">
+              <span className="font-mono font-bold text-slate-800">{result.id}</span>
+              <span className="ml-2 text-slate-400">— scan QR on the PDF to verify</span>
+            </div>
+            <div className="flex gap-3 flex-wrap">
+              <a href={'/api/hr/letters/' + result.id + '/download'}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700">
+                <Download className="w-4 h-4"/> Download Stamped PDF
+              </a>
+              <a href={'/verify/' + result.id} target="_blank" rel="noreferrer"
+                className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 text-sm font-semibold rounded-lg hover:bg-slate-50">
+                <ScanLine className="w-4 h-4"/> View Verify Page
+              </a>
+            </div>
+          </div>
+        )}
+
+        <button onClick={handleUpload} disabled={uploading || !file}
+          className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+          {uploading ? <><Loader2 className="w-4 h-4 animate-spin"/> Processing &amp; Stamping…</> : <><Upload className="w-4 h-4"/> Register &amp; Stamp Letter</>}
+        </button>
+      </div>
+
+      {/* Letters List */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <h3 className="font-bold text-slate-800">Issued Letters</h3>
+          <span className="text-xs bg-slate-100 text-slate-500 px-2 py-1 rounded-full">{letters.length} total</span>
+        </div>
+        {loadingList ? (
+          <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 animate-spin text-slate-300"/></div>
+        ) : letters.length === 0 ? (
+          <div className="py-12 text-center">
+            <PenLine className="w-8 h-8 text-slate-200 mx-auto mb-2"/>
+            <p className="text-sm text-slate-400">No letters issued yet</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {letters.map(l => (
+              <div key={l.id} className="px-6 py-4 flex items-center gap-4 hover:bg-slate-50">
+                <div className="w-9 h-9 bg-blue-50 rounded-lg flex items-center justify-center shrink-0">
+                  <FileText className="w-4 h-4 text-blue-500"/>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-slate-800 text-sm truncate">{l.title || '—'}</p>
+                  <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-0.5">
+                    {l.ref_no   && <span className="text-xs text-slate-400">Ref: {l.ref_no}</span>}
+                    {l.issued_to && <span className="text-xs text-slate-400">To: {l.issued_to}</span>}
+                    <span className="text-xs text-slate-400">{fmtDate(l.letter_date)}</span>
+                  </div>
+                  <p className="text-[10px] font-mono text-slate-300 mt-0.5">{l.id}</p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <a href={'/verify/' + l.id} target="_blank" rel="noreferrer"
+                    className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg" title="Verify page">
+                    <ScanLine className="w-4 h-4"/>
+                  </a>
+                  <a href={'/api/hr/letters/' + l.id + '/download'}
+                    className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg" title="Download PDF">
+                    <Download className="w-4 h-4"/>
+                  </a>
+                  <button onClick={() => deleteLetter(l.id)}
+                    className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg" title="Delete">
+                    <Trash2 className="w-4 h-4"/>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
