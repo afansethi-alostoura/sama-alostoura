@@ -127,19 +127,60 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── QR code ───────────────────────────────────────────────────────────────
+    // ── QR stamp box (professional card) ─────────────────────────────────────
     if (addQr) {
-      const qrDataUrl = await QRCode.toDataURL(verifyUrl, { width: 150, margin: 1 })
+      const qrDataUrl = await QRCode.toDataURL(verifyUrl, { width: 180, margin: 1 })
       const qrBytes   = Buffer.from(qrDataUrl.replace('data:image/png;base64,', ''), 'base64')
       const qrImg     = await pdfDoc.embedPng(qrBytes)
-      const qrSize    = 72
-      const { x, y } = resolve(qrPos, qrSize, qrSize)
-      lastPage.drawImage(qrImg, { x, y, width: qrSize, height: qrSize })
-      lastPage.drawText('Scan to verify', {
-        x: x + 6, y: y - 10, size: 6, color: rgb(0.4, 0.4, 0.4),
+
+      // Box dimensions
+      const boxW = 170, boxH = 76
+      const qrSize = 66
+      const { x: bx, y: by } = resolve(qrPos, boxW, boxH)
+
+      // White background + blue border
+      lastPage.drawRectangle({
+        x: bx, y: by, width: boxW, height: boxH,
+        color: rgb(1, 1, 1), opacity: 0.96,
+        borderColor: rgb(0.08, 0.3, 0.65), borderWidth: 1.4,
       })
-      lastPage.drawText(id, {
-        x: x - 2, y: y - 18, size: 5, color: rgb(0.35, 0.35, 0.35),
+
+      // QR image (left side)
+      lastPage.drawImage(qrImg, {
+        x: bx + 4, y: by + 5, width: qrSize, height: qrSize,
+      })
+
+      // Right side text block
+      const tx = bx + qrSize + 10
+      const blue  = rgb(0.08, 0.3, 0.65)
+      const green = rgb(0.08, 0.52, 0.08)
+      const grey  = rgb(0.35, 0.35, 0.35)
+      const lgrey = rgb(0.55, 0.55, 0.55)
+
+      lastPage.drawText('SAMA ALOSTOURA', {
+        x: tx, y: by + 60, size: 6.5, color: blue,
+      })
+      lastPage.drawText('BUILDING CONTRACTING', {
+        x: tx, y: by + 51, size: 5.8, color: blue,
+      })
+      lastPage.drawText('L.L.C - DUBAI, UAE', {
+        x: tx, y: by + 43, size: 5.8, color: blue,
+      })
+      lastPage.drawLine({
+        start: { x: tx, y: by + 39 }, end: { x: bx + boxW - 5, y: by + 39 },
+        thickness: 0.6, color: rgb(0.8, 0.8, 0.8),
+      })
+      lastPage.drawText('VERIFIED DOCUMENT', {
+        x: tx, y: by + 31, size: 6, color: green,
+      })
+      lastPage.drawText('ID: ' + id, {
+        x: tx, y: by + 22, size: 5, color: grey,
+      })
+      lastPage.drawText(letter_date, {
+        x: tx, y: by + 14, size: 5, color: grey,
+      })
+      lastPage.drawText('Scan QR to verify', {
+        x: tx, y: by + 5, size: 5, color: lgrey,
       })
     }
 
