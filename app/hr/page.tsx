@@ -811,35 +811,38 @@ function CompanyDocsTab() {
     const catColor = CATEGORY_COLORS[doc.category] ?? CATEGORY_COLORS.Other
     const anyCritical = doc.expiry_date && isCritical(doc.expiry_date, doc.reminder_days)
     return (
-      <div className={`bg-white rounded-xl border ${anyCritical ? 'border-red-300' : 'border-slate-200'} shadow-sm p-4 flex items-center gap-4`}>
-        <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
-          <FileText className="w-4 h-4 text-slate-500"/>
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <p className="font-semibold text-slate-800 text-sm">{doc.name}</p>
-            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${catColor}`}>{doc.category}</span>
+      <div className={`bg-white rounded-xl border ${anyCritical ? 'border-red-300' : 'border-slate-200'} shadow-sm overflow-hidden`}>
+        <div className="p-4 flex items-center gap-4">
+          <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
+            <FileText className="w-4 h-4 text-slate-500"/>
           </div>
-          <div className="flex items-center gap-3 mt-0.5 flex-wrap">
-            {doc.issuing_authority && <p className="text-xs text-slate-500">{doc.issuing_authority}</p>}
-            {doc.doc_number && <p className="text-xs text-slate-400 flex items-center gap-1"><Hash className="w-2.5 h-2.5"/>{doc.doc_number}</p>}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="font-semibold text-slate-800 text-sm">{doc.name}</p>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${catColor}`}>{doc.category}</span>
+            </div>
+            <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+              {doc.issuing_authority && <p className="text-xs text-slate-500">{doc.issuing_authority}</p>}
+              {doc.doc_number && <p className="text-xs text-slate-400 flex items-center gap-1"><Hash className="w-2.5 h-2.5"/>{doc.doc_number}</p>}
+            </div>
+            {doc.notes && <p className="text-[11px] text-slate-400 mt-1 truncate">{doc.notes}</p>}
           </div>
-          {doc.notes && <p className="text-[11px] text-slate-400 mt-1 truncate">{doc.notes}</p>}
+          <div className="flex-shrink-0 text-right">
+            {badge ? (
+              <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-2.5 py-1 rounded-full ${badge.color}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`}/>
+                {badge.label === (doc.expiry_date ?? '').slice(0, 10) ? `Exp ${badge.label}` : badge.label}
+              </span>
+            ) : (
+              <span className="text-[10px] text-slate-400">No expiry</span>
+            )}
+          </div>
+          <div className="flex-shrink-0 flex gap-1">
+            <button onClick={() => { setSelected(doc); setModal('edit') }} className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"><Pencil className="w-3.5 h-3.5"/></button>
+            <button onClick={() => setConfirmDel(doc)} className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"><Trash2 className="w-3.5 h-3.5"/></button>
+          </div>
         </div>
-        <div className="flex-shrink-0 text-right">
-          {badge ? (
-            <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-2.5 py-1 rounded-full ${badge.color}`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${badge.dot}`}/>
-              {badge.label === (doc.expiry_date ?? '').slice(0, 10) ? `Exp ${badge.label}` : badge.label}
-            </span>
-          ) : (
-            <span className="text-[10px] text-slate-400">No expiry</span>
-          )}
-        </div>
-        <div className="flex-shrink-0 flex gap-1">
-          <button onClick={() => { setSelected(doc); setModal('edit') }} className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"><Pencil className="w-3.5 h-3.5"/></button>
-          <button onClick={() => setConfirmDel(doc)} className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"><Trash2 className="w-3.5 h-3.5"/></button>
-        </div>
+        <DocPanel entityId={doc.id} entityType="company_doc" />
       </div>
     )
   }
