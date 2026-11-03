@@ -1,39 +1,19 @@
-import { GoogleGenerativeAI } from '@google/generative-ai'
+import OpenAI from 'openai'
 
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY || '')
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY || '' })
 
-export const MODEL         = 'gemini-3.8-flash'
-const FALLBACK_MODEL       = 'gemini-1.5-flash'
+export const MODEL = 'gpt-4o-mini'
 
-function is503(e: unknown) {
-  const msg = String(e)
-  return msg.includes('503') || msg.includes('Service Unavailable') || msg.includes('high demand')
-}
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function getModel(_systemInstruction?: string) { return MODEL }
 
-async function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)) }
-
-export function getModel(modelName: string, systemInstruction?: string) {
-  return genAI.getGenerativeModel({
-    model: modelName,
-    ...(systemInstruction ? { systemInstruction } : {}),
-  })
-}
-
-/** Single-turn text generation — retries on 503, falls back to gemini-1.5-flash */
+/** Single-turn text generation */
 export async function generate(prompt: string, system?: string, maxTokens = 1200): Promise<string> {
-  const contents = [{ role: 'user' as const, parts: [{ text: prompt }] }]
-  const config   = { maxOutputTokens: maxTokens }
-  // Try primary model up to 2 times, then fallback
-  for (const [attempt, modelName] of [[0, MODEL], [1, MODEL], [2, FALLBACK_MODEL]] as [number, string][]) {
-    try {
-      const result = await getModel(modelName, system).generateContent({ contents, generationConfig: config })
-      return result.response.text()
-    } catch (e) {
-      if (is503(e) && attempt < 2) { await sleep(2000 * (attempt + 1)); continue }
-      throw e
-    }
-  }
-  throw new Error('AI unavailable')
+  const messages: OpenAI.ChatCompletionMessageParam[] = []
+  if (system) messages.push({ role: 'system', content: system })
+  messages.push({ role: 'user', content: prompt })
+  const res = await openai.chat.completions.create({ model: MODEL, messages, max_tokens: maxTokens })
+  return res.choices[0].message.content ?? ''
 }
 
 /** Vision — analyze an image (base64) alongside a text prompt */
@@ -44,24 +24,17 @@ export async function generateWithImage(
   system?: string,
   maxTokens = 1000,
 ): Promise<string> {
-  const contents = [{
-    role: 'user' as const,
-    parts: [
-      { inlineData: { mimeType, data: imageBase64 } },
-      { text: prompt },
+  const messages: OpenAI.ChatCompletionMessageParam[] = []
+  if (system) messages.push({ role: 'system', content: system })
+  messages.push({
+    role: 'user',
+    content: [
+      { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imageBase64}` } },
+      { type: 'text', text: prompt },
     ],
-  }]
-  const config = { maxOutputTokens: maxTokens }
-  for (const [attempt, modelName] of [[0, MODEL], [1, MODEL], [2, FALLBACK_MODEL]] as [number, string][]) {
-    try {
-      const result = await getModel(modelName, system).generateContent({ contents, generationConfig: config })
-      return result.response.text()
-    } catch (e) {
-      if (is503(e) && attempt < 2) { await sleep(2000 * (attempt + 1)); continue }
-      throw e
-    }
-  }
-  throw new Error('AI unavailable')
+  })
+  const res = await openai.chat.completions.create({ model: MODEL, messages, max_tokens: maxTokens })
+  return res.choices[0].message.content ?? ''
 }
 
 export const SYSTEM_PROMPTS = {
