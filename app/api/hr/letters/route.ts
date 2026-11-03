@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { PDFDocument, rgb, degrees } from 'pdf-lib'
 import QRCode from 'qrcode'
+import path from 'path'
+import fs from 'fs'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,6 +28,15 @@ function genId() {
   return `SA-${yr}-${rand}`
 }
 
+function readPublicFile(name: string): Buffer | null {
+  try {
+    const p = path.join(process.cwd(), 'public', name)
+    return fs.readFileSync(p)
+  } catch {
+    return null
+  }
+}
+
 export async function GET() {
   try {
     await ensureTable()
@@ -34,106 +45,97 @@ export async function GET() {
        FROM hr_letters ORDER BY created_at DESC`
     )
     return NextResponse.json(rows)
-  } catch (err) {
-    return NextResponse.json([], { status: 500 })
+  } catch {
+    return NextResponse.json([])
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
     await ensureTable()
-    const form      = await req.formData()
-    const file      = form.get('file') as File | null
-    const title     = (form.get('title')      as string) || ''
-    const issued_to = (form.get('issued_to')  as string) || ''
-    const issued_by = (form.get('issued_by')  as string) || ''
-    const ref_no    = (form.get('ref_no')     as string) || ''
-    const letter_date = (form.get('letter_date') as string) || new Date().toISOString().slice(0,10)
+    const form        = await req.formData()
+    const file        = form.get('file')        as File | null
+    const title       = (form.get('title')       as string) || ''
+    const issued_to   = (form.get('issued_to')   as string) || ''
+    const issued_by   = (form.get('issued_by')   as string) || ''
+    const ref_no      = (form.get('ref_no')      as string) || ''
+    const letter_date = (form.get('letter_date') as string) || new Date().toISOString().slice(0, 10)
 
     if (!file) return NextResponse.json({ error: 'PDF file required' }, { status: 400 })
     if (file.size > 20 * 1024 * 1024) return NextResponse.json({ error: 'Max 20 MB' }, { status: 400 })
 
     const id = genId()
-    const siteUrl = req.headers.get('origin') || 'https://sama-alostoura.vercel.app'
+    const siteUrl  = req.headers.get('origin') || 'https://sama-alostoura.vercel.app'
     const verifyUrl = `${siteUrl}/verify/${id}`
 
     // Load original PDF
-    const bytes  = await file.arrayBuffer()
-    const pdfDoc = await PDFDocument.load(bytes)
-    const pages  = pdfDoc.getPages()
+    const bytes   = await file.arrayBuffer()
+    const pdfDoc  = await PDFDocument.load(bytes)
+    const pages   = pdfDoc.getPages()
     const lastPage = pages[pages.length - 1]
     const { width, height } = lastPage.getSize()
 
-    // Generate QR code as PNG bytes
-    const qrDataUrl = await QRCode.toDataURL(verifyUrl, { width: 120, margin: 1 })
-    const qrBase64  = qrDataUrl.replace('data:image/png;base64,', '')
-    const qrBytes   = Buffer.from(qrBase64, 'base64')
+    // ── QR code (PNG) ────────────────────────────────────────────────────────
+    const qrDataUrl = await QRCode.toDataURL(verifyUrl, { width: 150, margin: 1 })
+    const qrBytes   = Buffer.from(qrDataUrl.replace('data:image/png;base64,', ''), 'base64')
     const qrImage   = await pdfDoc.embedPng(qrBytes)
 
-    // Draw stamp circle (SVG-style via lines/ellipse not available in pdf-lib, use box)
-    const stampX = width  - 160
-    const stampY = 20
-    const stampW = 140
-    const stampH = 100
+    // ── Company round stamp (JPG) ─────────────────────────────────────────────
+    const stampBytes = readPublicFile('stamp.jpg')
+    const stampImage = stampBytes ? await pdfDoc.embedJpg(stampBytes) : null
 
-    // Outer border box for stamp area
-    lastPage.drawRectangle({
-      x: stampX - 2, y: stampY - 2,
-      width: stampW + 4, height: stampH + 4,
-      borderColor: rgb(0.05, 0.3, 0.6),
-      borderWidth: 1.5,
-      color: rgb(1, 1, 1),
-      opacity: 0.92,
-    })
+    // ── Signature (JPG) ───────────────────────────────────────────────────────
+    const sigBytes = readPublicFile('signature.jpg')
+    const sigImage = sigBytes ? await pdfDoc.embedJpg(sigBytes) : null
 
-    // QR code (left side of stamp box)
-    lastPage.drawImage(qrImage, { x: stampX + 2, y: stampY + 2, width: 68, height: 68 })
+    // ── Layout constants (points) ─────────────────────────────────────────────
+    // Bottom band: signature left, round stamp centre-right, QR top-right corner
+    const margin  = 36        // 12.7mm from edge
+    const sigW    = 110
+    const sigH    = 55
+    const sigX    = margin
+    const sigY    = margin
 
-    // Company text (right side)
-    const fontSize = 5.5
-    lastPage.drawText('SAMA ALOSTOURA', {
-      x: stampX + 74, y: stampY + 72, size: fontSize + 1,
-      color: rgb(0.05, 0.3, 0.6),
+    const stW     = 90
+    const stH     = 90
+    const stX     = width / 2 - stW / 2   // centred
+    const stY     = margin - 5
+
+    const qrSize  = 72
+    const qrX     = width - margin - qrSize
+    const qrY     = margin + 4
+
+    // ── Draw signature ────────────────────────────────────────────────────────
+    if (sigImage) {
+      lastPage.drawImage(sigImage, { x: sigX, y: sigY, width: sigW, height: sigH })
+    }
+
+    // ── Draw round stamp ─────────────────────────────────────────────────────
+    if (stampImage) {
+      lastPage.drawImage(stampImage, { x: stX, y: stY, width: stW, height: stH, opacity: 0.88 })
+    }
+
+    // ── Draw QR code ──────────────────────────────────────────────────────────
+    lastPage.drawImage(qrImage, { x: qrX, y: qrY, width: qrSize, height: qrSize })
+
+    // Small "Scan to verify" label under QR
+    lastPage.drawText('Scan to verify', {
+      x: qrX + 8, y: qrY - 9, size: 6, color: rgb(0.45, 0.45, 0.45),
     })
-    lastPage.drawText('BUILDING CONTRACTING', {
-      x: stampX + 74, y: stampY + 63, size: fontSize,
-      color: rgb(0.05, 0.3, 0.6),
-    })
-    lastPage.drawText('L.L.C - DUBAI, UAE', {
-      x: stampX + 74, y: stampY + 54, size: fontSize,
-      color: rgb(0.05, 0.3, 0.6),
-    })
-    lastPage.drawLine({
-      start: { x: stampX + 74, y: stampY + 46 },
-      end:   { x: stampX + stampW - 4, y: stampY + 46 },
-      thickness: 0.5, color: rgb(0.75, 0.75, 0.75),
-    })
-    lastPage.drawText('VERIFIED DOCUMENT', {
-      x: stampX + 74, y: stampY + 38, size: fontSize,
-      color: rgb(0.1, 0.55, 0.1),
-    })
-    lastPage.drawText(`ID: ${id}`, {
-      x: stampX + 74, y: stampY + 29, size: 4.5,
-      color: rgb(0.3, 0.3, 0.3),
-    })
-    lastPage.drawText(letter_date, {
-      x: stampX + 74, y: stampY + 21, size: 4.5,
-      color: rgb(0.3, 0.3, 0.3),
-    })
-    lastPage.drawText('Scan QR to verify', {
-      x: stampX + 74, y: stampY + 12, size: 4.5,
-      color: rgb(0.5, 0.5, 0.5),
+    lastPage.drawText(id, {
+      x: qrX - 2, y: qrY - 17, size: 5, color: rgb(0.35, 0.35, 0.35),
     })
 
-    // "OFFICIAL DOCUMENT" watermark text across last page (subtle)
+    // ── Subtle diagonal watermark ─────────────────────────────────────────────
     lastPage.drawText('OFFICIALLY ISSUED', {
-      x: width / 2 - 80, y: height / 2,
-      size: 36, color: rgb(0.9, 0.9, 0.95),
-      opacity: 0.08, rotate: degrees(45),
+      x: width / 2 - 100, y: height / 2 - 20,
+      size: 42, color: rgb(0.88, 0.88, 0.93),
+      opacity: 0.07, rotate: degrees(45),
     })
 
+    // ── Save & store ──────────────────────────────────────────────────────────
     const stampedBytes = await pdfDoc.save()
-    const fileData = Buffer.from(stampedBytes).toString('base64')
+    const fileData     = Buffer.from(stampedBytes).toString('base64')
 
     await query(
       `INSERT INTO hr_letters (id, ref_no, title, issued_to, issued_by, letter_date, file_data)
