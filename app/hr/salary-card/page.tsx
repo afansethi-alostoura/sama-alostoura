@@ -78,7 +78,8 @@ export default function SalaryCardPage() {
   const [paymentAcct,   setPaymentAcct]   = useState('Cash')
   const [paymentMethod, setPaymentMethod] = useState('Cash')
 
-  const [records,  setRecords]  = useState<SalaryRecord[]>([])
+  const [records,     setRecords]     = useState<SalaryRecord[]>([])
+  const [loadingRecs, setLoadingRecs] = useState(true)
 
   const [loading,  setLoading]  = useState(false)
   const [saved,    setSaved]    = useState(false)
@@ -91,7 +92,8 @@ export default function SalaryCardPage() {
   const [manualName, setManualName] = useState('')
 
   function loadRecords() {
-    fetch('/api/hr/salary-card').then(r => r.json()).then(d => { if (Array.isArray(d)) setRecords(d) }).catch(() => {})
+    setLoadingRecs(true)
+    fetch('/api/hr/salary-card').then(r => r.json()).then(d => { if (Array.isArray(d)) setRecords(d) }).catch(() => {}).finally(() => setLoadingRecs(false))
   }
 
   useEffect(() => {
@@ -587,12 +589,15 @@ export default function SalaryCardPage() {
       </div>
 
       {/* Saved Records */}
-      {records.length > 0 && (
-        <div className="mt-8">
-          <h2 className="text-base font-bold text-slate-800 dark:text-white mb-3 flex items-center gap-2">
-            <ClipboardList className="w-4 h-4 text-blue-600"/> Saved Salary Records
-          </h2>
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm overflow-hidden">
+      <div className="mt-8">
+        <h2 className="text-base font-bold text-slate-800 dark:text-white mb-3 flex items-center gap-2">
+          <ClipboardList className="w-4 h-4 text-blue-600"/> Saved Salary Records
+          {loadingRecs && <Loader2 className="w-3 h-3 animate-spin text-slate-400"/>}
+        </h2>
+        <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm overflow-hidden">
+          {!loadingRecs && records.length === 0 ? (
+            <div className="p-8 text-center text-slate-400 text-sm">No salary records saved yet.</div>
+          ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 dark:bg-slate-700">
@@ -619,9 +624,9 @@ export default function SalaryCardPage() {
                 </tbody>
               </table>
             </div>
-          </div>
+          )}
         </div>
-      )}
+      </div>
 
     </div>
   )
