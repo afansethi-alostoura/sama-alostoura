@@ -197,7 +197,7 @@ export default function SalaryCardPage() {
     try {
       const res = await fetch('/api/hr/salary-card', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64, mimeType, monthlySalary: salary, cardMonth, paymentDate, paymentAccount: paymentAcct, paymentMethod, projectMap: DEFAULT_PROJECT_MAP }),
+        body: JSON.stringify({ imageBase64, mimeType, monthlySalary: salary, cardMonth, paymentDate, paymentAccount: paymentAcct, paymentMethod, projectMap: Object.fromEntries(projects.map(p => [p.name, p.qb_class_name ?? p.name])) }),
       })
       const data = await res.json()
       if (data.error) throw new Error(data.error)
@@ -623,7 +623,6 @@ export default function SalaryCardPage() {
         </div>
       )}
 
-      </div>
     </div>
   )
 }
