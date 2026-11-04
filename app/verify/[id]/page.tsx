@@ -37,15 +37,11 @@ export default async function VerifyPage({ params }: Props) {
 
         {/* Header */}
         <div style={{ background:'linear-gradient(135deg,#0f3460,#1a5276)', padding:'28px 32px', color:'#fff', textAlign:'center' }}>
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:12, marginBottom:12 }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'center', marginBottom:16 }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/letterhead.jpg" alt="" width={40} height={40} style={{ borderRadius:6, objectFit:'cover', objectPosition:'left top' }}/>
-            <div style={{ textAlign:'left' }}>
-              <div style={{ fontSize:'1rem', fontWeight:700 }}>SAMA ALOSTOURA BUILDING CONTRACTING L.L.C</div>
-              <div style={{ fontSize:'.8rem', opacity:.8, marginTop:2 }}>سماء الاسطورة لمقاولات البناء ش.ذ.م.م</div>
-            </div>
+            <img src="/logo.png" alt="Sama Alostoura Building Contracting L.L.C" style={{ maxWidth:260, height:'auto', filter:'brightness(0) invert(1)' }}/>
           </div>
-          <div style={{ display:'inline-flex', alignItems:'center', gap:8, background:'rgba(255,255,255,.15)', border:'1px solid rgba(255,255,255,.3)', borderRadius:999, padding:'6px 16px', fontSize:'.8rem', marginTop:8 }}>
+          <div style={{ display:'inline-flex', alignItems:'center', gap:8, background:'rgba(255,255,255,.15)', border:'1px solid rgba(255,255,255,.3)', borderRadius:999, padding:'6px 16px', fontSize:'.8rem' }}>
             <span style={{ width:8, height:8, borderRadius:'50%', background:'#22c55e', display:'inline-block' }}/>
             Document Verified — Authentic &amp; Original
           </div>
