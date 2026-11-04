@@ -1833,7 +1833,7 @@ const TABS = [
   { id: 'company-docs', label: 'Company Documents',   icon: Building2 },
   { id: 'scan',         label: 'Scan Document',       icon: ScanLine  },
   { id: 'salary',       label: 'Salary Card',         icon: Receipt   },
-  { id: 'letter',       label: 'Letter Writer',       icon: PenLine   },
+  { id: 'letter',       label: 'Verify Letters',       icon: PenLine   },
 ] as const
 
 type TabId = typeof TABS[number]['id']
