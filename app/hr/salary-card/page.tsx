@@ -3,6 +3,7 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import { Camera, Upload, Loader2, Download, CheckCircle2, ArrowLeft, Banknote, User, Calendar, Building2, Plus, X, Users, Pencil, FileText, ClipboardList } from 'lucide-react'
 import Link from 'next/link'
 
+interface SalaryRecord { id: number; employee_name: string; month: string; monthly_salary: string; working_days: number; net_payment: string; payment_date: string | null; created_at: string }
 interface Worker { id: number; name: string; monthly_salary: number; position: string }
 interface AttendanceRow { date: string; project: string | null; status: string; advance: number }
 interface QBLine { date: string; category: string; description: string; amount: number; tax: string; class: string; day: string; advance: number }
@@ -77,6 +78,8 @@ export default function SalaryCardPage() {
   const [paymentAcct,   setPaymentAcct]   = useState('Cash')
   const [paymentMethod, setPaymentMethod] = useState('Cash')
 
+  const [records,  setRecords]  = useState<SalaryRecord[]>([])
+
   const [loading,  setLoading]  = useState(false)
   const [saved,    setSaved]    = useState(false)
   const [error,    setError]    = useState('')
@@ -87,11 +90,16 @@ export default function SalaryCardPage() {
   // Manual mode: worker name typed directly
   const [manualName, setManualName] = useState('')
 
+  function loadRecords() {
+    fetch('/api/hr/salary-card').then(r => r.json()).then(d => { if (Array.isArray(d)) setRecords(d) }).catch(() => {})
+  }
+
   useEffect(() => {
     fetch('/api/hr/workers').then(r => r.json()).then(d => { if (Array.isArray(d)) setWorkers(d) }).catch(() => {})
     fetch('/api/projects').then(r => r.json()).then((d: Project[]) => {
       if (Array.isArray(d) && d.length > 0) setProjects(d)
     }).catch(() => {})
+    loadRecords()
   }, [])
 
   // Sync editable attendance when result arrives (upload mode)
@@ -193,7 +201,7 @@ export default function SalaryCardPage() {
       })
       const data = await res.json()
       if (data.error) throw new Error(data.error)
-      setResult(data); setSaved(true); setEditMode(false)
+      setResult(data); setSaved(true); setEditMode(false); loadRecords()
     } catch (e: unknown) { setError(String(e instanceof Error ? e.message : e))
     } finally { setLoading(false) }
   }
@@ -208,7 +216,7 @@ export default function SalaryCardPage() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ employeeName: manualName, month: monthName, year: String(y), monthlySalary: salary, attendance: editedAttendance, paymentDate, paymentAccount: paymentAcct, paymentMethod }),
       })
-      setSaved(true)
+      setSaved(true); loadRecords()
     } catch { /* silent — downloads still work */ }
     finally { setLoading(false) }
   }
@@ -576,6 +584,45 @@ export default function SalaryCardPage() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* Saved Records */}
+      {records.length > 0 && (
+        <div className="mt-8">
+          <h2 className="text-base font-bold text-slate-800 dark:text-white mb-3 flex items-center gap-2">
+            <ClipboardList className="w-4 h-4 text-blue-600"/> Saved Salary Records
+          </h2>
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 dark:bg-slate-700">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs text-slate-500 font-semibold">Employee</th>
+                    <th className="px-4 py-3 text-left text-xs text-slate-500 font-semibold">Month</th>
+                    <th className="px-4 py-3 text-right text-xs text-slate-500 font-semibold">Salary</th>
+                    <th className="px-4 py-3 text-right text-xs text-slate-500 font-semibold">Working Days</th>
+                    <th className="px-4 py-3 text-right text-xs text-slate-500 font-semibold">Net Payment</th>
+                    <th className="px-4 py-3 text-left text-xs text-slate-500 font-semibold">Saved On</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {records.map((r, i) => (
+                    <tr key={r.id} className={`border-t border-slate-50 dark:border-slate-700/50 ${i % 2 === 0 ? '' : 'bg-slate-50/50 dark:bg-slate-700/20'}`}>
+                      <td className="px-4 py-3 font-medium text-slate-800 dark:text-white">{r.employee_name || '—'}</td>
+                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{r.month || '—'}</td>
+                      <td className="px-4 py-3 text-right text-slate-600 dark:text-slate-300">AED {Number(r.monthly_salary).toLocaleString()}</td>
+                      <td className="px-4 py-3 text-right text-slate-600 dark:text-slate-300">{r.working_days}</td>
+                      <td className="px-4 py-3 text-right font-bold text-emerald-600">AED {Number(r.net_payment).toLocaleString()}</td>
+                      <td className="px-4 py-3 text-xs text-slate-400">{new Date(r.created_at).toLocaleDateString('en-AE', { day:'2-digit', month:'short', year:'numeric' })}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
       </div>
     </div>
   )
