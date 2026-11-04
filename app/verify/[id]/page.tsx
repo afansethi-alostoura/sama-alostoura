@@ -39,7 +39,7 @@ export default async function VerifyPage({ params }: Props) {
         <div style={{ background:'linear-gradient(135deg,#0f3460,#1a5276)', padding:'28px 32px', color:'#fff', textAlign:'center' }}>
           <div style={{ display:'flex', alignItems:'center', justifyContent:'center', marginBottom:16 }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo.png" alt="Sama Alostoura Building Contracting L.L.C" style={{ maxWidth:260, height:'auto', filter:'brightness(0) invert(1)' }}/>
+            <img src="/logo.png" alt="Sama Alostoura Building Contracting L.L.C" style={{ maxWidth:280, height:'auto', background:'#fff', borderRadius:10, padding:'10px 16px' }}/>
           </div>
           <div style={{ display:'inline-flex', alignItems:'center', gap:8, background:'rgba(255,255,255,.15)', border:'1px solid rgba(255,255,255,.3)', borderRadius:999, padding:'6px 16px', fontSize:'.8rem' }}>
             <span style={{ width:8, height:8, borderRadius:'50%', background:'#22c55e', display:'inline-block' }}/>
