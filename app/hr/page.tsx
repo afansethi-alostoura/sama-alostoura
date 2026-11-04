@@ -1850,20 +1850,20 @@ export default function HRPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-slate-200 overflow-x-auto">
+      <div className="flex flex-wrap gap-2">
         {TABS.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
             onClick={() => setTab(id)}
-            className={`flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors -mb-px whitespace-nowrap ${
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-xl border transition-all whitespace-nowrap ${
               tab === id
-                ? 'border-blue-600 text-blue-700'
-                : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+                ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300'
             }`}
           >
             <Icon className="w-4 h-4"/>
             {label}
-            {id === 'scan' && <span className="text-[9px] font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-full ml-1">AI</span>}
+            {id === 'scan' && <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ml-1 ${tab === id ? 'bg-white/20 text-white' : 'bg-blue-100 text-blue-700'}`}>AI</span>}
           </button>
         ))}
       </div>
