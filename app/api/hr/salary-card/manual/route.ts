@@ -7,11 +7,10 @@ export async function POST(req: NextRequest) {
     if (!isDbConfigured()) return NextResponse.json({ ok: true })
 
     const salary      = parseFloat(monthlySalary) || 0
-    const daysInMonth = attendance.length  // attendance array has one entry per day of the month
     const workingDays = attendance.filter((r: { status: string }) => r.status !== 'sunday').length
     const presentDays = attendance.filter((r: { status: string }) => r.status === 'worked').length
     const absentDays  = attendance.filter((r: { status: string }) => r.status === 'absent').length
-    const dailyRate   = daysInMonth > 0 ? Math.round((salary / daysInMonth) * 100) / 100 : 0
+    const dailyRate   = workingDays > 0 ? Math.round((salary / workingDays) * 100) / 100 : 0
     const totalAdv    = attendance.reduce((s: number, r: { advance: number }) => s + (r.advance || 0), 0)
     const netPayment  = salary - absentDays * dailyRate - totalAdv
 

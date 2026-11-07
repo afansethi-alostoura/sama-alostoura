@@ -169,10 +169,9 @@ export default function SalaryCardPage() {
   // Live-recalculate totals
   const computed = useMemo(() => {
     const sal        = parseFloat(salary) || 0
-    const totalDays  = mode === 'manual' ? manualMonthInfo.daysInMonth : (result?.days_in_month ?? 0)
     const workingDays = mode === 'manual' ? manualMonthInfo.workingDays : (result?.working_days ?? 0)
-    // Daily rate = salary / total days in month (Sundays paid, absent days deducted)
-    const dailyRate      = totalDays > 0 ? Math.round((sal / totalDays) * 100) / 100 : 0
+    // Daily rate = salary / working days (total days minus Sundays)
+    const dailyRate      = workingDays > 0 ? Math.round((sal / workingDays) * 100) / 100 : 0
     const presentDays    = editedAttendance.filter(d => d.status === 'worked').length
     const absentDays     = editedAttendance.filter(d => d.status === 'absent').length
     const sundayCount    = editedAttendance.filter(d => d.status === 'sunday').length

@@ -122,13 +122,14 @@ Rules:
     }
 
     // Salary calculation
-    // Daily rate = salary / total days in month (Sundays are paid, absent days are deducted)
+    // Daily rate = salary / working days (total days minus Sundays)
+    // Sundays are included in salary automatically; only absent (non-Sunday missed) days are deducted
     const salary        = parseFloat(monthlySalary) || 0
     const sundayCount   = sundays.size
     const presentDays   = attendance.filter(d => d.status === 'worked').length
     const absentDays    = attendance.filter(d => d.status === 'absent').length
     const workingDays   = daysInMonth > 0 ? daysInMonth - sundayCount : presentDays
-    const dailyRate     = daysInMonth > 0 ? Math.round((salary / daysInMonth) * 100) / 100 : 0
+    const dailyRate     = workingDays > 0 ? Math.round((salary / workingDays) * 100) / 100 : 0
     const absentDeduction = Math.round(absentDays * dailyRate * 100) / 100
     const salaryEarned  = salary - absentDeduction
     const totalAdvances = attendance.reduce((s: number, d) => s + (d.advance ?? 0), 0)
@@ -229,11 +230,10 @@ export async function PUT(req: NextRequest) {
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
     const { employeeName, month, monthlySalary, attendance, paymentDate, paymentAccount, paymentMethod } = await req.json()
     await ensureTable()
-    const daysInMonth  = attendance.length
     const salary       = parseFloat(monthlySalary) || 0
     const workingDays  = attendance.filter((r: { status: string }) => r.status !== 'sunday').length
     const absentDays   = attendance.filter((r: { status: string }) => r.status === 'absent').length
-    const dailyRate    = daysInMonth > 0 ? Math.round((salary / daysInMonth) * 100) / 100 : 0
+    const dailyRate    = workingDays > 0 ? Math.round((salary / workingDays) * 100) / 100 : 0
     const totalAdv     = attendance.reduce((s: number, r: { advance: number }) => s + (r.advance || 0), 0)
     const netPayment   = salary - absentDays * dailyRate - totalAdv
     await query(
