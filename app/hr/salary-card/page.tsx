@@ -1,6 +1,6 @@
 'use client'
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { Camera, Upload, Loader2, Download, CheckCircle2, ArrowLeft, Banknote, User, Calendar, Building2, Plus, X, Users, Pencil, FileText, ClipboardList } from 'lucide-react'
+import { Camera, Upload, Loader2, Download, CheckCircle2, ArrowLeft, Banknote, User, Calendar, Building2, Plus, X, Users, Pencil, FileText, ClipboardList, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 
 interface SalaryRecord { id: number; employee_name: string; month: string; monthly_salary: string; working_days: number; net_payment: string; payment_date: string | null; created_at: string }
@@ -94,6 +94,32 @@ export default function SalaryCardPage() {
   function loadRecords() {
     setLoadingRecs(true)
     fetch('/api/hr/salary-card').then(r => r.json()).then(d => { if (Array.isArray(d)) setRecords(d) }).catch(() => {}).finally(() => setLoadingRecs(false))
+  }
+
+  async function deleteRecord(id: number, name: string) {
+    if (!confirm(`Delete salary record for ${name}?`)) return
+    await fetch(`/api/hr/salary-card?id=${id}`, { method: 'DELETE' })
+    loadRecords()
+  }
+
+  async function downloadRecord(id: number) {
+    const rec = await fetch(`/api/hr/salary-card?id=${id}`).then(r => r.json())
+    if (!rec) return
+    const attendance: AttendanceRow[] = rec.attendance_data ?? []
+    const worked = attendance.filter((d: AttendanceRow) => d.status === 'worked')
+    const dailyRate = parseFloat(rec.daily_rate) || 0
+    const header = ['Date','Day','Category','Employee','Daily Rate (AED)','Tax','Project/Class','Advance (AED)']
+    const rows = worked.map((d: AttendanceRow) => [
+      rec.payment_date ?? '', d.date, 'Wage expenses', rec.employee_name,
+      dailyRate.toFixed(2), 'ZR Zero Rated', d.project ?? '', d.advance > 0 ? d.advance.toFixed(2) : ''
+    ])
+    const totalsRow = ['','','TOTAL','', (worked.length * dailyRate).toFixed(2), '','', parseFloat(rec.total_advances).toFixed(2)]
+    const csv = [header, ...rows, [], totalsRow].map(r => r.map((c: string | number) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a'); a.href = url
+    a.download = `salary_${rec.employee_name.replace(/\s+/g, '_')}_${rec.month.replace(/\s+/g, '_')}.csv`
+    a.click(); URL.revokeObjectURL(url)
   }
 
   useEffect(() => {
@@ -641,6 +667,7 @@ export default function SalaryCardPage() {
                     <th className="px-4 py-3 text-right text-xs text-slate-500 font-semibold">Working Days</th>
                     <th className="px-4 py-3 text-right text-xs text-slate-500 font-semibold">Net Payment</th>
                     <th className="px-4 py-3 text-left text-xs text-slate-500 font-semibold">Saved On</th>
+                    <th className="px-4 py-3"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -652,6 +679,18 @@ export default function SalaryCardPage() {
                       <td className="px-4 py-3 text-right text-slate-600 dark:text-slate-300">{r.working_days}</td>
                       <td className="px-4 py-3 text-right font-bold text-emerald-600">AED {Number(r.net_payment).toLocaleString()}</td>
                       <td className="px-4 py-3 text-xs text-slate-400">{new Date(r.created_at).toLocaleDateString('en-AE', { day:'2-digit', month:'short', year:'numeric' })}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-1 justify-end">
+                          <button onClick={() => downloadRecord(r.id)} title="Download CSV"
+                            className="p-1.5 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/30 text-emerald-600 transition-colors">
+                            <Download className="w-3.5 h-3.5" />
+                          </button>
+                          <button onClick={() => deleteRecord(r.id, r.employee_name)} title="Delete"
+                            className="p-1.5 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 text-red-500 transition-colors">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

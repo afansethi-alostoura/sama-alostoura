@@ -194,11 +194,21 @@ Rules:
   }
 }
 
-// GET — list recent salary records
-export async function GET() {
+// GET — list records, or fetch single record by ?id=X (includes qb_lines)
+export async function GET(req: NextRequest) {
   if (!isDbConfigured()) return NextResponse.json([])
   try {
     await ensureTable()
+    const id = req.nextUrl.searchParams.get('id')
+    if (id) {
+      const rows = await query(
+        `SELECT id, employee_name, month, monthly_salary, working_days,
+                daily_rate, total_advances, net_payment, payment_date,
+                payment_account, payment_method, attendance_data, qb_lines, created_at
+         FROM salary_records WHERE id = $1 LIMIT 1`, [id]
+      )
+      return NextResponse.json(rows[0] ?? null)
+    }
     const rows = await query(
       `SELECT id, employee_name, month, monthly_salary, working_days,
               daily_rate, total_advances, net_payment, payment_date,
@@ -208,5 +218,19 @@ export async function GET() {
     return NextResponse.json(rows)
   } catch {
     return NextResponse.json([])
+  }
+}
+
+// DELETE — remove a salary record by ?id=X
+export async function DELETE(req: NextRequest) {
+  if (!isDbConfigured()) return NextResponse.json({ error: 'DB not configured' }, { status: 500 })
+  try {
+    const id = req.nextUrl.searchParams.get('id')
+    if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
+    await ensureTable()
+    await query(`DELETE FROM salary_records WHERE id = $1`, [id])
+    return NextResponse.json({ ok: true })
+  } catch (e) {
+    return NextResponse.json({ error: String(e) }, { status: 500 })
   }
 }
