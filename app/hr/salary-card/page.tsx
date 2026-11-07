@@ -237,13 +237,16 @@ export default function SalaryCardPage() {
     try {
       const [y, m] = cardMonth.split('-').map(Number)
       const monthName = new Date(y, m - 1).toLocaleString('en', { month: 'long' })
-      await fetch('/api/hr/salary-card/manual', {
+      const res = await fetch('/api/hr/salary-card/manual', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ employeeName: manualName, month: monthName, year: String(y), monthlySalary: salary, attendance: editedAttendance, paymentDate, paymentAccount: paymentAcct, paymentMethod }),
       })
+      const data = await res.json()
+      if (data.error) throw new Error(data.error)
       setSaved(true); loadRecords()
-    } catch { /* silent — downloads still work */ }
-    finally { setLoading(false) }
+    } catch (e: unknown) {
+      setError(String(e instanceof Error ? e.message : e))
+    } finally { setLoading(false) }
   }
 
   function downloadCSV() {
