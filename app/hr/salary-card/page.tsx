@@ -164,10 +164,10 @@ export default function SalaryCardPage() {
     if (result) setEditedAttendance(result.attendance.map(r => ({ ...r })))
   }, [result])
 
-  // Manual mode: rebuild attendance grid when month or projects change
+  // Manual mode: rebuild attendance grid when month or projects change (skip when editing a saved record)
   useEffect(() => {
-    if (mode === 'manual') setEditedAttendance(buildManualAttendance(cardMonth, projects[0]?.name ?? null))
-  }, [cardMonth, mode, projects])
+    if (mode === 'manual' && !editingRecordId) setEditedAttendance(buildManualAttendance(cardMonth, projects[0]?.name ?? null))
+  }, [cardMonth, mode, projects, editingRecordId])
 
   // Derived month info for manual mode
   const manualMonthInfo = useMemo(() => {
