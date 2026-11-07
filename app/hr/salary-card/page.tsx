@@ -106,6 +106,17 @@ export default function SalaryCardPage() {
     setPaymentDate(rec.payment_date ? rec.payment_date.slice(0, 10) : new Date().toISOString().slice(0, 10))
     setPaymentAcct(rec.payment_account ?? 'Cash')
     setPaymentMethod(rec.payment_method ?? 'Cash')
+
+    // Parse "October 2026" → "2026-10"
+    if (rec.month) {
+      const parts = rec.month.trim().split(' ')
+      if (parts.length === 2) {
+        const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December']
+        const mIdx = monthNames.indexOf(parts[0])
+        if (mIdx >= 0) setCardMonth(`${parts[1]}-${String(mIdx + 1).padStart(2, '0')}`)
+      }
+    }
+
     const att: AttendanceRow[] = rec.attendance_data ?? []
     setEditedAttendance(att)
     setEditingRecordId(id)
