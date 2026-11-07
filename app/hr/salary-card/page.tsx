@@ -241,6 +241,38 @@ export default function SalaryCardPage() {
     a.click(); URL.revokeObjectURL(url)
   }
 
+  function downloadIIF() {
+    if (!hasResult) return
+    const worked = editedAttendance.filter(d => d.status === 'worked')
+    const total  = Math.round(worked.length * computed.dailyRate * 100) / 100
+
+    // QB date format: MM/DD/YYYY
+    const [py, pm, pd] = paymentDate.split('-')
+    const qbDate = `${pm}/${pd}/${py}`
+    const refNo  = `${employeeName} ${monthLabel}`
+
+    const lines: string[] = [
+      '!TRNS\tTRNSID\tTRNSTYPE\tDATE\tACCNT\tNAME\tAMOUNT\tDOCNUM\tMEMO\tCLASS\tTOPRINT',
+      '!SPL\tSPLID\tTRNSTYPE\tDATE\tACCNT\tNAME\tAMOUNT\tDOCNUM\tMEMO\tCLASS\tBILLABLE',
+      '!ENDTRNS',
+      `TRNS\t\tCHECK\t${qbDate}\t${paymentAcct}\t${employeeName}\t${(-total).toFixed(2)}\t${refNo}\t${monthLabel} Salary\t\tN`,
+    ]
+
+    worked.forEach(d => {
+      const proj      = projects.find(p => p.name === d.project)
+      const fullClass = proj?.qb_class_name ?? d.project ?? ''
+      lines.push(`SPL\t\tCHECK\t${qbDate}\tWage expenses\t${employeeName}\t${computed.dailyRate.toFixed(2)}\t\t${d.date} ${employeeName}\t${fullClass}\tN`)
+    })
+
+    lines.push('ENDTRNS')
+
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a'); a.href = url
+    a.download = `salary_${employeeName.replace(/\s+/g, '_')}_${monthLabel.replace(/\s+/g, '_')}.iif`
+    a.click(); URL.revokeObjectURL(url)
+  }
+
   function printReport() {
     if (!hasResult) return
     const rows = editedAttendance.map(r => {
@@ -479,15 +511,19 @@ export default function SalaryCardPage() {
                   </div>
 
                   <div className="flex gap-2">
-                    <button onClick={downloadCSV}
+                    <button onClick={downloadIIF}
                       className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold transition-colors">
-                      <Download className="w-4 h-4" /> QuickBooks (.csv)
+                      <Download className="w-4 h-4" /> QB Import (.iif)
                     </button>
                     <button onClick={printReport}
                       className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors">
                       <FileText className="w-4 h-4" /> Salary Report
                     </button>
                   </div>
+                  <button onClick={downloadCSV}
+                    className="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-slate-200 dark:border-slate-600 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700 text-xs transition-colors">
+                    <Download className="w-3 h-3" /> Download CSV
+                  </button>
                 </div>
 
                 {/* Attendance table */}
