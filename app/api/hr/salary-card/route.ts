@@ -122,12 +122,13 @@ Rules:
     }
 
     // Salary calculation
-    const salary = parseFloat(monthlySalary) || 0
+    // Daily rate = salary / total days in month (Sundays are paid, absent days are deducted)
+    const salary        = parseFloat(monthlySalary) || 0
     const sundayCount   = sundays.size
-    const workingDays   = daysInMonth > 0 ? daysInMonth - sundayCount : attendance.filter(d => d.status === 'worked').length
     const presentDays   = attendance.filter(d => d.status === 'worked').length
-    const absentDays    = Math.max(0, workingDays - presentDays)
-    const dailyRate     = workingDays > 0 ? Math.round((salary / workingDays) * 100) / 100 : 0
+    const absentDays    = attendance.filter(d => d.status === 'absent').length
+    const workingDays   = daysInMonth > 0 ? daysInMonth - sundayCount : presentDays
+    const dailyRate     = daysInMonth > 0 ? Math.round((salary / daysInMonth) * 100) / 100 : 0
     const absentDeduction = Math.round(absentDays * dailyRate * 100) / 100
     const salaryEarned  = salary - absentDeduction
     const totalAdvances = attendance.reduce((s: number, d) => s + (d.advance ?? 0), 0)
