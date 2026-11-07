@@ -1,6 +1,6 @@
 'use client'
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { Camera, Upload, Loader2, Download, CheckCircle2, ArrowLeft, Banknote, User, Calendar, Building2, Plus, X, Users, Pencil, FileText, ClipboardList, Trash2, PenLine } from 'lucide-react'
+import { Camera, Upload, Loader2, Download, CheckCircle2, ArrowLeft, Banknote, User, Calendar, Building2, Plus, X, Users, Pencil, FileText, ClipboardList, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 
 interface SalaryRecord { id: number; employee_name: string; month: string; monthly_salary: string; working_days: number; net_payment: string; payment_date: string | null; created_at: string }
@@ -533,16 +533,18 @@ export default function SalaryCardPage() {
                 {loading ? <><Loader2 className="w-5 h-5 animate-spin" /> Analysing card...</> : <><Camera className="w-5 h-5" /> Analyse Salary Card</>}
               </button>
             ) : (
-              <button onClick={saveManual} disabled={loading || !salary || !manualName}
-                className={`w-full py-3 rounded-2xl disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold flex items-center justify-center gap-2 transition-colors ${editingRecordId ? 'bg-blue-600 hover:bg-blue-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}>
-                {loading ? <><Loader2 className="w-5 h-5 animate-spin" /> Saving...</> : editingRecordId ? <><PenLine className="w-5 h-5" /> Update Record</> : <><CheckCircle2 className="w-5 h-5" /> Save Record</>}
-              </button>
-              {editingRecordId && (
-                <button onClick={() => { setEditingRecordId(null); setManualName(''); setSaved(false) }}
-                  className="w-full py-2 rounded-2xl border border-slate-300 dark:border-slate-600 text-slate-500 text-sm hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
-                  Cancel Edit
+              <>
+                <button onClick={saveManual} disabled={loading || !salary || !manualName}
+                  className={`w-full py-3 rounded-2xl disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold flex items-center justify-center gap-2 transition-colors ${editingRecordId ? 'bg-blue-600 hover:bg-blue-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}>
+                  {loading ? <><Loader2 className="w-5 h-5 animate-spin" /> Saving...</> : editingRecordId ? <><Pencil className="w-5 h-5" /> Update Record</> : <><CheckCircle2 className="w-5 h-5" /> Save Record</>}
                 </button>
-              )}
+                {editingRecordId && (
+                  <button onClick={() => { setEditingRecordId(null); setManualName(''); setSaved(false) }}
+                    className="w-full py-2 rounded-2xl border border-slate-300 dark:border-slate-600 text-slate-500 text-sm hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+                    Cancel Edit
+                  </button>
+                )}
+              </>
             )}
           </div>
 
