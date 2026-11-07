@@ -560,32 +560,32 @@ export default function SalaryCardPage() {
                       </button>
                     )}
                   </div>
-                  <div className="overflow-x-auto max-h-96 overflow-y-auto">
-                    <table className="w-full text-xs">
+                  <div className="overflow-x-auto max-h-[480px] overflow-y-auto">
+                    <table className="w-full text-sm">
                       <thead className="bg-slate-50 dark:bg-slate-700 sticky top-0">
                         <tr>
-                          <th className="px-3 py-2 text-left text-slate-500">Date</th>
-                          <th className="px-3 py-2 text-left text-slate-500">Status / Project</th>
-                          <th className="px-3 py-2 text-right text-slate-500">Amount</th>
-                          <th className="px-3 py-2 text-right text-slate-500">Advance</th>
+                          <th className="px-4 py-3 text-left text-slate-500 font-semibold">Date</th>
+                          <th className="px-4 py-3 text-left text-slate-500 font-semibold">Status / Project</th>
+                          <th className="px-4 py-3 text-right text-slate-500 font-semibold">Amount</th>
+                          <th className="px-4 py-3 text-right text-slate-500 font-semibold">Advance</th>
                         </tr>
                       </thead>
                       <tbody>
                         {editedAttendance.map((row, i) => {
                           const isEditing = editMode || mode === 'manual'
                           return (
-                            <tr key={i} className={`border-t border-slate-50 dark:border-slate-700/50 ${row.status === 'absent' ? 'bg-red-50 dark:bg-red-900/10' : row.status !== 'worked' ? 'opacity-50' : ''}`}>
-                              <td className="px-3 py-1.5 text-slate-700 dark:text-slate-300">{row.date}</td>
-                              <td className="px-3 py-1">
+                            <tr key={i} className={`border-t border-slate-100 dark:border-slate-700/50 ${row.status === 'absent' ? 'bg-red-50 dark:bg-red-900/10' : row.status !== 'worked' ? 'opacity-50' : ''}`}>
+                              <td className="px-4 py-2.5 font-medium text-slate-700 dark:text-slate-300">{row.date}</td>
+                              <td className="px-4 py-2">
                                 {isEditing ? (
-                                  <div className="flex gap-1">
+                                  <div className="flex gap-2">
                                     <select value={row.status} onChange={e => updateRow(i, 'status', e.target.value)}
-                                      className="px-1 py-0.5 rounded border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-white text-xs">
+                                      className="px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-white text-sm">
                                       {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                                     </select>
                                     {row.status === 'worked' && (
                                       <select value={row.project ?? ''} onChange={e => updateRow(i, 'project', e.target.value)}
-                                        className="px-1 py-0.5 rounded border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-white text-xs">
+                                        className="px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-white text-sm flex-1">
                                         {projects.map(p => (
                                           <option key={p.id} value={p.name}>
                                             {p.qb_class_name ?? p.name}
@@ -600,18 +600,18 @@ export default function SalaryCardPage() {
                                     : <StatusBadge status={row.status} />
                                 )}
                               </td>
-                              <td className="px-3 py-1.5 text-right text-slate-700 dark:text-slate-300">
+                              <td className="px-4 py-2.5 text-right text-slate-700 dark:text-slate-300">
                                 {row.status === 'worked'
                                   ? computed.dailyRate.toFixed(2)
                                   : row.status === 'absent'
                                     ? <span className="text-red-500">-{computed.dailyRate.toFixed(2)}</span>
                                     : '—'}
                               </td>
-                              <td className="px-3 py-1 text-right">
+                              <td className="px-4 py-2 text-right">
                                 {isEditing ? (
                                   <input type="number" value={row.advance || ''} placeholder="0"
                                     onChange={e => updateRow(i, 'advance', parseFloat(e.target.value) || 0)}
-                                    className="w-16 px-1 py-0.5 rounded border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-white text-xs text-right" />
+                                    className="w-20 px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-800 dark:text-white text-sm text-right" />
                                 ) : (
                                   row.advance > 0 ? <span className="text-red-500">{row.advance.toFixed(2)}</span> : '—'
                                 )}
@@ -622,9 +622,9 @@ export default function SalaryCardPage() {
                       </tbody>
                       <tfoot className="bg-slate-50 dark:bg-slate-700 sticky bottom-0">
                         <tr className="border-t-2 border-slate-200 dark:border-slate-600">
-                          <td colSpan={2} className="px-3 py-2 font-semibold text-slate-700 dark:text-slate-300">Net Payment</td>
-                          <td className="px-3 py-2 text-right font-bold text-emerald-600">{computed.netPayment.toFixed(2)}</td>
-                          <td className="px-3 py-2 text-right font-bold text-red-500">{computed.totalAdvances.toFixed(2)}</td>
+                          <td colSpan={2} className="px-4 py-3 font-semibold text-slate-700 dark:text-slate-300">Net Payment</td>
+                          <td className="px-4 py-3 text-right font-bold text-emerald-600">{computed.netPayment.toFixed(2)}</td>
+                          <td className="px-4 py-3 text-right font-bold text-red-500">{computed.totalAdvances.toFixed(2)}</td>
                         </tr>
                       </tfoot>
                     </table>
