@@ -1,6 +1,6 @@
 'use client'
 import { useState, useRef, useEffect, useMemo } from 'react'
-import { Camera, Upload, Loader2, Download, CheckCircle2, ArrowLeft, Banknote, User, Calendar, Building2, Plus, X, Users, Pencil, FileText, ClipboardList, Trash2 } from 'lucide-react'
+import { Camera, Upload, Loader2, Download, CheckCircle2, ArrowLeft, Banknote, User, Calendar, Building2, Plus, X, Users, Pencil, FileText, ClipboardList, Trash2, PenLine } from 'lucide-react'
 import Link from 'next/link'
 
 interface SalaryRecord { id: number; employee_name: string; month: string; monthly_salary: string; working_days: number; net_payment: string; payment_date: string | null; created_at: string }
@@ -87,6 +87,7 @@ export default function SalaryCardPage() {
   const [result,   setResult]   = useState<Result | null>(null)
   const [editMode, setEditMode] = useState(false)
   const [editedAttendance, setEditedAttendance] = useState<AttendanceRow[]>([])
+  const [editingRecordId, setEditingRecordId] = useState<number | null>(null)
 
   // Manual mode: worker name typed directly
   const [manualName, setManualName] = useState('')
@@ -94,6 +95,22 @@ export default function SalaryCardPage() {
   function loadRecords() {
     setLoadingRecs(true)
     fetch('/api/hr/salary-card').then(r => r.json()).then(d => { if (Array.isArray(d)) setRecords(d) }).catch(() => {}).finally(() => setLoadingRecs(false))
+  }
+
+  async function editRecord(id: number) {
+    const rec = await fetch(`/api/hr/salary-card?id=${id}`).then(r => r.json())
+    if (!rec) return
+    setMode('manual')
+    setManualName(rec.employee_name ?? '')
+    setSalary(String(rec.monthly_salary ?? ''))
+    setPaymentDate(rec.payment_date ? rec.payment_date.slice(0, 10) : new Date().toISOString().slice(0, 10))
+    setPaymentAcct(rec.payment_account ?? 'Cash')
+    setPaymentMethod(rec.payment_method ?? 'Cash')
+    const att: AttendanceRow[] = rec.attendance_data ?? []
+    setEditedAttendance(att)
+    setEditingRecordId(id)
+    setSaved(false)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   async function deleteRecord(id: number, name: string) {
@@ -237,13 +254,21 @@ export default function SalaryCardPage() {
     try {
       const [y, m] = cardMonth.split('-').map(Number)
       const monthName = new Date(y, m - 1).toLocaleString('en', { month: 'long' })
-      const res = await fetch('/api/hr/salary-card/manual', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ employeeName: manualName, month: monthName, year: String(y), monthlySalary: salary, attendance: editedAttendance, paymentDate, paymentAccount: paymentAcct, paymentMethod }),
-      })
+      let res: Response
+      if (editingRecordId) {
+        res = await fetch(`/api/hr/salary-card?id=${editingRecordId}`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ employeeName: manualName, month: `${monthName} ${y}`, monthlySalary: salary, attendance: editedAttendance, paymentDate, paymentAccount: paymentAcct, paymentMethod }),
+        })
+      } else {
+        res = await fetch('/api/hr/salary-card/manual', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ employeeName: manualName, month: monthName, year: String(y), monthlySalary: salary, attendance: editedAttendance, paymentDate, paymentAccount: paymentAcct, paymentMethod }),
+        })
+      }
       const data = await res.json()
       if (data.error) throw new Error(data.error)
-      setSaved(true); loadRecords()
+      setSaved(true); setEditingRecordId(null); loadRecords()
     } catch (e: unknown) {
       setError(String(e instanceof Error ? e.message : e))
     } finally { setLoading(false) }
@@ -499,9 +524,15 @@ export default function SalaryCardPage() {
               </button>
             ) : (
               <button onClick={saveManual} disabled={loading || !salary || !manualName}
-                className="w-full py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold flex items-center justify-center gap-2 transition-colors">
-                {loading ? <><Loader2 className="w-5 h-5 animate-spin" /> Saving...</> : <><CheckCircle2 className="w-5 h-5" /> Save Record</>}
+                className={`w-full py-3 rounded-2xl disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold flex items-center justify-center gap-2 transition-colors ${editingRecordId ? 'bg-blue-600 hover:bg-blue-700' : 'bg-emerald-600 hover:bg-emerald-700'}`}>
+                {loading ? <><Loader2 className="w-5 h-5 animate-spin" /> Saving...</> : editingRecordId ? <><PenLine className="w-5 h-5" /> Update Record</> : <><CheckCircle2 className="w-5 h-5" /> Save Record</>}
               </button>
+              {editingRecordId && (
+                <button onClick={() => { setEditingRecordId(null); setManualName(''); setSaved(false) }}
+                  className="w-full py-2 rounded-2xl border border-slate-300 dark:border-slate-600 text-slate-500 text-sm hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+                  Cancel Edit
+                </button>
+              )}
             )}
           </div>
 
@@ -684,6 +715,10 @@ export default function SalaryCardPage() {
                       <td className="px-4 py-3 text-xs text-slate-400">{new Date(r.created_at).toLocaleDateString('en-AE', { day:'2-digit', month:'short', year:'numeric' })}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1 justify-end">
+                          <button onClick={() => editRecord(r.id)} title="Edit"
+                            className="p-1.5 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/30 text-blue-500 transition-colors">
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
                           <button onClick={() => downloadRecord(r.id)} title="Download CSV"
                             className="p-1.5 rounded-lg hover:bg-emerald-100 dark:hover:bg-emerald-900/30 text-emerald-600 transition-colors">
                             <Download className="w-3.5 h-3.5" />

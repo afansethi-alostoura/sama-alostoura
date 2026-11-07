@@ -221,6 +221,35 @@ export async function GET(req: NextRequest) {
   }
 }
 
+// PUT — update an existing salary record by ?id=X
+export async function PUT(req: NextRequest) {
+  if (!isDbConfigured()) return NextResponse.json({ error: 'DB not configured' }, { status: 500 })
+  try {
+    const id = req.nextUrl.searchParams.get('id')
+    if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
+    const { employeeName, month, monthlySalary, attendance, paymentDate, paymentAccount, paymentMethod } = await req.json()
+    await ensureTable()
+    const daysInMonth  = attendance.length
+    const salary       = parseFloat(monthlySalary) || 0
+    const workingDays  = attendance.filter((r: { status: string }) => r.status !== 'sunday').length
+    const absentDays   = attendance.filter((r: { status: string }) => r.status === 'absent').length
+    const dailyRate    = daysInMonth > 0 ? Math.round((salary / daysInMonth) * 100) / 100 : 0
+    const totalAdv     = attendance.reduce((s: number, r: { advance: number }) => s + (r.advance || 0), 0)
+    const netPayment   = salary - absentDays * dailyRate - totalAdv
+    await query(
+      `UPDATE salary_records SET employee_name=$1, month=$2, monthly_salary=$3, working_days=$4,
+       daily_rate=$5, total_advances=$6, net_payment=$7, payment_date=$8, payment_account=$9,
+       payment_method=$10, attendance_data=$11 WHERE id=$12`,
+      [employeeName, month, salary, workingDays, dailyRate, totalAdv, netPayment,
+       paymentDate || null, paymentAccount || 'Cash', paymentMethod || 'Cash',
+       JSON.stringify(attendance), id]
+    )
+    return NextResponse.json({ ok: true })
+  } catch (e) {
+    return NextResponse.json({ error: String(e) }, { status: 500 })
+  }
+}
+
 // DELETE — remove a salary record by ?id=X
 export async function DELETE(req: NextRequest) {
   if (!isDbConfigured()) return NextResponse.json({ error: 'DB not configured' }, { status: 500 })
