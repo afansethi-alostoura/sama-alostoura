@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { Camera, Upload, Loader2, Download, CheckCircle2, ArrowLeft, Banknote, User, Calendar, Building2, Plus, X, Users, Pencil, FileText, ClipboardList, Trash2 } from 'lucide-react'
 import Link from 'next/link'
+import jsPDF from 'jspdf'
 
 interface SalaryRecord { id: number; employee_name: string; month: string; monthly_salary: string; working_days: number; net_payment: string; payment_date: string | null; created_at: string }
 interface Worker { id: number; name: string; monthly_salary: number; position: string }
@@ -376,6 +377,103 @@ export default function SalaryCardPage() {
     const w = window.open('', '_blank'); w?.document.write(html); w?.document.close()
   }
 
+  function downloadPDF() {
+    if (!hasResult) return
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' })
+    const W = 210; const margin = 14; const col2 = 110
+
+    // Header
+    doc.setFillColor(37, 99, 235)
+    doc.rect(0, 0, W, 28, 'F')
+    doc.setTextColor(255, 255, 255)
+    doc.setFontSize(16); doc.setFont('helvetica', 'bold')
+    doc.text('SALARY SLIP', margin, 12)
+    doc.setFontSize(9); doc.setFont('helvetica', 'normal')
+    doc.text('Sama Alostoura Building Contracting LLC', margin, 19)
+    doc.text(`Payment Date: ${paymentDate}`, W - margin, 19, { align: 'right' })
+
+    // Employee info
+    doc.setTextColor(30, 41, 59)
+    doc.setFontSize(13); doc.setFont('helvetica', 'bold')
+    doc.text(employeeName || '—', margin, 38)
+    doc.setFontSize(9); doc.setFont('helvetica', 'normal')
+    doc.setTextColor(100, 116, 139)
+    doc.text(monthLabel || '—', margin, 44)
+    doc.text(`Account: ${paymentAcct}  ·  Method: ${paymentMethod}`, margin, 50)
+
+    // Summary boxes
+    const boxes = [
+      { label: 'Monthly Salary', val: `AED ${computed.sal.toFixed(2)}` },
+      { label: 'Working Days', val: String(computed.workingDays) },
+      { label: 'Days Present', val: String(computed.presentDays) },
+      { label: 'Days Absent', val: String(computed.absentDays) },
+      { label: 'Daily Rate', val: `AED ${computed.dailyRate.toFixed(2)}` },
+      { label: 'Absent Deduction', val: `-AED ${computed.absentDeduction.toFixed(2)}` },
+      { label: 'Total Advances', val: `-AED ${computed.totalAdvances.toFixed(2)}` },
+      { label: 'NET PAYMENT', val: `AED ${computed.netPayment.toFixed(2)}` },
+    ]
+    let bx = margin; let by = 58; const bw = 43; const bh = 16
+    boxes.forEach((b, i) => {
+      const isNet = i === 7
+      doc.setFillColor(isNet ? 236 : 248, isNet ? 253 : 250, isNet ? 243 : 252)
+      doc.roundedRect(bx, by, bw, bh, 2, 2, 'F')
+      doc.setTextColor(100, 116, 139); doc.setFontSize(7); doc.setFont('helvetica', 'normal')
+      doc.text(b.label, bx + 2, by + 5)
+      doc.setTextColor(isNet ? 5 : 30, isNet ? 150 : 41, isNet ? 105 : 59)
+      doc.setFontSize(isNet ? 9 : 8); doc.setFont('helvetica', 'bold')
+      doc.text(b.val, bx + 2, by + 12)
+      bx += bw + 2
+      if (i === 3) { bx = margin; by += bh + 3 }
+    })
+
+    // Attendance table
+    let y = by + bh + 10
+    doc.setFillColor(241, 245, 249)
+    doc.rect(margin, y, W - margin * 2, 7, 'F')
+    doc.setTextColor(100, 116, 139); doc.setFontSize(7); doc.setFont('helvetica', 'bold')
+    doc.text('DATE', margin + 2, y + 5)
+    doc.text('STATUS / PROJECT', margin + 25, y + 5)
+    doc.text('AMOUNT (AED)', col2 + 30, y + 5, { align: 'right' })
+    doc.text('ADVANCE (AED)', W - margin - 2, y + 5, { align: 'right' })
+    y += 8
+
+    editedAttendance.forEach((row) => {
+      if (y > 270) { doc.addPage(); y = 20 }
+      const isAbsent = row.status === 'absent'
+      const isSunday = row.status === 'sunday'
+      if (isAbsent) { doc.setFillColor(255, 245, 245); doc.rect(margin, y - 1, W - margin * 2, 6, 'F') }
+      doc.setTextColor(isAbsent ? 220 : isSunday ? 148 : 30, isAbsent ? 38 : isSunday ? 163 : 41, isAbsent ? 38 : isSunday ? 182 : 59)
+      doc.setFontSize(7.5); doc.setFont('helvetica', row.status === 'worked' ? 'normal' : 'normal')
+      doc.text(row.date, margin + 2, y + 4)
+      const statusText = row.status === 'worked' ? (row.project ?? '') : row.status.toUpperCase()
+      doc.text(statusText, margin + 25, y + 4)
+      if (row.status === 'worked') {
+        doc.setTextColor(30, 41, 59)
+        doc.text(computed.dailyRate.toFixed(2), col2 + 30, y + 4, { align: 'right' })
+      } else if (isAbsent) {
+        doc.text(`-${computed.dailyRate.toFixed(2)}`, col2 + 30, y + 4, { align: 'right' })
+      }
+      if (row.advance > 0) {
+        doc.setTextColor(220, 38, 38)
+        doc.text(row.advance.toFixed(2), W - margin - 2, y + 4, { align: 'right' })
+      }
+      doc.setDrawColor(226, 232, 240)
+      doc.line(margin, y + 5.5, W - margin, y + 5.5)
+      y += 7
+    })
+
+    // Footer total
+    doc.setFillColor(236, 253, 243)
+    doc.rect(margin, y, W - margin * 2, 8, 'F')
+    doc.setTextColor(5, 150, 105); doc.setFontSize(9); doc.setFont('helvetica', 'bold')
+    doc.text('NET PAYMENT', margin + 2, y + 5.5)
+    doc.text(`AED ${computed.netPayment.toFixed(2)}`, col2 + 30, y + 5.5, { align: 'right' })
+    doc.setTextColor(220, 38, 38)
+    doc.text(`AED ${computed.totalAdvances.toFixed(2)}`, W - margin - 2, y + 5.5, { align: 'right' })
+
+    doc.save(`salary_slip_${(employeeName || 'worker').replace(/\s+/g, '_')}_${(monthLabel || '').replace(/\s+/g, '_')}.pdf`)
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
       <div className="max-w-6xl mx-auto px-4 py-6">
@@ -584,15 +682,21 @@ export default function SalaryCardPage() {
                       className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold transition-colors">
                       <Download className="w-4 h-4" /> QB Import (.iif)
                     </button>
-                    <button onClick={printReport}
-                      className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold transition-colors">
-                      <FileText className="w-4 h-4" /> Salary Report
+                    <button onClick={downloadPDF}
+                      className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold transition-colors">
+                      <FileText className="w-4 h-4" /> Salary Slip PDF
                     </button>
                   </div>
-                  <button onClick={downloadCSV}
-                    className="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-slate-200 dark:border-slate-600 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700 text-xs transition-colors">
-                    <Download className="w-3 h-3" /> Download CSV
-                  </button>
+                  <div className="flex gap-2">
+                    <button onClick={printReport}
+                      className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl border border-slate-200 dark:border-slate-600 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700 text-xs transition-colors">
+                      <FileText className="w-3 h-3" /> Print Report
+                    </button>
+                    <button onClick={downloadCSV}
+                      className="flex-1 flex items-center justify-center gap-2 py-2 rounded-xl border border-slate-200 dark:border-slate-600 text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-700 text-xs transition-colors">
+                      <Download className="w-3 h-3" /> Download CSV
+                    </button>
+                  </div>
                 </div>
 
                 {/* Attendance table */}
