@@ -675,7 +675,7 @@ export default function SalaryCardPage() {
                 </thead>
                 <tbody>
                   {records.map((r, i) => (
-                    <tr key={r.id} className={`border-t border-slate-50 dark:border-slate-700/50 ${i % 2 === 0 ? '' : 'bg-slate-50/50 dark:bg-slate-700/20'}`}>
+                    <tr key={r.id} className={`border-t border-slate-100 dark:border-slate-700/50 hover:bg-blue-50/50 dark:hover:bg-slate-700/40 transition-colors ${i % 2 === 0 ? '' : 'bg-slate-50/50 dark:bg-slate-700/20'}`}>
                       <td className="px-4 py-3 font-medium text-slate-800 dark:text-white">{r.employee_name || '—'}</td>
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{r.month || '—'}</td>
                       <td className="px-4 py-3 text-right text-slate-600 dark:text-slate-300">AED {Number(r.monthly_salary).toLocaleString()}</td>
