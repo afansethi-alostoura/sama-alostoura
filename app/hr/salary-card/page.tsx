@@ -278,7 +278,7 @@ export default function SalaryCardPage() {
       }
       const data = await res.json()
       if (data.error) throw new Error(data.error)
-      setSaved(true); setEditingRecordId(null); loadRecords()
+      setSaved(true); setEditingRecordId(null); setManualName(''); setEditedAttendance(buildManualAttendance(cardMonth, projects[0]?.name ?? null)); loadRecords()
     } catch (e: unknown) {
       setError(String(e instanceof Error ? e.message : e))
     } finally { setLoading(false) }
