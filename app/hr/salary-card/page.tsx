@@ -89,6 +89,7 @@ export default function SalaryCardPage() {
   const [editMode, setEditMode] = useState(false)
   const [editedAttendance, setEditedAttendance] = useState<AttendanceRow[]>([])
   const [editingRecordId, setEditingRecordId] = useState<number | null>(null)
+  const editingRecordIdRef = useRef<number | null>(null)
 
   // Manual mode: worker name typed directly
   const [manualName, setManualName] = useState('')
@@ -101,6 +102,7 @@ export default function SalaryCardPage() {
   async function editRecord(id: number) {
     const rec = await fetch(`/api/hr/salary-card?id=${id}`).then(r => r.json())
     if (!rec) return
+    editingRecordIdRef.current = id  // set synchronously before any state changes
     setMode('manual')
     setManualName(rec.employee_name ?? '')
     setSalary(String(rec.monthly_salary ?? ''))
@@ -166,8 +168,8 @@ export default function SalaryCardPage() {
 
   // Manual mode: rebuild attendance grid when month or projects change (skip when editing a saved record)
   useEffect(() => {
-    if (mode === 'manual' && !editingRecordId) setEditedAttendance(buildManualAttendance(cardMonth, projects[0]?.name ?? null))
-  }, [cardMonth, mode, projects, editingRecordId])
+    if (mode === 'manual' && !editingRecordIdRef.current) setEditedAttendance(buildManualAttendance(cardMonth, projects[0]?.name ?? null))
+  }, [cardMonth, mode, projects])
 
   // Derived month info for manual mode
   const manualMonthInfo = useMemo(() => {
@@ -279,7 +281,7 @@ export default function SalaryCardPage() {
       }
       const data = await res.json()
       if (data.error) throw new Error(data.error)
-      setSaved(true); setEditingRecordId(null); setManualName(''); setEditedAttendance(buildManualAttendance(cardMonth, projects[0]?.name ?? null)); loadRecords()
+      editingRecordIdRef.current = null; setSaved(true); setEditingRecordId(null); setManualName(''); setEditedAttendance(buildManualAttendance(cardMonth, projects[0]?.name ?? null)); loadRecords()
     } catch (e: unknown) {
       setError(String(e instanceof Error ? e.message : e))
     } finally { setLoading(false) }
@@ -569,7 +571,7 @@ export default function SalaryCardPage() {
                   {loading ? <><Loader2 className="w-5 h-5 animate-spin" /> Saving...</> : editingRecordId ? <><Pencil className="w-5 h-5" /> Update Record</> : <><CheckCircle2 className="w-5 h-5" /> Save Record</>}
                 </button>
                 {editingRecordId && (
-                  <button onClick={() => { setEditingRecordId(null); setManualName(''); setSaved(false) }}
+                  <button onClick={() => { editingRecordIdRef.current = null; setEditingRecordId(null); setManualName(''); setSaved(false) }}
                     className="w-full py-2 rounded-2xl border border-slate-300 dark:border-slate-600 text-slate-500 text-sm hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
                     Cancel Edit
                   </button>
