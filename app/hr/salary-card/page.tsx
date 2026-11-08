@@ -337,50 +337,112 @@ export default function SalaryCardPage() {
     a.click(); URL.revokeObjectURL(url)
   }
 
-  function buildReportHTML() {
+  function buildReportHTML(autoPrint = false) {
+    const box = (label: string, val: string, color = '#1e293b') =>
+      `<td style="background-color:#f8fafc;padding:10px 12px;width:25%"><div style="font-size:10px;color:#64748b;margin-bottom:3px">${label}</div><div style="font-size:14px;font-weight:700;color:${color}">${val}</div></td>`
+
     const rows = editedAttendance.map(r => {
-      const bg = r.status === 'absent' ? '#fff5f5' : r.status === 'sunday' ? '#f8fafc' : '#fff'
+      const bg = r.status === 'absent' ? '#fff5f5' : r.status === 'sunday' ? '#f8fafc' : '#ffffff'
       const statusCell = r.status === 'worked'
-        ? `<td style="color:#2563eb">${r.project ?? ''}</td>`
-        : `<td style="color:${r.status === 'absent' ? '#ef4444' : '#94a3b8'};text-transform:uppercase;font-size:11px">${r.status}</td>`
+        ? `<td style="padding:5px 10px;color:#2563eb">${r.project ?? ''}</td>`
+        : `<td style="padding:5px 10px;color:${r.status === 'absent' ? '#ef4444' : '#94a3b8'};text-transform:uppercase;font-size:11px">${r.status}</td>`
       const amtCell = r.status === 'worked'
-        ? `<td style="text-align:right">${computed.dailyRate.toFixed(2)}</td>`
+        ? `<td style="padding:5px 10px;text-align:right">${computed.dailyRate.toFixed(2)}</td>`
         : r.status === 'absent'
-          ? `<td style="text-align:right;color:#ef4444">-${computed.dailyRate.toFixed(2)}</td>`
-          : `<td style="text-align:right;color:#94a3b8">—</td>`
-      const advCell = r.advance > 0 ? `<td style="text-align:right;color:#ef4444">${r.advance.toFixed(2)}</td>` : `<td style="text-align:right;color:#94a3b8">—</td>`
-      return `<tr style="background:${bg};border-bottom:1px solid #f1f5f9"><td>${r.date}</td>${statusCell}${amtCell}${advCell}</tr>`
+          ? `<td style="padding:5px 10px;text-align:right;color:#ef4444">-${computed.dailyRate.toFixed(2)}</td>`
+          : `<td style="padding:5px 10px;text-align:right;color:#94a3b8">—</td>`
+      const advCell = r.advance > 0
+        ? `<td style="padding:5px 10px;text-align:right;color:#ef4444">${r.advance.toFixed(2)}</td>`
+        : `<td style="padding:5px 10px;text-align:right;color:#94a3b8">—</td>`
+      return `<tr style="background-color:${bg};border-bottom:1px solid #f1f5f9"><td style="padding:5px 10px">${r.date}</td>${statusCell}${amtCell}${advCell}</tr>`
     }).join('')
 
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Salary Report</title>
-<style>body{font-family:Arial,sans-serif;margin:0;padding:24px;color:#1e293b;font-size:13px}h1{font-size:20px;margin:0 0 4px}.sub{color:#64748b;font-size:13px;margin-bottom:20px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}.box{background:#f8fafc;border-radius:8px;padding:12px}.box-label{font-size:11px;color:#64748b;margin-bottom:4px}.box-val{font-size:15px;font-weight:700;color:#1e293b}.box-val.green{color:#059669}.box-val.red{color:#ef4444}.box-val.blue{color:#2563eb}.net{grid-column:span 2;background:#ecfdf5}table{width:100%;border-collapse:collapse;font-size:12px}th{background:#f1f5f9;padding:8px 10px;text-align:left;font-size:11px;color:#64748b;text-transform:uppercase}td{padding:6px 10px}tfoot tr{border-top:2px solid #e2e8f0;font-weight:700}.footer{margin-top:30px;border-top:1px solid #e2e8f0;padding-top:12px;font-size:11px;color:#94a3b8;display:flex;justify-content:space-between}@media print{body{padding:12px}}</style></head><body>
-<h1>Salary Report — ${employeeName}</h1>
-<div class="sub">${monthLabel} · Sama Alostoura · Payment: ${paymentDate}</div>
-<div class="grid">
-  <div class="box"><div class="box-label">Total Days</div><div class="box-val">${daysInMonth ?? '—'}</div></div>
-  <div class="box"><div class="box-label">Sundays (off)</div><div class="box-val">${computed.sundayCount}</div></div>
-  <div class="box"><div class="box-label">Working Days</div><div class="box-val">${computed.workingDays}</div></div>
-  <div class="box"><div class="box-label">Daily Rate</div><div class="box-val">AED ${computed.dailyRate.toFixed(2)}</div></div>
-  <div class="box"><div class="box-label">Days Present</div><div class="box-val blue">${computed.presentDays}</div></div>
-  <div class="box"><div class="box-label">Days Absent</div><div class="box-val red">${computed.absentDays}</div></div>
-  <div class="box"><div class="box-label">Absent Deduction</div><div class="box-val red">AED ${computed.absentDeduction.toFixed(2)}</div></div>
-  <div class="box"><div class="box-label">Advances</div><div class="box-val red">AED ${computed.totalAdvances.toFixed(2)}</div></div>
-  <div class="box net"><div class="box-label">Monthly Salary</div><div class="box-val">AED ${computed.sal.toFixed(2)}</div></div>
-  <div class="box net"><div class="box-label">Net Payment</div><div class="box-val green">AED ${computed.netPayment.toFixed(2)}</div></div>
-</div>
-<table><thead><tr><th>Date</th><th>Status / Project</th><th style="text-align:right">Amount (AED)</th><th style="text-align:right">Advance (AED)</th></tr></thead>
-<tbody>${rows}</tbody>
-<tfoot><tr><td colspan="2">Net Payment</td><td style="text-align:right;color:#059669">${computed.netPayment.toFixed(2)}</td><td style="text-align:right;color:#ef4444">${computed.totalAdvances.toFixed(2)}</td></tr></tfoot>
-</table>
-<div class="footer"><span>Generated by Sama Alostoura Construction OS</span><span>${new Date().toLocaleDateString('en-AE')}</span></div>
-<script>window.onload=()=>{window.print()}</script></body></html>`
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Salary Slip</title>
+<style>
+  body{font-family:Arial,sans-serif;margin:0;padding:0;color:#1e293b;font-size:13px}
+  table{border-collapse:collapse;width:100%}
+  @media print{@page{margin:10mm}}
+</style></head><body>
 
-    return html
+<!-- Blue header -->
+<table cellpadding="0" cellspacing="0" style="background-color:#2563eb;margin-bottom:12px">
+  <tr>
+    <td style="padding:14px 18px;color:#ffffff;font-size:18px;font-weight:bold">SALARY SLIP</td>
+    <td style="padding:14px 18px;color:#bfdbfe;font-size:11px;text-align:right">
+      Sama Alostoura Building Contracting LLC<br>Payment Date: ${paymentDate}
+    </td>
+  </tr>
+</table>
+
+<!-- Employee -->
+<table cellpadding="0" cellspacing="0" style="margin:0 18px 14px 18px;width:calc(100% - 36px)">
+  <tr>
+    <td style="font-size:16px;font-weight:bold">${employeeName}</td>
+    <td style="text-align:right;color:#64748b;font-size:12px">${monthLabel}</td>
+  </tr>
+</table>
+
+<!-- Summary boxes (2 rows × 4 cols) -->
+<table cellpadding="0" cellspacing="4" style="margin:0 18px 14px 18px;width:calc(100% - 36px)">
+  <tr>
+    ${box('Total Days', String(daysInMonth ?? '—'))}
+    ${box('Sundays (off)', String(computed.sundayCount))}
+    ${box('Working Days', String(computed.workingDays))}
+    ${box('Daily Rate', 'AED ' + computed.dailyRate.toFixed(2))}
+  </tr>
+  <tr>
+    ${box('Days Present', String(computed.presentDays), '#2563eb')}
+    ${box('Days Absent', String(computed.absentDays), '#ef4444')}
+    ${box('Absent Deduction', 'AED ' + computed.absentDeduction.toFixed(2), '#ef4444')}
+    ${box('Advances', 'AED ' + computed.totalAdvances.toFixed(2), '#ef4444')}
+  </tr>
+  <tr>
+    <td colspan="2" style="background-color:#ecfdf5;padding:10px 12px">
+      <div style="font-size:10px;color:#64748b;margin-bottom:3px">Monthly Salary</div>
+      <div style="font-size:14px;font-weight:700">AED ${computed.sal.toFixed(2)}</div>
+    </td>
+    <td colspan="2" style="background-color:#ecfdf5;padding:10px 12px">
+      <div style="font-size:10px;color:#64748b;margin-bottom:3px">Net Payment</div>
+      <div style="font-size:17px;font-weight:700;color:#059669">AED ${computed.netPayment.toFixed(2)}</div>
+    </td>
+  </tr>
+</table>
+
+<!-- Attendance table -->
+<table cellpadding="0" cellspacing="0" style="margin:0 18px;width:calc(100% - 36px);font-size:12px">
+  <thead>
+    <tr style="background-color:#f1f5f9">
+      <th style="padding:7px 10px;text-align:left;font-size:11px;color:#64748b;font-weight:600">Date</th>
+      <th style="padding:7px 10px;text-align:left;font-size:11px;color:#64748b;font-weight:600">Status / Project</th>
+      <th style="padding:7px 10px;text-align:right;font-size:11px;color:#64748b;font-weight:600">Amount (AED)</th>
+      <th style="padding:7px 10px;text-align:right;font-size:11px;color:#64748b;font-weight:600">Advance (AED)</th>
+    </tr>
+  </thead>
+  <tbody>${rows}</tbody>
+  <tfoot>
+    <tr style="border-top:2px solid #e2e8f0;font-weight:700;background-color:#f8fafc">
+      <td colspan="2" style="padding:7px 10px">Net Payment</td>
+      <td style="padding:7px 10px;text-align:right;color:#059669">${computed.netPayment.toFixed(2)}</td>
+      <td style="padding:7px 10px;text-align:right;color:#ef4444">${computed.totalAdvances.toFixed(2)}</td>
+    </tr>
+  </tfoot>
+</table>
+
+<!-- Footer -->
+<table cellpadding="0" cellspacing="0" style="margin:20px 18px 0 18px;width:calc(100% - 36px);border-top:1px solid #e2e8f0">
+  <tr>
+    <td style="padding-top:10px;font-size:11px;color:#94a3b8">Generated by Sama Alostoura Construction OS</td>
+    <td style="padding-top:10px;text-align:right;font-size:11px;color:#94a3b8">${new Date().toLocaleDateString('en-AE')}</td>
+  </tr>
+</table>
+
+${autoPrint ? '<script>window.onload=function(){window.print()}</script>' : ''}
+</body></html>`
   }
 
   function printReport() {
     if (!hasResult) return
-    const html = buildReportHTML()
+    const html = buildReportHTML(true)
     const w = window.open('', '_blank'); w?.document.write(html); w?.document.close()
   }
 
