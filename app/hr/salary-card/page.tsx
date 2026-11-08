@@ -386,18 +386,9 @@ export default function SalaryCardPage() {
 
   function downloadPDF() {
     if (!hasResult) return
-    const html = buildReportHTML()
-    const container = document.createElement('div')
-    container.innerHTML = html
-    container.style.position = 'fixed'
-    container.style.left = '-9999px'
-    container.style.top = '0'
-    container.style.width = '210mm'
-    document.body.appendChild(container)
     const doc = new jsPDF({ unit: 'mm', format: 'a4' })
-    doc.html(container, {
+    doc.html(buildReportHTML(), {
       callback: function(d) {
-        document.body.removeChild(container)
         d.save(`salary_slip_${(employeeName || 'worker').replace(/\s+/g, '_')}_${(monthLabel || '').replace(/\s+/g, '_')}.pdf`)
       },
       x: 0,
@@ -405,6 +396,7 @@ export default function SalaryCardPage() {
       width: 210,
       windowWidth: 794,
       autoPaging: 'text',
+      margin: [0, 0, 0, 0],
     })
   }
 
