@@ -337,7 +337,7 @@ export default function SalaryCardPage() {
     a.click(); URL.revokeObjectURL(url)
   }
 
-  function buildReportHTML(autoPrint = false) {
+  function buildReportHTML(autoPrint = false, summaryOnly = false) {
     const box = (label: string, val: string, color = '#1e293b') =>
       `<td style="background-color:#f8fafc;padding:10px 12px;width:25%"><div style="font-size:10px;color:#64748b;margin-bottom:3px">${label}</div><div style="font-size:14px;font-weight:700;color:${color}">${val}</div></td>`
 
@@ -408,6 +408,7 @@ export default function SalaryCardPage() {
   </tr>
 </table>
 
+${summaryOnly ? '' : `
 <!-- Attendance table -->
 <table cellpadding="0" cellspacing="0" style="margin:0 18px;width:calc(100% - 36px);font-size:12px">
   <thead>
@@ -435,7 +436,7 @@ export default function SalaryCardPage() {
     <td style="padding-top:10px;text-align:right;font-size:11px;color:#94a3b8">${new Date().toLocaleDateString('en-AE')}</td>
   </tr>
 </table>
-
+`}
 ${autoPrint ? '<script>window.onload=function(){window.print()}</script>' : ''}
 </body></html>`
   }
@@ -449,7 +450,7 @@ ${autoPrint ? '<script>window.onload=function(){window.print()}</script>' : ''}
   function downloadPDF() {
     if (!hasResult) return
     const doc = new jsPDF({ unit: 'mm', format: 'a4' })
-    doc.html(buildReportHTML(), {
+    doc.html(buildReportHTML(false, true), {
       callback: function(d) {
         d.save(`salary_slip_${(employeeName || 'worker').replace(/\s+/g, '_')}_${(monthLabel || '').replace(/\s+/g, '_')}.pdf`)
       },
