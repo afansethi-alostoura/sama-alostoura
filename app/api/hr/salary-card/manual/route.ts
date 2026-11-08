@@ -1,18 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { query, isDbConfigured } from '@/lib/db'
 
+function getSundayCount(year: number, month: number): number {
+  const days = new Date(year, month, 0).getDate()
+  let count = 0
+  for (let d = 1; d <= days; d++) if (new Date(year, month - 1, d).getDay() === 0) count++
+  return count
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { employeeName, month, year, monthlySalary, attendance, paymentDate, paymentAccount, paymentMethod } = await req.json()
     if (!isDbConfigured()) return NextResponse.json({ ok: true })
 
     const salary      = parseFloat(monthlySalary) || 0
-    const workingDays = attendance.filter((r: { status: string }) => r.status !== 'sunday').length
-    const presentDays = attendance.filter((r: { status: string }) => r.status === 'worked').length
+    const yr          = parseInt(year)
+    const monthNames  = ['January','February','March','April','May','June','July','August','September','October','November','December']
+    const mIdx        = monthNames.indexOf(month) + 1
+    const daysInMonth = mIdx > 0 ? new Date(yr, mIdx, 0).getDate() : attendance.length
+    const sundayCount = mIdx > 0 ? getSundayCount(yr, mIdx) : attendance.filter((r: { status: string }) => r.status === 'sunday').length
+    const workingDays = daysInMonth - sundayCount
     const absentDays  = attendance.filter((r: { status: string }) => r.status === 'absent').length
     const dailyRate   = workingDays > 0 ? Math.round((salary / workingDays) * 100) / 100 : 0
     const totalAdv    = attendance.reduce((s: number, r: { advance: number }) => s + (r.advance || 0), 0)
-    const netPayment  = salary - absentDays * dailyRate - totalAdv
+    const netPayment  = Math.round((salary - absentDays * dailyRate - totalAdv) * 100) / 100
 
     await query(
       `CREATE TABLE IF NOT EXISTS salary_records (

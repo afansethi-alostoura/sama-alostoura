@@ -132,8 +132,8 @@ Rules:
     const dailyRate     = workingDays > 0 ? Math.round((salary / workingDays) * 100) / 100 : 0
     const absentDeduction = Math.round(absentDays * dailyRate * 100) / 100
     const salaryEarned  = salary - absentDeduction
-    const totalAdvances = attendance.reduce((s: number, d) => s + (d.advance ?? 0), 0)
-    const netPayment    = salaryEarned - totalAdvances
+    const totalAdvances = Math.round(attendance.reduce((s: number, d) => s + (d.advance ?? 0), 0) * 100) / 100
+    const netPayment    = Math.round((salaryEarned - totalAdvances) * 100) / 100
 
     // Build QB line items (one per worked day)
     const qbLines = attendance
@@ -230,12 +230,19 @@ export async function PUT(req: NextRequest) {
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
     const { employeeName, month, monthlySalary, attendance, paymentDate, paymentAccount, paymentMethod } = await req.json()
     await ensureTable()
-    const salary       = parseFloat(monthlySalary) || 0
-    const workingDays  = attendance.filter((r: { status: string }) => r.status !== 'sunday').length
-    const absentDays   = attendance.filter((r: { status: string }) => r.status === 'absent').length
-    const dailyRate    = workingDays > 0 ? Math.round((salary / workingDays) * 100) / 100 : 0
-    const totalAdv     = attendance.reduce((s: number, r: { advance: number }) => s + (r.advance || 0), 0)
-    const netPayment   = salary - absentDays * dailyRate - totalAdv
+    const salary      = parseFloat(monthlySalary) || 0
+    // month is "October 2026" — derive working days from calendar
+    const monthNames  = ['January','February','March','April','May','June','July','August','September','October','November','December']
+    const parts       = (month as string).split(' ')
+    const mIdx        = monthNames.indexOf(parts[0]) + 1
+    const yr          = parseInt(parts[1]) || 0
+    const daysInMonth = (mIdx > 0 && yr > 0) ? new Date(yr, mIdx, 0).getDate() : attendance.length
+    const sundayCount = (mIdx > 0 && yr > 0) ? getSundaysInMonth(yr, mIdx).size : attendance.filter((r: { status: string }) => r.status === 'sunday').length
+    const workingDays = daysInMonth - sundayCount
+    const absentDays  = attendance.filter((r: { status: string }) => r.status === 'absent').length
+    const dailyRate   = workingDays > 0 ? Math.round((salary / workingDays) * 100) / 100 : 0
+    const totalAdv    = attendance.reduce((s: number, r: { advance: number }) => s + (r.advance || 0), 0)
+    const netPayment  = Math.round((salary - absentDays * dailyRate - totalAdv) * 100) / 100
     await query(
       `UPDATE salary_records SET employee_name=$1, month=$2, monthly_salary=$3, working_days=$4,
        daily_rate=$5, total_advances=$6, net_payment=$7, payment_date=$8, payment_account=$9,

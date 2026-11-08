@@ -105,7 +105,7 @@ export default function SalaryCardPage() {
     editingRecordIdRef.current = id  // set synchronously before any state changes
     setMode('manual')
     setManualName(rec.employee_name ?? '')
-    setSalary(String(rec.monthly_salary ?? ''))
+    setSalary(String(parseFloat(String(rec.monthly_salary ?? 0)) || 0))
     setPaymentDate(rec.payment_date ? rec.payment_date.slice(0, 10) : new Date().toISOString().slice(0, 10))
     setPaymentAcct(rec.payment_account ?? 'Cash')
     setPaymentMethod(rec.payment_method ?? 'Cash')
@@ -166,10 +166,10 @@ export default function SalaryCardPage() {
     if (result) setEditedAttendance(result.attendance.map(r => ({ ...r })))
   }, [result])
 
-  // Manual mode: rebuild attendance grid when month or projects change (skip when editing a saved record)
+  // Rebuild attendance grid when month or projects change (mode switch is handled by tab onClick directly)
   useEffect(() => {
     if (mode === 'manual' && !editingRecordIdRef.current) setEditedAttendance(buildManualAttendance(cardMonth, projects[0]?.name ?? null))
-  }, [cardMonth, mode, projects])
+  }, [cardMonth, projects])
 
   // Derived month info for manual mode
   const manualMonthInfo = useMemo(() => {
@@ -191,7 +191,7 @@ export default function SalaryCardPage() {
     const sundayCount    = editedAttendance.filter(d => d.status === 'sunday').length
     const totalAdvances  = editedAttendance.reduce((s, d) => s + (d.advance || 0), 0)
     const absentDeduction = Math.round(absentDays * dailyRate * 100) / 100
-    const netPayment     = sal - absentDeduction - totalAdvances
+    const netPayment     = Math.round((sal - absentDeduction - totalAdvances) * 100) / 100
     return { presentDays, absentDays, sundayCount, totalAdvances, dailyRate, absentDeduction, netPayment, workingDays, sal }
   }, [editedAttendance, salary, mode, manualMonthInfo, result])
 
