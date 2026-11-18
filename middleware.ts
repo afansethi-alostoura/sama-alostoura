@@ -23,6 +23,7 @@ const PUBLIC_PATHS = new Set([
   '/api/whatsapp/webhook',
   '/api/test-ai',
   '/api/staff/daily-followup',
+  '/api/admin/set-phone',
 ])
 
 // Public path prefixes (no auth needed for anything starting with these)
