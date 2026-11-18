@@ -4,7 +4,7 @@ import {
   Users, Building2, HardHat, Package, Calculator, Briefcase,
   Plus, X, ChevronRight, Phone, Mail, Loader2, Trash2,
   ClipboardList, Clock, Pencil, Check, ArrowRightLeft,
-  MessageSquare, FileText, Activity, Flag,
+  MessageSquare, FileText, Activity, Flag, Sparkles,
 } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -245,10 +245,12 @@ function LeadsTab({ staff, leads, allStaff, onRefresh }: {
 // ── Responsibilities Tab ──────────────────────────────────────────────────────
 
 function ResponsibilitiesTab({ staff, resps, onRefresh }: { staff: StaffMember; resps: Responsibility[]; onRefresh: () => void }) {
-  const [editing, setEditing]     = useState(false)
-  const [texts, setTexts]         = useState<Record<number, string>>({})
-  const [newText, setNewText]     = useState('')
-  const [saving, setSaving]       = useState(false)
+  const [editing, setEditing]       = useState(false)
+  const [texts, setTexts]           = useState<Record<number, string>>({})
+  const [newText, setNewText]       = useState('')
+  const [saving, setSaving]         = useState(false)
+  const [aiLoading, setAiLoading]   = useState(false)
+  const [aiSuggestions, setAiSugg]  = useState<string[]>([])
 
   useEffect(() => {
     const m: Record<number, string> = {}
@@ -261,11 +263,13 @@ function ResponsibilitiesTab({ staff, resps, onRefresh }: { staff: StaffMember; 
     onRefresh()
   }
 
-  async function addResp() {
-    if (!newText.trim()) return
+  async function addResp(text?: string) {
+    const val = (text ?? newText).trim()
+    if (!val) return
     setSaving(true)
-    await fetch(`/api/staff/${staff.id}/responsibilities`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ responsibility: newText.trim() }) })
-    setNewText(''); setSaving(false); onRefresh()
+    await fetch(`/api/staff/${staff.id}/responsibilities`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ responsibility: val }) })
+    if (!text) setNewText('')
+    setSaving(false); onRefresh()
   }
 
   async function deleteResp(id: number) {
@@ -273,15 +277,57 @@ function ResponsibilitiesTab({ staff, resps, onRefresh }: { staff: StaffMember; 
     onRefresh()
   }
 
+  async function generateAI() {
+    setAiLoading(true); setAiSugg([])
+    try {
+      const res = await fetch(`/api/staff/${staff.id}/ai-responsibilities`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: staff.role, department: staff.department, existing: resps.map(r => r.responsibility) }),
+      })
+      const data = await res.json()
+      setAiSugg(data.responsibilities ?? [])
+    } catch { /* ignore */ }
+    setAiLoading(false)
+  }
+
+  async function acceptSuggestion(s: string) {
+    setAiSugg(prev => prev.filter(x => x !== s))
+    await addResp(s)
+  }
+
   return (
     <div className="p-4">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Role Responsibilities & SOPs</h3>
-        <button onClick={() => setEditing(e => !e)}
-          className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${editing ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
-          <Pencil className="w-3 h-3" /> {editing ? 'Done' : 'Edit'}
-        </button>
+        <div className="flex gap-1.5">
+          <button onClick={generateAI} disabled={aiLoading}
+            className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-violet-100 text-violet-700 hover:bg-violet-200 disabled:opacity-60 transition-colors">
+            {aiLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+            AI Generate
+          </button>
+          <button onClick={() => setEditing(e => !e)}
+            className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${editing ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
+            <Pencil className="w-3 h-3" /> {editing ? 'Done' : 'Edit'}
+          </button>
+        </div>
       </div>
+
+      {/* AI suggestions */}
+      {aiSuggestions.length > 0 && (
+        <div className="mb-4 bg-violet-50 dark:bg-violet-950/30 rounded-xl border border-violet-200 dark:border-violet-800 p-3 space-y-2">
+          <p className="text-[10px] font-bold text-violet-600 uppercase tracking-wider flex items-center gap-1">
+            <Sparkles className="w-3 h-3" /> AI Suggestions — click to add
+          </p>
+          {aiSuggestions.map((s, i) => (
+            <button key={i} onClick={() => acceptSuggestion(s)}
+              className="w-full text-left text-xs text-violet-800 dark:text-violet-200 bg-white dark:bg-violet-900/40 border border-violet-200 dark:border-violet-700 rounded-lg px-3 py-2 hover:bg-violet-100 dark:hover:bg-violet-800/50 transition-colors flex items-start gap-2">
+              <Plus className="w-3.5 h-3.5 mt-0.5 shrink-0 text-violet-500" />
+              {s}
+            </button>
+          ))}
+          <button onClick={() => setAiSugg([])} className="text-[10px] text-slate-400 hover:text-slate-600 mt-1">Dismiss all</button>
+        </div>
+      )}
 
       <ul className="space-y-2">
         {resps.map(r => (
@@ -304,11 +350,13 @@ function ResponsibilitiesTab({ staff, resps, onRefresh }: { staff: StaffMember; 
         ))}
       </ul>
 
-      {resps.length === 0 && !editing && (
+      {resps.length === 0 && !editing && aiSuggestions.length === 0 && (
         <div className="text-center py-8 text-slate-400">
           <ClipboardList className="w-10 h-10 mx-auto mb-2 opacity-30" />
           <p className="text-sm">No responsibilities defined yet</p>
-          <button onClick={() => setEditing(true)} className="mt-2 text-xs text-blue-600 hover:underline">Add responsibilities</button>
+          <button onClick={generateAI} disabled={aiLoading} className="mt-2 flex items-center gap-1 mx-auto text-xs text-violet-600 hover:underline">
+            <Sparkles className="w-3 h-3" /> Generate with AI
+          </button>
         </div>
       )}
 
@@ -317,7 +365,7 @@ function ResponsibilitiesTab({ staff, resps, onRefresh }: { staff: StaffMember; 
           <input value={newText} onChange={e => setNewText(e.target.value)}
             placeholder="Add responsibility..." onKeyDown={e => { if (e.key === 'Enter') addResp() }}
             className="flex-1 text-sm border border-blue-300 dark:border-blue-700 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-700 text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
-          <button onClick={addResp} disabled={saving || !newText.trim()}
+          <button onClick={() => addResp()} disabled={saving || !newText.trim()}
             className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white text-sm font-semibold rounded-lg transition-colors">
             {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
           </button>
