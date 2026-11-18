@@ -20,7 +20,6 @@ export default function FollowupPage({ params }: { params: Promise<{ token: stri
   useEffect(() => {
     params.then(p => {
       setToken(p.token)
-      // Look up the token metadata
       fetch(`/api/staff/daily-followup/meta?token=${p.token}`)
         .then(r => r.json())
         .then(d => {
@@ -52,18 +51,20 @@ export default function FollowupPage({ params }: { params: Promise<{ token: stri
   if (notFound) return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-6 text-center">
       <AlertCircle className="w-16 h-16 text-red-400 mb-4" />
-      <h1 className="text-xl font-bold text-slate-700">Link Not Found</h1>
-      <p className="text-slate-500 mt-2">This follow-up link is invalid or has expired.</p>
+      <h1 className="text-xl font-bold text-slate-700">لنک نہیں ملا</h1>
+      <p className="text-slate-500 mt-2 font-urdu" dir="rtl">یہ فالو اپ لنک غلط ہے یا میعاد ختم ہو گئی ہے۔</p>
+      <p className="text-xs text-slate-400 mt-2">Link Not Found</p>
     </div>
   )
 
   if (done) return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-6 text-center">
       <CheckCircle className="w-20 h-20 text-emerald-500 mb-4" />
-      <h1 className="text-2xl font-bold text-slate-800">Update Received!</h1>
-      <p className="text-slate-500 mt-2 max-w-xs">
-        Thank you{meta?.staff_name ? `, ${meta.staff_name.split(' ')[0]}` : ''}! Your update for <strong>{meta?.project_name}</strong> has been recorded.
+      <h1 className="text-2xl font-bold text-slate-800" dir="rtl">اپ ڈیٹ موصول ہو گئی!</h1>
+      <p className="text-slate-500 mt-2 max-w-xs" dir="rtl">
+        شکریہ{meta?.staff_name ? ` ${meta.staff_name.split(' ')[0]}` : ''}! <strong>{meta?.project_name}</strong> کی آپ کی اپ ڈیٹ محفوظ کر لی گئی ہے۔
       </p>
+      <p className="text-sm text-slate-400 mt-1">Update received successfully</p>
       <p className="text-xs text-slate-400 mt-4">Sama Alostoura Building Contracting LLC</p>
     </div>
   )
@@ -78,28 +79,31 @@ export default function FollowupPage({ params }: { params: Promise<{ token: stri
             <HardHat className="w-5 h-5 text-white" />
           </div>
           <div>
-            <p className="text-xs text-blue-200 font-medium">Daily Site Update</p>
+            <p className="text-xs text-blue-200 font-medium">روزانہ سائٹ اپ ڈیٹ</p>
             <p className="text-white font-bold">Sama Alostoura</p>
           </div>
         </div>
 
         <div className="p-6 space-y-5">
           {/* Staff & project info */}
-          <div className="bg-blue-50 rounded-2xl p-4 border border-blue-100">
-            <p className="text-xs text-blue-500 font-semibold uppercase tracking-wider mb-1">Your Update For</p>
+          <div className="bg-blue-50 rounded-2xl p-4 border border-blue-100" dir="rtl">
+            <p className="text-xs text-blue-500 font-semibold uppercase tracking-wider mb-1">آپ کی اپ ڈیٹ اس پراجیکٹ کے لیے</p>
             <p className="text-lg font-bold text-blue-800">{meta?.project_name}</p>
             {meta?.staff_name && <p className="text-sm text-slate-500 mt-0.5">{meta.staff_name}</p>}
           </div>
 
-          {/* Questions */}
-          <div className="space-y-1.5">
-            <p className="text-sm font-bold text-slate-700">Please share today&apos;s status:</p>
+          {/* Questions in Urdu */}
+          <div className="space-y-1.5" dir="rtl">
+            <p className="text-sm font-bold text-slate-700">براہ کرم آج کا حال بتائیں:</p>
             <ul className="text-xs text-slate-500 space-y-1 list-disc list-inside">
-              <li>What work was completed today?</li>
-              <li>What is the current progress %?</li>
-              <li>Any issues or blockers?</li>
-              <li>What is planned for tomorrow?</li>
+              <li>آج کیا کام مکمل ہوا؟</li>
+              <li>پراجیکٹ کی پیشرفت کتنے فیصد ہے؟</li>
+              <li>کوئی مسئلہ یا رکاوٹ ہے؟</li>
+              <li>کل کیا کام ہوگا؟</li>
             </ul>
+            <p className="text-xs text-slate-400 pt-1">
+              (What was done today? Progress %? Any issues? Tomorrow&apos;s plan?)
+            </p>
           </div>
 
           {/* Text area */}
@@ -107,7 +111,8 @@ export default function FollowupPage({ params }: { params: Promise<{ token: stri
             rows={6}
             value={update}
             onChange={e => setUpdate(e.target.value)}
-            placeholder="Type your update here..."
+            placeholder="یہاں اپنی اپ ڈیٹ لکھیں... (Type your update here)"
+            dir="auto"
             className="w-full border border-slate-200 rounded-2xl px-4 py-3 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/30 resize-none"
           />
 
@@ -116,7 +121,7 @@ export default function FollowupPage({ params }: { params: Promise<{ token: stri
             disabled={submitting || !update.trim()}
             className="w-full flex items-center justify-center gap-2 py-3.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-bold text-sm rounded-2xl transition-colors shadow-sm">
             {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-            Submit Update
+            اپ ڈیٹ بھیجیں &nbsp;·&nbsp; Submit Update
           </button>
         </div>
       </div>

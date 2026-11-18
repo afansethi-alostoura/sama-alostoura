@@ -1,6 +1,6 @@
 /**
  * POST /api/staff/daily-followup
- * Sends a WhatsApp follow-up to every active engineer & supervisor
+ * Sends a WhatsApp voice message (Urdu) + text link to every active engineer & supervisor
  * asking for a status update on each active project.
  *
  * Also used as the Vercel cron endpoint (GET, protected by CRON_SECRET).
@@ -39,12 +39,13 @@ async function ensureFollowupTable() {
   `)
 }
 
+// ─── WhatsApp helpers ────────────────────────────────────────────────────────
+
 async function sendWhatsApp(to: string, body: string) {
   const token   = process.env.META_WHATSAPP_TOKEN   ?? ''
   const phoneId = process.env.META_WHATSAPP_PHONE_ID ?? ''
   if (!token || !phoneId) return { ok: false, error: 'WhatsApp not configured' }
 
-  // Normalise number: strip leading +, spaces, dashes
   const normalised = to.replace(/^\+/, '').replace(/[\s\-()]/g, '')
 
   const res = await fetch(`https://graph.facebook.com/v20.0/${phoneId}/messages`, {
@@ -61,32 +62,120 @@ async function sendWhatsApp(to: string, body: string) {
   return { ok: res.ok, data }
 }
 
-async function buildMessage(staffName: string, role: string, projectName: string, updateUrl: string): Promise<string> {
-  const prompt = `Write a short, professional WhatsApp follow-up message (3-4 lines max) for a UAE construction company.
+async function sendWhatsAppAudio(to: string, mediaId: string) {
+  const token   = process.env.META_WHATSAPP_TOKEN   ?? ''
+  const phoneId = process.env.META_WHATSAPP_PHONE_ID ?? ''
+  if (!token || !phoneId) return { ok: false, error: 'WhatsApp not configured' }
 
-Send to: ${staffName} (${role})
+  const normalised = to.replace(/^\+/, '').replace(/[\s\-()]/g, '')
+
+  const res = await fetch(`https://graph.facebook.com/v20.0/${phoneId}/messages`, {
+    method:  'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body:    JSON.stringify({
+      messaging_product: 'whatsapp',
+      to:   normalised,
+      type: 'audio',
+      audio: { id: mediaId },
+    }),
+  })
+  const data = await res.json()
+  return { ok: res.ok, data }
+}
+
+// ─── Urdu voice generation ───────────────────────────────────────────────────
+
+async function buildUrduMessage(staffName: string, role: string, projectName: string): Promise<string> {
+  const firstName = staffName.split(' ')[0]
+  const prompt = `Write a short, friendly WhatsApp voice message script in Urdu (Roman Urdu or Arabic script) for a UAE construction company.
+
+Send to: ${firstName} (${role})
 Project: ${projectName}
 Company: Sama Alostoura Building Contracting LLC, Dubai
 
 The message should:
-- Greet them by first name
-- Ask for a brief status update on the project today
-- Ask if there are any issues or blockers
-- Include this update link (do NOT modify it): ${updateUrl}
-- Be friendly and professional in English
-- No emojis except one at the start
-- Do NOT add any explanation, just write the WhatsApp message text directly`
+- Greet them warmly in Urdu (use "السلام علیکم" or "Assalam o Alaikum")
+- Address them by first name (${firstName})
+- Ask for today's progress update on project "${projectName}"
+- Ask if there are any problems or issues (مسائل)
+- Ask what work is planned for tomorrow
+- Keep it short (4-5 sentences max), friendly and professional
+- End with "شکریہ - Sama Alostoura Management"
+- Write ONLY the Urdu message text, no translations, no explanation`
 
   try {
-    return await generate(prompt, undefined, 200)
+    return await generate(prompt, undefined, 300)
   } catch {
-    const firstName = staffName.split(' ')[0]
-    return `Good morning ${firstName}! 👋\n\nPlease share today's update for *${projectName}* — progress, any issues, and what's planned for today.\n\nSubmit your update here: ${updateUrl}\n\nThank you — Sama Alostoura Management`
+    return `السلام علیکم ${firstName}! سما الاستورہ کی طرف سے روزانہ اپ ڈیٹ کا وقت آ گیا ہے۔ براہ کرم "${projectName}" پراجیکٹ پر آج کی پیشرفت بتائیں۔ کوئی مسئلہ ہے؟ کل کیا کام ہوگا؟ شکریہ - Sama Alostoura Management`
   }
 }
 
+async function generateVoiceMP3(urduText: string): Promise<Buffer | null> {
+  const apiKey = process.env.OPENAI_API_KEY ?? ''
+  if (!apiKey) return null
+
+  try {
+    const res = await fetch('https://api.openai.com/v1/audio/speech', {
+      method:  'POST',
+      headers: {
+        Authorization:  `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model:           'tts-1',
+        input:           urduText,
+        voice:           'nova',
+        response_format: 'mp3',
+      }),
+    })
+
+    if (!res.ok) {
+      const err = await res.text()
+      console.error('TTS error:', err)
+      return null
+    }
+
+    const arrayBuf = await res.arrayBuffer()
+    return Buffer.from(arrayBuf)
+  } catch (err) {
+    console.error('TTS exception:', err)
+    return null
+  }
+}
+
+async function uploadAudioToMeta(audioBuffer: Buffer): Promise<string | null> {
+  const token   = process.env.META_WHATSAPP_TOKEN   ?? ''
+  const phoneId = process.env.META_WHATSAPP_PHONE_ID ?? ''
+  if (!token || !phoneId) return null
+
+  try {
+    const formData = new FormData()
+    const blob = new Blob([audioBuffer], { type: 'audio/mpeg' })
+    formData.append('file', blob, 'followup.mp3')
+    formData.append('type', 'audio/mpeg')
+    formData.append('messaging_product', 'whatsapp')
+
+    const res = await fetch(`https://graph.facebook.com/v20.0/${phoneId}/media`, {
+      method:  'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body:    formData,
+    })
+
+    const data = await res.json() as { id?: string; error?: unknown }
+    if (!res.ok || !data.id) {
+      console.error('Meta media upload failed:', data)
+      return null
+    }
+    return data.id
+  } catch (err) {
+    console.error('Media upload exception:', err)
+    return null
+  }
+}
+
+// ─── Main follow-up runner ───────────────────────────────────────────────────
+
 export async function POST(req: NextRequest) {
-  // Allow internal trigger OR cron secret
   const authHeader = req.headers.get('authorization') ?? ''
   const cronSecret = process.env.CRON_SECRET ?? ''
   if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
@@ -96,7 +185,6 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-  // Vercel cron calls GET
   const cronSecret = process.env.CRON_SECRET ?? ''
   if (cronSecret) {
     const auth = req.headers.get('authorization') ?? ''
@@ -110,11 +198,9 @@ export async function GET(req: NextRequest) {
 async function runFollowup() {
   await ensureFollowupTable()
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : 'https://sama-alostoura.vercel.app'
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL
+    ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://sama-alostoura.vercel.app')
 
-  // Get active staff engineers & supervisors with phone numbers
   const staff = await query(`
     SELECT * FROM staff_members
     WHERE status = 'active' AND phone IS NOT NULL AND phone != ''
@@ -123,7 +209,6 @@ async function runFollowup() {
     id: number; name: string; role: string; department: string; phone: string
   }>
 
-  // Get active projects
   const projects = getAllStoredProjects().filter(p => p.status === 'active')
 
   if (staff.length === 0) {
@@ -133,43 +218,60 @@ async function runFollowup() {
     return NextResponse.json({ message: 'No active projects found', sent: 0 })
   }
 
-  const results: Array<{ staff: string; project: string; status: string }> = []
+  const results: Array<{ staff: string; project: string; status: string; voice: string }> = []
 
   for (const member of staff) {
     for (const project of projects) {
-      // Generate a unique token for this follow-up
-      const token = crypto.randomBytes(16).toString('hex')
+      const token     = crypto.randomBytes(16).toString('hex')
       const updateUrl = `${appUrl}/followup/${token}`
 
-      // Save follow-up record
       await query(
         `INSERT INTO staff_followups (staff_id, project_name, token) VALUES ($1, $2, $3)`,
         [member.id, project.name, token]
       )
 
-      // Build AI message
-      const message = await buildMessage(member.name, member.role, project.name, updateUrl)
+      // Generate Urdu message text
+      const urduText = await buildUrduMessage(member.name, member.role, project.name)
 
-      // Send WhatsApp
-      const result = await sendWhatsApp(member.phone, message)
+      let voiceStatus = 'skipped'
 
-      // Log in staff_activities
+      // Try to send voice message
+      const audioBuffer = await generateVoiceMP3(urduText)
+      if (audioBuffer) {
+        const mediaId = await uploadAudioToMeta(audioBuffer)
+        if (mediaId) {
+          const voiceResult = await sendWhatsAppAudio(member.phone, mediaId)
+          voiceStatus = voiceResult.ok ? 'sent' : `failed: ${JSON.stringify(voiceResult.data)}`
+        } else {
+          voiceStatus = 'upload_failed'
+        }
+      } else {
+        voiceStatus = 'tts_failed'
+      }
+
+      // Always send follow-up text with update link (in Urdu)
+      const firstName = member.name.split(' ')[0]
+      const linkText  = `${firstName}، اپنی آج کی اپ ڈیٹ یہاں بھیجیں:\n${updateUrl}`
+      const textResult = await sendWhatsApp(member.phone, linkText)
+
       await query(
         `INSERT INTO staff_activities (staff_id, note, created_by) VALUES ($1, $2, $3)`,
-        [member.id, `📲 Daily follow-up sent for project: ${project.name}`, 'AI System']
+        [member.id, `📲 Daily Urdu voice follow-up sent for project: ${project.name} (voice: ${voiceStatus})`, 'AI System']
       )
 
       results.push({
         staff:   member.name,
         project: project.name,
-        status:  result.ok ? 'sent' : `failed: ${JSON.stringify(result.data ?? result.error)}`,
+        voice:   voiceStatus,
+        status:  textResult.ok ? 'text_sent' : `text_failed: ${JSON.stringify(textResult.data ?? textResult.error)}`,
       })
     }
   }
 
   return NextResponse.json({
-    sent:    results.filter(r => r.status === 'sent').length,
-    failed:  results.filter(r => r.status !== 'sent').length,
+    sent:    results.filter(r => r.status === 'text_sent').length,
+    voice:   results.filter(r => r.voice === 'sent').length,
+    failed:  results.filter(r => r.status !== 'text_sent').length,
     results,
   })
 }
