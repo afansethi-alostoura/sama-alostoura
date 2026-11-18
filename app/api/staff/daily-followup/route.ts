@@ -86,28 +86,38 @@ async function sendWhatsAppAudio(to: string, mediaId: string) {
 
 // ─── Urdu voice generation ───────────────────────────────────────────────────
 
-async function buildUrduMessage(staffName: string, role: string, projectName: string): Promise<string> {
+interface UrduMessage { arabic: string; roman: string }
+
+async function buildUrduMessage(staffName: string, role: string, projectName: string): Promise<UrduMessage> {
   const firstName = staffName.split(' ')[0]
-  const prompt = `Write a short, friendly WhatsApp voice message script in Urdu (Roman Urdu or Arabic script) for a UAE construction company.
+  const prompt = `You are writing a daily WhatsApp follow-up for a UAE construction company (Sama Alostoura).
 
-Send to: ${firstName} (${role})
+Recipient: ${firstName} (${role})
 Project: ${projectName}
-Company: Sama Alostoura Building Contracting LLC, Dubai
 
-The message should:
-- Greet them warmly in Urdu (use "السلام علیکم" or "Assalam o Alaikum")
-- Address them by first name (${firstName})
-- Ask for today's progress update on project "${projectName}"
-- Ask if there are any problems or issues (مسائل)
-- Ask what work is planned for tomorrow
-- Keep it short (4-5 sentences max), friendly and professional
-- End with "شکریہ - Sama Alostoura Management"
-- Write ONLY the Urdu message text, no translations, no explanation`
+Write TWO versions of the same short friendly message (4-5 sentences):
+
+VERSION 1 - ARABIC_SCRIPT: Write in Urdu Arabic script (اردو). Greet with السلام علیکم, ask about today's progress on "${projectName}", ask about any issues, ask what's planned for tomorrow. End with شکریہ - Sama Alostoura Management
+
+VERSION 2 - ROMAN_URDU: Write the EXACT same message but in Roman Urdu (Urdu words spelled in English letters, as spoken in Pakistan/UAE). Example style: "Assalam o Alaikum ${firstName} bhai! Sama Alostoura ki taraf se aap ko good morning. Aaj ${projectName} project ka kya update hai? Koi masla toh nahi? Kal ka kya plan hai? Shukriya - Sama Alostoura Management"
+
+Respond in this EXACT format with no extra text:
+ARABIC_SCRIPT: <arabic urdu text here>
+ROMAN_URDU: <roman urdu text here>`
 
   try {
-    return await generate(prompt, undefined, 300)
+    const result = await generate(prompt, undefined, 400)
+    const arabicMatch = result.match(/ARABIC_SCRIPT:\s*(.+?)(?=ROMAN_URDU:|$)/s)
+    const romanMatch  = result.match(/ROMAN_URDU:\s*(.+?)$/s)
+    return {
+      arabic: arabicMatch?.[1]?.trim() ?? `السلام علیکم ${firstName}! سما الاستورہ کی طرف سے روزانہ اپ ڈیٹ۔ "${projectName}" پر آج کی پیشرفت بتائیں۔ کوئی مسئلہ؟ کل کا پلان؟ شکریہ - Sama Alostoura`,
+      roman:  romanMatch?.[1]?.trim()  ?? `Assalam o Alaikum ${firstName} bhai! Sama Alostoura ki taraf se good morning. Aaj ${projectName} project ka kya update hai? Koi masla toh nahi? Kal ka kya plan hai? Shukriya, Sama Alostoura Management.`,
+    }
   } catch {
-    return `السلام علیکم ${firstName}! سما الاستورہ کی طرف سے روزانہ اپ ڈیٹ کا وقت آ گیا ہے۔ براہ کرم "${projectName}" پراجیکٹ پر آج کی پیشرفت بتائیں۔ کوئی مسئلہ ہے؟ کل کیا کام ہوگا؟ شکریہ - Sama Alostoura Management`
+    return {
+      arabic: `السلام علیکم ${firstName}! سما الاستورہ کی طرف سے روزانہ اپ ڈیٹ۔ "${projectName}" پر آج کی پیشرفت بتائیں۔ کل کا پلان کیا ہے؟ شکریہ`,
+      roman:  `Assalam o Alaikum ${firstName} bhai! Sama Alostoura ki taraf se good morning. Aaj ${projectName} project ka kya update hai? Koi masla toh nahi? Shukriya, Sama Alostoura Management.`,
+    }
   }
 }
 
@@ -123,9 +133,9 @@ async function generateVoiceMP3(urduText: string): Promise<Buffer | null> {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model:           'tts-1',
+        model:           'tts-1-hd',
         input:           urduText,
-        voice:           'nova',
+        voice:           'onyx',
         response_format: 'mp3',
       }),
     })
@@ -231,13 +241,13 @@ async function runFollowup() {
         [member.id, project.name, token]
       )
 
-      // Generate Urdu message text
-      const urduText = await buildUrduMessage(member.name, member.role, project.name)
+      // Generate Urdu message (arabic script for text, roman urdu for voice)
+      const urduMsg = await buildUrduMessage(member.name, member.role, project.name)
 
       let voiceStatus = 'skipped'
 
-      // Try to send voice message
-      const audioBuffer = await generateVoiceMP3(urduText)
+      // Try to send voice message using Roman Urdu (clear pronunciation)
+      const audioBuffer = await generateVoiceMP3(urduMsg.roman)
       if (audioBuffer) {
         const mediaId = await uploadAudioToMeta(audioBuffer)
         if (mediaId) {
@@ -250,9 +260,9 @@ async function runFollowup() {
         voiceStatus = 'tts_failed'
       }
 
-      // Always send follow-up text with update link (in Urdu)
+      // Send Arabic script text message with the update link
       const firstName = member.name.split(' ')[0]
-      const linkText  = `${firstName}، اپنی آج کی اپ ڈیٹ یہاں بھیجیں:\n${updateUrl}`
+      const linkText  = `${urduMsg.arabic}\n\n📎 اپ ڈیٹ لنک:\n${updateUrl}`
       const textResult = await sendWhatsApp(member.phone, linkText)
 
       await query(
