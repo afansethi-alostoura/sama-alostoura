@@ -261,10 +261,12 @@ async function runFollowup() {
       )
 
       results.push({
-        staff:   member.name,
-        project: project.name,
-        voice:   voiceStatus,
-        status:  textResult.ok ? 'text_sent' : `text_failed: ${JSON.stringify(textResult.data ?? textResult.error)}`,
+        staff:        member.name,
+        project:      project.name,
+        phone:        member.phone,
+        voice:        voiceStatus,
+        status:       textResult.ok ? 'text_sent' : `text_failed: ${JSON.stringify(textResult.data ?? textResult.error)}`,
+        text_response: textResult.data,
       })
     }
   }
