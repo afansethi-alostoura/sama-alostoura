@@ -28,6 +28,9 @@ const PUBLIC_PATHS = new Set([
 const PUBLIC_PREFIXES = [
   '/verify/',       // public document verification pages
   '/api/hr/letters/', // letter download/metadata for verify page
+  '/followup/',     // daily follow-up response pages (staff click WhatsApp link)
+  '/api/staff/daily-followup/meta', // token lookup for follow-up page
+  '/api/staff/daily-followup/respond', // submit update (no login needed)
 ]
 
 // Pages/APIs engineers cannot access (financial & admin-only)

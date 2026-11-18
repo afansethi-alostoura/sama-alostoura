@@ -5,6 +5,7 @@ import {
   Plus, X, ChevronRight, Phone, Mail, Loader2, Trash2,
   ClipboardList, Clock, Pencil, Check, ArrowRightLeft,
   MessageSquare, FileText, Activity, Flag, Sparkles,
+  Send, RefreshCw, CheckCircle2, AlertCircle, Bell,
 } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -545,6 +546,124 @@ function StaffDrawer({ staff, allStaff, onClose, onStatusChange }: {
   )
 }
 
+// ── Daily Follow-up Dashboard ─────────────────────────────────────────────────
+
+interface FollowupRecord {
+  id: number; staff_name: string; role: string
+  project_name: string; status: string
+  sent_at: string; responded_at: string | null; response: string | null
+}
+
+function FollowupDashboard() {
+  const [records,  setRecords]  = useState<FollowupRecord[]>([])
+  const [loading,  setLoading]  = useState(false)
+  const [sending,  setSending]  = useState(false)
+  const [result,   setResult]   = useState<{ sent: number; failed: number } | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    const d = await fetch('/api/staff/daily-followup/respond').then(r => r.json()).catch(() => [])
+    setRecords(Array.isArray(d) ? d : [])
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  async function sendFollowup() {
+    setSending(true); setResult(null)
+    const d = await fetch('/api/staff/daily-followup', { method: 'POST' }).then(r => r.json()).catch(() => null)
+    if (d) setResult({ sent: d.sent ?? 0, failed: d.failed ?? 0 })
+    setSending(false)
+    setTimeout(load, 2000)
+  }
+
+  const responded = records.filter(r => r.status === 'responded')
+  const pending   = records.filter(r => r.status === 'pending')
+
+  return (
+    <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-700 bg-gradient-to-r from-emerald-50 to-blue-50 dark:from-emerald-950/20 dark:to-blue-950/20">
+        <div className="flex items-center gap-2">
+          <Bell className="w-4 h-4 text-emerald-600" />
+          <span className="font-bold text-slate-800 dark:text-white text-sm">Daily AI Follow-up</span>
+          <span className="text-xs text-slate-500">— today&apos;s updates</span>
+        </div>
+        <div className="flex items-center gap-2">
+          {result && (
+            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${result.failed > 0 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+              ✓ {result.sent} sent{result.failed > 0 ? ` · ${result.failed} failed` : ''}
+            </span>
+          )}
+          <button onClick={load} disabled={loading} className="p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+          <button onClick={sendFollowup} disabled={sending}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white text-xs font-semibold rounded-xl transition-colors">
+            {sending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+            Send Now
+          </button>
+        </div>
+      </div>
+
+      {/* Stats */}
+      {records.length > 0 && (
+        <div className="grid grid-cols-3 divide-x divide-slate-100 dark:divide-slate-700 border-b border-slate-100 dark:border-slate-700">
+          {[
+            { label: 'Sent Today',  value: records.length,   cls: 'text-blue-600'    },
+            { label: 'Responded',   value: responded.length, cls: 'text-emerald-600' },
+            { label: 'Pending',     value: pending.length,   cls: 'text-amber-500'   },
+          ].map(s => (
+            <div key={s.label} className="flex flex-col items-center py-3">
+              <span className={`text-xl font-bold ${s.cls}`}>{s.value}</span>
+              <span className="text-[10px] text-slate-400">{s.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Records list */}
+      <div className="divide-y divide-slate-50 dark:divide-slate-700/50 max-h-96 overflow-y-auto">
+        {records.length === 0 && !loading && (
+          <div className="text-center py-10 text-slate-400">
+            <Send className="w-10 h-10 mx-auto mb-2 opacity-30" />
+            <p className="text-sm">No follow-ups sent today.</p>
+            <p className="text-xs mt-1">Click &ldquo;Send Now&rdquo; to message all engineers & supervisors.</p>
+          </div>
+        )}
+        {loading && <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-blue-500" /></div>}
+        {records.map(r => (
+          <div key={r.id} className="flex items-start gap-3 px-5 py-3">
+            <div className="mt-0.5 shrink-0">
+              {r.status === 'responded'
+                ? <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                : <AlertCircle  className="w-4 h-4 text-amber-400"   />}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm font-semibold text-slate-800 dark:text-white">{r.staff_name}</span>
+                <span className="text-[10px] text-slate-400">{r.role}</span>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${r.status === 'responded' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-600'}`}>
+                  {r.status === 'responded' ? 'Responded' : 'Pending'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">📋 {r.project_name}</p>
+              {r.response && (
+                <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 bg-slate-50 dark:bg-slate-700/50 rounded-lg px-2.5 py-1.5 italic">
+                  &ldquo;{r.response.slice(0, 180)}{r.response.length > 180 ? '…' : ''}&rdquo;
+                </p>
+              )}
+            </div>
+            <span className="text-[9px] text-slate-400 shrink-0 mt-0.5 whitespace-nowrap">
+              {new Date(r.sent_at).toLocaleTimeString('en-AE', { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function StaffHubPage() {
@@ -584,6 +703,9 @@ export default function StaffHubPage() {
           <Plus className="w-4 h-4" /> Add Member
         </button>
       </div>
+
+      {/* Daily Follow-up Dashboard */}
+      <FollowupDashboard />
 
       {/* Department filter pills */}
       <div className="flex flex-wrap gap-2">

@@ -3,6 +3,13 @@
     "app/api/whatsapp/webhook/route.ts": { "maxDuration": 60 },
     "app/api/meta/whatsapp/webhook/route.ts": { "maxDuration": 60 },
     "app/api/procurement/pr/whatsapp/route.ts": { "maxDuration": 60 },
-    "app/api/agents/**": { "maxDuration": 60 }
-  }
+    "app/api/agents/**": { "maxDuration": 60 },
+    "app/api/staff/daily-followup/route.ts": { "maxDuration": 60 }
+  },
+  "crons": [
+    {
+      "path": "/api/staff/daily-followup",
+      "schedule": "30 3 * * *"
+    }
+  ]
 }
