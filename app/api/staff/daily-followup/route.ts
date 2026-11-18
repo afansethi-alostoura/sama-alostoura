@@ -16,6 +16,7 @@ export const maxDuration = 60
 
 // Roles that receive daily follow-up messages
 const FOLLOWUP_ROLES = [
+  'Managing Director',
   'Project Manager',
   'Site Civil Engineer',
   'MEP Engineer / Coordinator',
