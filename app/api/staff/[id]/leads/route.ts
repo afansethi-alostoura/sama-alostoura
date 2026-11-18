@@ -35,7 +35,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params
-    const { lead_id, lead_name, project, status, priority, notes, due_date } = await req.json()
+    const { lead_id, lead_name, project, status, priority, notes, due_date, reassign_to } = await req.json()
+
+    // Reassign to another staff member
+    if (reassign_to !== undefined) {
+      const rows = await query(
+        `UPDATE staff_leads SET staff_id=$1 WHERE id=$2 RETURNING *`,
+        [reassign_to, lead_id]
+      )
+      return NextResponse.json(rows[0])
+    }
+
     const rows = await query(
       `UPDATE staff_leads SET lead_name=$1, project=$2, status=$3, priority=$4, notes=$5, due_date=$6
        WHERE id=$7 AND staff_id=$8 RETURNING *`,
