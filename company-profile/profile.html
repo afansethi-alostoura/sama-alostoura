@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sama Alostoura — Company Profile</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&family=Tajawal:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  @page { size: A4; margin: 0; }
+  :root {
+    --blue: #0A66BD;
+    --blue-dk: #073E73;
+    --navy: #0B1F33;
+    --orange: #F5A623;
+    --ink: #1D2733;
+    --muted: #5B6878;
+    --line: #E3E8EE;
+    --paper: #FFFFFF;
+    --tint: #F4F7FB;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #fff; }
+  body { font-family: 'Poppins', Arial, sans-serif; color: var(--ink); font-size: 10.5pt; line-height: 1.6;
+         -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .page { width: 210mm; height: 297mm; position: relative; overflow: hidden; page-break-after: always; background: var(--paper); }
+  .page:last-child { page-break-after: auto; }
+  .ar { font-family: 'Tajawal', sans-serif; direction: rtl; }
+
+  /* running header / footer */
+  .pad { padding: 22mm 20mm 26mm; height: 100%; display: flex; flex-direction: column; }
+  .foot { position: absolute; left: 20mm; right: 20mm; bottom: 12mm; display: flex; justify-content: space-between;
+          align-items: center; font-size: 7.5pt; color: var(--muted); border-top: 1px solid var(--line); padding-top: 4mm; letter-spacing: .04em; }
+  .foot b { color: var(--blue); font-weight: 600; }
+  .eyebrow { font-size: 8pt; font-weight: 600; letter-spacing: .22em; text-transform: uppercase; color: var(--orange); margin-bottom: 3mm; display: flex; align-items: center; gap: 3mm; }
+  .eyebrow::before { content: ""; width: 10mm; height: 2px; background: var(--orange); }
+  h2 { font-size: 26pt; line-height: 1.12; font-weight: 700; color: var(--navy); letter-spacing: -.01em; margin-bottom: 7mm; }
+  h2 span { color: var(--blue); }
+  h3 { font-size: 12pt; font-weight: 600; color: var(--navy); margin-bottom: 1.5mm; }
+  p.lead { font-size: 12pt; line-height: 1.65; color: var(--ink); font-weight: 300; }
+  p + p { margin-top: 3.5mm; }
+  .muted { color: var(--muted); }
+
+  /* ---------- COVER ---------- */
+  .cover { background: var(--navy); color: #fff; }
+  .cover .lines { position: absolute; inset: 0; }
+  .cover .top { position: absolute; top: 18mm; left: 20mm; right: 20mm; display: flex; justify-content: space-between; align-items: center; }
+  .cover .logo-card { background: #fff; border-radius: 3mm; padding: 4mm 6mm; }
+  .cover .logo-card img { height: 22mm; display: block; }
+  .cover .year { font-size: 8pt; letter-spacing: .25em; color: rgba(255,255,255,.6); text-transform: uppercase; }
+  .cover .title { position: absolute; left: 20mm; right: 20mm; bottom: 46mm; }
+  .cover .title .kicker { color: var(--orange); font-weight: 600; letter-spacing: .3em; font-size: 9pt; text-transform: uppercase; margin-bottom: 5mm; }
+  .cover .title h1 { font-size: 50pt; line-height: 1; font-weight: 800; letter-spacing: -.02em; }
+  .cover .title h1 span { color: var(--orange); }
+  .cover .title .ar { font-size: 20pt; color: rgba(255,255,255,.8); margin-top: 6mm; text-align: left; direction: rtl; unicode-bidi: plaintext; }
+  .cover .title .sub { margin-top: 8mm; font-size: 11pt; font-weight: 300; color: rgba(255,255,255,.8); max-width: 120mm; }
+  .cover .bar { position: absolute; left: 0; right: 0; bottom: 0; height: 22mm; background: var(--blue); display: flex; align-items: center; padding: 0 20mm; gap: 6mm; white-space: nowrap; font-size: 8.5pt; letter-spacing: .12em; text-transform: uppercase; font-weight: 500; }
+  .cover .bar i { width: 1.6mm; height: 1.6mm; background: var(--orange); border-radius: 50%; display: inline-block; }
+
+  /* ---------- ABOUT ---------- */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 2px solid var(--navy); margin-top: 10mm; }
+  .stat { padding: 6mm 4mm 0 0; }
+  .stat .n { font-size: 26pt; font-weight: 700; color: var(--blue); line-height: 1; }
+  .stat .n small { font-size: 12pt; color: var(--orange); font-weight: 700; }
+  .stat .l { font-size: 8pt; color: var(--muted); margin-top: 2mm; text-transform: uppercase; letter-spacing: .08em; line-height: 1.35; }
+  .vm { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; margin-top: 12mm; }
+  .vm .card { background: var(--tint); border-radius: 3mm; padding: 7mm; border-top: 3px solid var(--blue); }
+  .vm .card:nth-child(2) { border-top-color: var(--orange); }
+  .vm .card p { font-size: 9.8pt; color: var(--ink); }
+  .msg { margin-top: auto; display: grid; grid-template-columns: 6mm 1fr; gap: 5mm; padding-top: 10mm; }
+  .msg .q { font-size: 44pt; line-height: .8; color: var(--orange); font-weight: 700; }
+  .msg p { font-size: 11pt; font-style: italic; font-weight: 300; color: var(--navy); }
+  .msg .who { font-style: normal; font-size: 8.5pt; color: var(--muted); margin-top: 3mm; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; }
+
+  /* ---------- SERVICES ---------- */
+  .svc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; }
+  .svc { border: 1px solid var(--line); border-radius: 3mm; padding: 6mm; display: grid; grid-template-columns: 12mm 1fr; gap: 4mm; align-items: start; }
+  .svc .ic { width: 12mm; height: 12mm; border-radius: 2.5mm; background: var(--blue); display: grid; place-items: center; }
+  .svc:nth-child(even) .ic { background: var(--orange); }
+  .svc .ic svg { width: 6.5mm; height: 6.5mm; stroke: #fff; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .svc p { font-size: 9pt; color: var(--muted); line-height: 1.55; }
+  .svc ul { list-style: none; margin-top: 2mm; }
+  .svc li { font-size: 8.5pt; color: var(--ink); padding-left: 4mm; position: relative; line-height: 1.6; }
+  .svc li::before { content: ""; position: absolute; left: 0; top: 2.2mm; width: 1.5mm; height: 1.5mm; background: var(--orange); border-radius: 50%; }
+
+  /* ---------- PROCESS ---------- */
+  .steps { position: relative; margin-top: 2mm; }
+  .steps::before { content: ""; position: absolute; left: 6mm; top: 6mm; bottom: 6mm; width: 2px; background: linear-gradient(var(--blue), var(--orange)); }
+  .step { display: grid; grid-template-columns: 12mm 1fr; gap: 6mm; padding: 3.2mm 0; position: relative; }
+  .step .dot { width: 12mm; height: 12mm; border-radius: 50%; background: #fff; border: 2px solid var(--blue); color: var(--blue); font-weight: 700; font-size: 10pt; display: grid; place-items: center; position: relative; z-index: 1; }
+  .step.hl .dot { background: var(--orange); border-color: var(--orange); color: #fff; }
+  .step p { font-size: 9pt; color: var(--muted); line-height: 1.5; }
+  .note { margin-top: auto; background: var(--navy); color: #fff; border-radius: 3mm; padding: 6mm 7mm; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6mm; }
+  .note .k { font-size: 7.5pt; letter-spacing: .14em; text-transform: uppercase; color: var(--orange); font-weight: 600; }
+  .note .v { font-size: 9pt; color: rgba(255,255,255,.85); margin-top: 1mm; line-height: 1.45; }
+
+  /* ---------- PROJECTS ---------- */
+  .proj { display: grid; grid-template-columns: 1fr; gap: 4.5mm; }
+  .pcard { display: grid; grid-template-columns: 46mm 1fr; border: 1px solid var(--line); border-radius: 3mm; overflow: hidden; }
+  .pcard .art { background: var(--tint); position: relative; display: grid; place-items: center; }
+  .pcard .art svg { width: 30mm; height: 22mm; }
+  .pcard .art .tag { position: absolute; top: 3mm; left: 3mm; font-size: 6.8pt; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; background: var(--blue); color: #fff; padding: .8mm 2.2mm; border-radius: 1mm; }
+  .pcard .art .tag.r { background: var(--orange); }
+  .pcard .body { padding: 5mm 6mm; }
+  .pcard .meta { display: flex; gap: 6mm; font-size: 8pt; color: var(--muted); margin-top: 1mm; }
+  .pcard .meta b { color: var(--ink); font-weight: 600; }
+  .prog { margin-top: 3.5mm; display: grid; grid-template-columns: 1fr 14mm; gap: 3mm; align-items: center; }
+  .prog .track { height: 2mm; background: var(--line); border-radius: 1mm; overflow: hidden; }
+  .prog .fill { height: 100%; background: linear-gradient(90deg, var(--blue), #2C8BE6); border-radius: 1mm; }
+  .prog .fill.done { background: var(--orange); }
+  .prog span { font-size: 8.5pt; font-weight: 600; color: var(--navy); text-align: right; }
+  .totals { margin-top: 6mm; display: flex; justify-content: space-between; align-items: baseline; border-top: 2px solid var(--navy); padding-top: 4mm; }
+  .totals .k { font-size: 8pt; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  .totals .v { font-size: 20pt; font-weight: 700; color: var(--blue); }
+
+  /* ---------- WHY / QUALITY ---------- */
+  .why { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border-top: 1px solid var(--line); }
+  .why > div { padding: 6mm 6mm 6mm 0; border-bottom: 1px solid var(--line); }
+  .why > div:nth-child(odd) { border-right: 1px solid var(--line); }
+  .why > div:nth-child(even) { padding-left: 6mm; padding-right: 0; }
+  .why .num { font-size: 9pt; font-weight: 700; color: var(--orange); letter-spacing: .1em; }
+  .why p { font-size: 9pt; color: var(--muted); }
+  .band { margin-top: 10mm; background: var(--tint); border-radius: 3mm; padding: 7mm; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6mm; }
+  .band h3 { font-size: 10.5pt; display: flex; gap: 2.5mm; align-items: center; }
+  .band h3::before { content: ""; width: 2.5mm; height: 2.5mm; background: var(--blue); transform: rotate(45deg); }
+  .band p { font-size: 8.6pt; color: var(--muted); line-height: 1.5; }
+
+  /* ---------- CONTACT ---------- */
+  .contact { background: var(--navy); color: #fff; }
+  .contact h2 { color: #fff; font-size: 34pt; }
+  .contact h2 span { color: var(--orange); }
+  .contact .lead { color: rgba(255,255,255,.8); max-width: 130mm; }
+  .clist { margin-top: 14mm; display: grid; grid-template-columns: 1fr 1fr; gap: 8mm 10mm; }
+  .clist .k { font-size: 7.5pt; letter-spacing: .2em; text-transform: uppercase; color: var(--orange); font-weight: 600; }
+  .clist .v { font-size: 12pt; font-weight: 500; margin-top: 1.5mm; }
+  .contact .logo-card { position: absolute; left: 20mm; bottom: 30mm; background: #fff; border-radius: 3mm; padding: 4mm 6mm; }
+  .contact .logo-card img { height: 20mm; display: block; }
+  .contact .foot { color: rgba(255,255,255,.5); border-top-color: rgba(255,255,255,.15); }
+  .contact .foot b { color: var(--orange); }
+</style>
+</head>
+<body>
+
+<!-- ================= 1. COVER ================= -->
+<section class="page cover">
+  <svg class="lines" viewBox="0 0 210 297" preserveAspectRatio="none" aria-hidden="true">
+    <!-- echo of the logo: tower + house in line-art -->
+    <g fill="none" stroke-linejoin="miter" transform="translate(40,-30) scale(.85)">
+      <g stroke="#0A66BD" stroke-width="1.6" opacity=".9">
+        <path d="M112 196 V70 L160 42 L198 64 V196" />
+        <path d="M160 42 V196 M168 48 V196 M176 52 V196 M184 57 V196 M192 61 V196" stroke-width="1.1"/>
+      </g>
+      <g stroke="#F5A623" stroke-width="1.6">
+        <path d="M86 196 V128 L122 108 L148 122 V196 Z" />
+        <path d="M94 124 V196 M102 119 V196 M110 115 V196 M118 111 V196" stroke-width="1.1"/>
+      </g>
+    </g>
+    <path d="M0 136.6 H210" stroke="rgba(255,255,255,.18)" stroke-width=".4"/>
+  </svg>
+  <div class="top">
+    <div class="logo-card"><img src="../public/logo.png" alt="Sama Alostoura logo"></div>
+  </div>
+  <div class="title">
+    <div class="kicker">Company Profile 2026 · Dubai, UAE</div>
+    <h1>Building homes<br>that <span>last.</span></h1>
+    <div class="ar">سماء الاسطورة لمقاولات البناء ش.ذ.م.م</div>
+    <p class="sub">Villa construction and renovation, from excavation to handover — delivered for UAE national families under the Mohammed Bin Rashid Housing Establishment programme.</p>
+  </div>
+  <div class="bar"><span>New Villas</span><i></i><span>Renovations</span><i></i><span>MBHRE Projects</span><i></i><span>Turnkey Handover</span></div>
+</section>
+
+<!-- ================= 2. ABOUT ================= -->
+<section class="page">
+  <div class="pad">
+    <div class="eyebrow">Who we are</div>
+    <h2>A Dubai contractor focused on<br><span>one thing: family homes.</span></h2>
+    <p class="lead">Sama Alostoura Building Contracting L.L.C is a Dubai-based building contractor specialising in private villas and residential renovations for UAE national clients.</p>
+    <p class="muted" style="margin-top:4mm">We manage the full lifecycle of a home — site preparation, structure, MEP, finishing and handover — under one contract and one accountable team. Most of our work is delivered through the Mohammed Bin Rashid Housing Establishment (MBHRE) programme, so we know its stage inspections, documentation and payment releases inside out. That experience lets our clients focus on their future home while we handle the process.</p>
+
+    <div class="stats">
+      <div class="stat"><div class="n">5</div><div class="l">Active &amp; recent<br>projects</div></div>
+      <div class="stat"><div class="n">4.3<small>M</small></div><div class="l">AED in contract<br>value</div></div>
+      <div class="stat"><div class="n">5</div><div class="l">Dubai<br>communities</div></div>
+      <div class="stat"><div class="n">100<small>%</small></div><div class="l">MBHRE-compliant<br>delivery</div></div>
+    </div>
+
+    <div class="vm">
+      <div class="card"><h3>Our Vision</h3><p>To be the most trusted villa contractor for Emirati families in Dubai — known for homes that are built right the first time and handed over on time.</p></div>
+      <div class="card"><h3>Our Mission</h3><p>Deliver quality residential construction through skilled people, transparent stage-by-stage reporting, and disciplined project management on every site.</p></div>
+    </div>
+
+    <div class="msg">
+      <div class="q">&ldquo;</div>
+      <div>
+        <p>A villa is the biggest investment most families will ever make. We treat every project as if we were building for our own family — with honesty about cost, clarity about progress, and care in every detail.</p>
+        <div class="who">Management, Sama Alostoura</div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span><b>SAMA ALOSTOURA</b> · Building Contracting L.L.C</span><span>02</span></div>
+</section>
+
+<!-- ================= 3. SERVICES ================= -->
+<section class="page">
+  <div class="pad">
+    <div class="eyebrow">What we do</div>
+    <h2>Services from <span>ground&nbsp;to&nbsp;keys.</span></h2>
+    <div class="svc-grid">
+      <div class="svc">
+        <div class="ic"><svg viewBox="0 0 24 24"><path d="M3 21h18M5 21V10l7-5 7 5v11M9 21v-6h6v6"/></svg></div>
+        <div><h3>New Villa Construction</h3><p>Complete G+1 and G+2 villas built to approved drawings.</p>
+          <ul><li>Excavation &amp; foundations</li><li>Concrete frame &amp; blockwork</li><li>Roofing &amp; waterproofing</li></ul></div>
+      </div>
+      <div class="svc">
+        <div class="ic"><svg viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/></svg></div>
+        <div><h3>Renovation &amp; Extension</h3><p>Upgrading and extending existing homes with minimal disruption.</p>
+          <ul><li>Structural alterations</li><li>Kitchen &amp; bathroom refits</li><li>Annex &amp; majlis extensions</li></ul></div>
+      </div>
+      <div class="svc">
+        <div class="ic"><svg viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg></div>
+        <div><h3>MEP Works</h3><p>Coordinated mechanical, electrical and plumbing installation.</p>
+          <ul><li>Electrical &amp; lighting</li><li>Plumbing &amp; drainage</li><li>HVAC &amp; ventilation</li></ul></div>
+      </div>
+      <div class="svc">
+        <div class="ic"><svg viewBox="0 0 24 24"><path d="M4 20h16M6 16l9-9 3 3-9 9H6zM13 9l3 3"/></svg></div>
+        <div><h3>Finishing Works</h3><p>Interior and exterior finishes that define the home.</p>
+          <ul><li>Plaster, paint &amp; cladding</li><li>Tiling, joinery &amp; ceilings</li><li>Façade &amp; external works</li></ul></div>
+      </div>
+      <div class="svc">
+        <div class="ic"><svg viewBox="0 0 24 24"><path d="M9 11l3 3 8-8M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/></svg></div>
+        <div><h3>MBHRE Project Management</h3><p>End-to-end handling of housing-programme requirements.</p>
+          <ul><li>Stage completion &amp; inspection prep</li><li>Payment application support</li><li>Retention &amp; handover close-out</li></ul></div>
+      </div>
+      <div class="svc">
+        <div class="ic"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+        <div><h3>Maintenance &amp; Aftercare</h3><p>Support that continues after the keys are handed over.</p>
+          <ul><li>Defects-liability period</li><li>Planned maintenance</li><li>Fast-response repairs</li></ul></div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span><b>SAMA ALOSTOURA</b> · Building Contracting L.L.C</span><span>03</span></div>
+</section>
+
+<!-- ================= 4. PROCESS ================= -->
+<section class="page">
+  <div class="pad">
+    <div class="eyebrow">How we work</div>
+    <h2>The MBHRE journey,<br><span>handled for you.</span></h2>
+    <div class="steps">
+      <div class="step"><div class="dot">01</div><div><h3>Consultation &amp; Estimate</h3><p>Site visit, review of approved drawings, and a detailed BOQ-based quotation across all trade sections.</p></div></div>
+      <div class="step"><div class="dot">02</div><div><h3>Contract &amp; Mobilisation</h3><p>Contract signed, permits and site setup completed, programme of works shared with the client.</p></div></div>
+      <div class="step"><div class="dot">03</div><div><h3>Stage Construction</h3><p>Foundations, structure, blockwork, MEP and finishes delivered in defined stages with progress reports and photos.</p></div></div>
+      <div class="step hl"><div class="dot">04</div><div><h3>MBHRE Inspection</h3><p>When a stage is complete, the client applies to MBHRE. We prepare the site and documents for the inspector's visit.</p></div></div>
+      <div class="step hl"><div class="dot">05</div><div><h3>Stage Payment Release</h3><p>MBHRE releases the stage percentage. 10% retention is held and tracked against each certificate.</p></div></div>
+      <div class="step"><div class="dot">06</div><div><h3>Handover &amp; Retention Release</h3><p>Snagging, final inspection and key handover — after which the retention is released and aftercare begins.</p></div></div>
+    </div>
+    <div class="note">
+      <div><div class="k">Transparency</div><div class="v">Clients see stage progress and payments received at every step.</div></div>
+      <div><div class="k">Retention tracked</div><div class="v">10% retention logged per stage until final handover.</div></div>
+      <div><div class="k">One point of contact</div><div class="v">A dedicated project manager from start to keys.</div></div>
+    </div>
+  </div>
+  <div class="foot"><span><b>SAMA ALOSTOURA</b> · Building Contracting L.L.C</span><span>04</span></div>
+</section>
+
+<!-- ================= 5. PROJECTS ================= -->
+<section class="page">
+  <div class="pad">
+    <div class="eyebrow">Our projects</div>
+    <h2>Building across <span>Dubai.</span></h2>
+    <div class="proj">
+      <!-- villa icon reused -->
+      <div class="pcard">
+        <div class="art"><span class="tag">Villa</span><svg viewBox="0 0 60 44"><g fill="none" stroke="#0A66BD" stroke-width="1.6"><path d="M6 42V18L30 4l24 14v24"/><path d="M22 42V28h16v14M2 42h56"/></g></svg></div>
+        <div class="body"><h3>Private Villa — Al Khawaneej</h3><div class="meta"><span>Scope <b>New build</b></span><span>Value <b>AED 1,250,000</b></span><span>Client <b>MBHRE</b></span></div>
+          <div class="prog"><div class="track"><div class="fill" style="width:75%"></div></div><span>75%</span></div></div>
+      </div>
+      <div class="pcard">
+        <div class="art"><span class="tag">Villa</span><svg viewBox="0 0 60 44"><g fill="none" stroke="#0A66BD" stroke-width="1.6"><path d="M6 42V18L30 4l24 14v24"/><path d="M22 42V28h16v14M2 42h56"/></g></svg></div>
+        <div class="body"><h3>Private Villa — Mirdif</h3><div class="meta"><span>Scope <b>New build</b></span><span>Value <b>AED 1,450,000</b></span><span>Client <b>MBHRE</b></span></div>
+          <div class="prog"><div class="track"><div class="fill" style="width:30%"></div></div><span>30%</span></div></div>
+      </div>
+      <div class="pcard">
+        <div class="art"><span class="tag">Villa</span><svg viewBox="0 0 60 44"><g fill="none" stroke="#0A66BD" stroke-width="1.6"><path d="M6 42V18L30 4l24 14v24"/><path d="M22 42V28h16v14M2 42h56"/></g></svg></div>
+        <div class="body"><h3>Private Villa — Al Warqa</h3><div class="meta"><span>Scope <b>New build</b></span><span>Value <b>AED 980,000</b></span><span>Client <b>MBHRE</b></span></div>
+          <div class="prog"><div class="track"><div class="fill" style="width:92%"></div></div><span>92%</span></div></div>
+      </div>
+      <div class="pcard">
+        <div class="art"><span class="tag r">Renovation</span><svg viewBox="0 0 60 44"><g fill="none" stroke="#F5A623" stroke-width="1.6"><path d="M10 42V20L30 8l20 12v22M2 42h56"/><path d="M24 30l6-6 6 6M30 24v14"/></g></svg></div>
+        <div class="body"><h3>Villa Renovation — Nad Al Sheba</h3><div class="meta"><span>Scope <b>Renovation</b></span><span>Value <b>AED 320,000</b></span><span>Client <b>MBHRE</b></span></div>
+          <div class="prog"><div class="track"><div class="fill" style="width:15%"></div></div><span>15%</span></div></div>
+      </div>
+      <div class="pcard">
+        <div class="art"><span class="tag r">Renovation</span><svg viewBox="0 0 60 44"><g fill="none" stroke="#F5A623" stroke-width="1.6"><path d="M10 42V20L30 8l20 12v22M2 42h56"/><path d="M24 30l6-6 6 6M30 24v14"/></g></svg></div>
+        <div class="body"><h3>Villa Renovation — Muhaisnah</h3><div class="meta"><span>Scope <b>Renovation</b></span><span>Value <b>AED 285,000</b></span><span>Status <b>Handed over</b></span></div>
+          <div class="prog"><div class="track"><div class="fill done" style="width:100%"></div></div><span>100%</span></div></div>
+      </div>
+    </div>
+    <div class="totals"><span class="k">Combined contract value</span><span class="v">AED 4,285,000</span></div>
+  </div>
+  <div class="foot"><span><b>SAMA ALOSTOURA</b> · Building Contracting L.L.C</span><span>05</span></div>
+</section>
+
+<!-- ================= 6. WHY US ================= -->
+<section class="page">
+  <div class="pad">
+    <div class="eyebrow">Why Sama Alostoura</div>
+    <h2>Why families <span>choose&nbsp;us.</span></h2>
+    <div class="why">
+      <div><div class="num">01</div><h3>Residential specialists</h3><p>Villas and renovations are our core business — not a side line between commercial jobs.</p></div>
+      <div><div class="num">02</div><h3>MBHRE experience</h3><p>We know the stage requirements, inspection standards and documentation the programme expects.</p></div>
+      <div><div class="num">03</div><h3>Clear, honest pricing</h3><p>Detailed BOQ estimates across every trade section, so clients know exactly what they are paying for.</p></div>
+      <div><div class="num">04</div><h3>Digital project tracking</h3><p>Our in-house project system logs progress, site reports, documents and payments in real time.</p></div>
+      <div><div class="num">05</div><h3>Skilled, managed workforce</h3><p>Experienced site teams supervised by dedicated engineers and project managers.</p></div>
+      <div><div class="num">06</div><h3>Aftercare commitment</h3><p>Defects-liability support and maintenance services long after handover.</p></div>
+    </div>
+
+    <div class="band">
+      <div><h3>Quality</h3><p>Inspections at every stage, material approvals, and snag-free handover as the standard.</p></div>
+      <div><h3>Health &amp; Safety</h3><p>Safe sites through PPE, toolbox talks and compliance with Dubai Municipality requirements.</p></div>
+      <div><h3>Environment</h3><p>Responsible waste handling, tidy sites, and respect for the neighbours around every project.</p></div>
+    </div>
+  </div>
+  <div class="foot"><span><b>SAMA ALOSTOURA</b> · Building Contracting L.L.C</span><span>06</span></div>
+</section>
+
+<!-- ================= 7. CONTACT ================= -->
+<section class="page contact">
+  <div class="pad">
+    <div class="eyebrow">Get in touch</div>
+    <h2>Let's build your <span>home.</span></h2>
+    <p class="lead">Whether you are starting an MBHRE villa or renovating your family home, our team is ready to visit your site and prepare a detailed estimate.</p>
+    <div class="clist">
+      <div><div class="k">Office</div><div class="v">Dubai, United Arab Emirates</div></div>
+      <div><div class="k">Phone</div><div class="v">+971 __ ___ ____</div></div>
+      <div><div class="k">Email</div><div class="v">info@__________.ae</div></div>
+      <div><div class="k">Website</div><div class="v">www.__________.ae</div></div>
+    </div>
+  </div>
+  <div class="logo-card"><img src="../public/logo.png" alt="Sama Alostoura logo"></div>
+  <div class="foot"><span><b>SAMA ALOSTOURA</b> · Building Contracting L.L.C</span><span>07</span></div>
+</section>
+
+</body>
+</html>
