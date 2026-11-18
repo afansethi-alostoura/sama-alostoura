@@ -109,7 +109,8 @@ export async function POST(req: Request) {
             })
 
           } else if (msg.type === 'audio' || msg.type === 'voice') {
-            await sendReply(from, `🎙️ شکریہ! آپ کا آڈیو پیغام موصول ہو گیا۔\n\nبراہ کرم اپنی اپ ڈیٹ لکھ کر بھیجیں — یا اس لنک کو استعمال کریں جو آپ کو پہلے بھیجا گیا تھا۔\n\n_(Thank you! Please send your update as text or use the link we sent you.)_`)
+            const audioId = (msg as any).audio?.id ?? (msg as any).voice?.id
+            await handleAudioMessage({ mediaId: audioId, from, senderName })
           } else {
             // Silently ignore other message types (stickers, reactions, etc.)
           }
@@ -500,6 +501,125 @@ async function createPR({ material, quantity, projectId, projectName, descriptio
   } catch (err) {
     console.error('[WhatsApp] createPR error:', err)
     return null
+  }
+}
+
+// ─── 4. AUDIO/VOICE messages — transcribe + AI analysis + CEO notify ─────────
+
+async function handleAudioMessage({ mediaId, from, senderName }: { mediaId: string; from: string; senderName: string }) {
+  await sendReply(from, `🎙️ آپ کی آواز موصول ہو گئی — سن رہے ہیں...\n_(Voice received, transcribing...)_`)
+
+  // 1. Download audio from Meta
+  const token = TOKEN()
+  let audioBuffer: Buffer | null = null
+  let mimeType = 'audio/ogg'
+  try {
+    const metaRes = await fetch(`https://graph.facebook.com/v20.0/${mediaId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (metaRes.ok) {
+      const { url, mime_type } = await metaRes.json()
+      mimeType = mime_type ?? mimeType
+      const fileRes = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+      if (fileRes.ok) audioBuffer = Buffer.from(await fileRes.arrayBuffer())
+    }
+  } catch (err) { console.error('[Audio] download error:', err) }
+
+  if (!audioBuffer) {
+    await sendReply(from, `⚠️ آڈیو ڈاؤنلوڈ نہیں ہوا۔ براہ کرم دوبارہ بھیجیں۔\n_(Could not download audio, please resend.)_`)
+    return
+  }
+
+  // 2. Transcribe with OpenAI Whisper
+  let transcript = ''
+  try {
+    const form = new FormData()
+    const ext  = mimeType.includes('ogg') ? 'ogg' : mimeType.includes('mp4') ? 'mp4' : 'mp3'
+    form.append('file', new Blob([audioBuffer], { type: mimeType }), `voice.${ext}`)
+    form.append('model', 'whisper-1')
+    form.append('language', 'ur')
+    const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY ?? ''}` },
+      body: form,
+    })
+    if (whisperRes.ok) {
+      const data = await whisperRes.json() as { text: string }
+      transcript = data.text?.trim() ?? ''
+    }
+  } catch (err) { console.error('[Audio] whisper error:', err) }
+
+  if (!transcript) {
+    await sendReply(from, `⚠️ آواز سمجھ نہیں آئی۔ براہ کرم واضح آواز میں دوبارہ بھیجیں یا ٹیکسٹ لکھیں۔\n_(Could not understand the audio. Please resend clearly or type your update.)_`)
+    return
+  }
+
+  // 3. Find the pending follow-up for this phone number
+  const normalised = from.startsWith('+') ? from : `+${from}`
+  let followup: { id: number; project_name: string; staff_name: string; staff_role: string } | null = null
+  try {
+    const rows = await dbQuery(`
+      SELECT f.id, f.project_name, s.name AS staff_name, s.role AS staff_role
+      FROM staff_followups f
+      JOIN staff_members s ON s.id = f.staff_id
+      WHERE (s.phone = $1 OR s.phone = $2)
+        AND f.status = 'pending'
+      ORDER BY f.sent_at DESC LIMIT 1
+    `, [normalised, from]) as Array<{ id: number; project_name: string; staff_name: string; staff_role: string }>
+    followup = rows[0] ?? null
+  } catch (err) { console.error('[Audio] followup lookup error:', err) }
+
+  // 4. Save transcription as project update response
+  if (followup) {
+    try {
+      await dbQuery(
+        `UPDATE staff_followups SET response=$1, responded_at=NOW(), status='responded' WHERE id=$2`,
+        [transcript, followup.id]
+      )
+      await dbQuery(
+        `INSERT INTO staff_activities (staff_id, note, created_by)
+         SELECT s.id, $1, $2 FROM staff_members s WHERE s.phone = $3 OR s.phone = $4 LIMIT 1`,
+        [`🎙️ Voice update for ${followup.project_name}: "${transcript.slice(0, 150)}"`, 'AI System', normalised, from]
+      )
+    } catch (err) { console.error('[Audio] save response error:', err) }
+  }
+
+  // 5. AI analysis — understand the update + generate advice in Roman Urdu
+  const projectContext = followup ? `Project: ${followup.project_name}` : 'Project: (unknown)'
+  const aiPrompt = `You are an AI construction manager assistant for Sama Alostoura Building Contracting LLC, Dubai.
+
+${projectContext}
+Staff: ${senderName} (${followup?.staff_role ?? 'site staff'})
+Voice Update (transcribed from Urdu): "${transcript}"
+
+Analyze this update and:
+1. Identify the key progress points
+2. Spot any issues or blockers mentioned
+3. Give brief practical advice or next steps
+
+Reply in TWO parts:
+REPLY_TO_STAFF: (Roman Urdu, 3-4 sentences max, friendly, acknowledge what they said, give practical advice or confirm next steps. Example style: "Shukriya bhai! Aap ne achi progress ki. Kal foundation ka kaam shuru karen aur safety officer ko site pe rakhein.")
+CEO_SUMMARY: (English, 2 sentences for the CEO. What was reported and any issues.)`
+
+  let replyToStaff = `Shukriya ${senderName.split(' ')[0]} bhai! Aap ki update mil gayi. Acha kaam jari rakhen. Kal bhi update karein.`
+  let ceoSummary   = `${senderName} reported on ${followup?.project_name ?? 'project'}: "${transcript.slice(0, 150)}"`
+
+  try {
+    const aiResult = await generate(aiPrompt, undefined, 400)
+    const staffMatch = aiResult.match(/REPLY_TO_STAFF:\s*(.+?)(?=CEO_SUMMARY:|$)/s)
+    const ceoMatch   = aiResult.match(/CEO_SUMMARY:\s*(.+?)$/s)
+    if (staffMatch?.[1]) replyToStaff = staffMatch[1].trim()
+    if (ceoMatch?.[1])   ceoSummary   = ceoMatch[1].trim()
+  } catch (err) { console.error('[Audio] AI analysis error:', err) }
+
+  // 6. Reply to the engineer in Roman Urdu
+  await sendReply(from, `✅ *آپ کی اپ ڈیٹ محفوظ ہو گئی*\n\n${replyToStaff}`)
+
+  // 7. Notify CEO
+  const ceoPhone = (process.env.ADMIN_WHATSAPP ?? '').replace(/^\+/, '')
+  if (ceoPhone && ceoPhone !== from) {
+    const ceoMsg = `📊 *Staff Update Received*\n👤 ${senderName} — ${followup?.staff_role ?? 'Staff'}\n🏗️ ${followup?.project_name ?? 'Project'}\n\n🎙️ *Transcript:* "${transcript}"\n\n💡 *AI Summary:* ${ceoSummary}`
+    await sendReply(ceoPhone, ceoMsg)
   }
 }
 
