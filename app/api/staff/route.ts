@@ -8,9 +8,10 @@ const SEED_STAFF = [
   { name: 'General Manager',      role: 'General Manager',          department: 'Management',               avatar_color: '#1d4ed8', sort_order: 2  },
   { name: 'Project Manager',      role: 'Project Manager',          department: 'Engineering & Site',       avatar_color: '#15803d', sort_order: 3  },
   { name: 'Site Engineer',        role: 'Site Engineer',            department: 'Engineering & Site',       avatar_color: '#16a34a', sort_order: 4  },
-  { name: 'MEP Engineer',         role: 'MEP Engineer',             department: 'Engineering & Site',       avatar_color: '#0d9488', sort_order: 5  },
-  { name: 'Safety Officer',       role: 'Safety Officer (HSE)',     department: 'Engineering & Site',       avatar_color: '#dc2626', sort_order: 6  },
-  { name: 'Foreman',              role: 'Foreman / Site Supervisor', department: 'Engineering & Site',      avatar_color: '#65a30d', sort_order: 7  },
+  { name: 'Civil Engineer',        role: 'Civil Engineer',           department: 'Engineering & Site',       avatar_color: '#0891b2', sort_order: 5  },
+  { name: 'MEP Engineer',         role: 'MEP Engineer',             department: 'Engineering & Site',       avatar_color: '#0d9488', sort_order: 6  },
+  { name: 'Safety Officer',       role: 'Safety Officer (HSE)',     department: 'Engineering & Site',       avatar_color: '#dc2626', sort_order: 7  },
+  { name: 'Foreman',              role: 'Foreman / Site Supervisor', department: 'Engineering & Site',      avatar_color: '#65a30d', sort_order: 8  },
   { name: 'Quantity Surveyor',    role: 'Quantity Surveyor (QS)',   department: 'Commercial & Procurement', avatar_color: '#b45309', sort_order: 8  },
   { name: 'Procurement Officer',  role: 'Procurement Officer',      department: 'Commercial & Procurement', avatar_color: '#d97706', sort_order: 9  },
   { name: 'Estimator',            role: 'Estimator',                department: 'Commercial & Procurement', avatar_color: '#ca8a04', sort_order: 10 },
@@ -56,17 +57,14 @@ async function ensureTables() {
     )
   `)
 
-  // Seed if empty
-  const existing = await query(`SELECT COUNT(*) as cnt FROM staff_members`)
-  const count = parseInt((existing[0] as { cnt: string }).cnt)
-  if (count === 0) {
-    for (const s of SEED_STAFF) {
-      await query(
-        `INSERT INTO staff_members (name, role, department, avatar_color, sort_order)
-         VALUES ($1,$2,$3,$4,$5)`,
-        [s.name, s.role, s.department, s.avatar_color, s.sort_order]
-      )
-    }
+  // Insert any missing seed roles (safe to run repeatedly)
+  for (const s of SEED_STAFF) {
+    await query(
+      `INSERT INTO staff_members (name, role, department, avatar_color, sort_order)
+       SELECT $1,$2,$3,$4,$5
+       WHERE NOT EXISTS (SELECT 1 FROM staff_members WHERE role=$2)`,
+      [s.name, s.role, s.department, s.avatar_color, s.sort_order]
+    )
   }
 }
 
