@@ -108,9 +108,10 @@ export async function POST(req: Request) {
               from, senderName,
             })
 
+          } else if (msg.type === 'audio' || msg.type === 'voice') {
+            await sendReply(from, `🎙️ شکریہ! آپ کا آڈیو پیغام موصول ہو گیا۔\n\nبراہ کرم اپنی اپ ڈیٹ لکھ کر بھیجیں — یا اس لنک کو استعمال کریں جو آپ کو پہلے بھیجا گیا تھا۔\n\n_(Thank you! Please send your update as text or use the link we sent you.)_`)
           } else {
-            // Debug: reply with whatever type was received
-            await sendReply(from, `[Debug] Received message type: ${msg.type}`)
+            // Silently ignore other message types (stickers, reactions, etc.)
           }
         } catch (err) {
           console.error('[WhatsApp] handler error:', err)
