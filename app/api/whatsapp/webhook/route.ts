@@ -615,7 +615,26 @@ CEO_SUMMARY: (English, 2 sentences for the CEO. What was reported and any issues
   // 6. Reply to the engineer in Roman Urdu
   await sendReply(from, `✅ *آپ کی اپ ڈیٹ محفوظ ہو گئی*\n\n${replyToStaff}`)
 
-  // 7. Notify CEO
+  // 7. Run AI Dispatcher — split update into per-department tasks
+  if (followup) {
+    try {
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL
+        ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://sama-alostoura.vercel.app')
+      await fetch(`${appUrl}/api/whatsapp/dispatch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transcript,
+          projectName:   followup.project_name,
+          reporterName:  senderName,
+          reporterPhone: from,
+          reporterRole:  followup.staff_role,
+        }),
+      })
+    } catch (err) { console.error('[Audio] dispatcher error:', err) }
+  }
+
+  // 8. Notify CEO
   const ceoPhone = (process.env.ADMIN_WHATSAPP ?? '').replace(/^\+/, '')
   if (ceoPhone && ceoPhone !== from) {
     const ceoMsg = `📊 *Staff Update Received*\n👤 ${senderName} — ${followup?.staff_role ?? 'Staff'}\n🏗️ ${followup?.project_name ?? 'Project'}\n\n🎙️ *Transcript:* "${transcript}"\n\n💡 *AI Summary:* ${ceoSummary}`

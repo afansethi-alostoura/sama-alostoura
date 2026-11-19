@@ -88,18 +88,53 @@ async function sendWhatsAppAudio(to: string, mediaId: string) {
 
 interface UrduMessage { arabic: string; roman: string }
 
-async function buildUrduMessage(staffName: string, role: string, projectName: string): Promise<UrduMessage> {
+// Department-specific questions in Roman Urdu and Arabic script
+const DEPT_QUESTIONS: Record<string, { roman: string; arabic: string }> = {
+  'Civil': {
+    roman:  'Aaj concrete pouring ya shuttering ka kya status hai? Foundation ya slab inspection schedule hai?',
+    arabic: 'آج کنکریٹ پورنگ یا شٹرنگ کا کیا حال ہے؟ فاؤنڈیشن یا سلیب انسپکشن کا شیڈول کیا ہے؟',
+  },
+  'MEP': {
+    roman:  'Plumbing pressure test complete hua? Ducting installation aur drainage check ka kya update hai?',
+    arabic: 'پلمبنگ پریشر ٹیسٹ مکمل ہوا؟ ڈکٹنگ انسٹالیشن اور ڈرینج چیک کا کیا اپ ڈیٹ ہے؟',
+  },
+  'Electrical': {
+    roman:  'DB board installation aur cable pulling ka kya status hai? Earthing test complete hua?',
+    arabic: 'ڈی بی بورڈ انسٹالیشن اور کیبل پلنگ کا کیا حال ہے؟ ارتھنگ ٹیسٹ مکمل ہوا؟',
+  },
+  'Steel': {
+    roman:  'Rebar binding aur steel diameter check ka kya update hai? Weld inspection schedule hai?',
+    arabic: 'ری بار بائنڈنگ اور اسٹیل ڈائیامیٹر چیک کا کیا اپ ڈیٹ ہے؟ ویلڈ انسپکشن کا شیڈول کیا ہے؟',
+  },
+  'HSE': {
+    roman:  'Aaj PPE compliance kaisi rahi? Koi safety incident ya near miss tha? Safety toolbox talk hua?',
+    arabic: 'آج پی پی ای کمپلائنس کیسی رہی؟ کوئی سیفٹی واقعہ تھا؟ سیفٹی ٹول باکس ٹاک ہوا؟',
+  },
+  'Finishing': {
+    roman:  'Plastering, tiling ya painting ka kya status hai? DM inspection ke liye koi area ready hai?',
+    arabic: 'پلاسٹرنگ، ٹائلنگ یا پینٹنگ کا کیا حال ہے؟ ڈی ایم انسپکشن کے لیے کوئی حصہ تیار ہے؟',
+  },
+}
+
+function getDeptQuestions(department?: string): { roman: string; arabic: string } {
+  if (!department) return { roman: 'Koi masla toh nahi? Kal ka kya plan hai?', arabic: 'کوئی مسئلہ؟ کل کا پلان؟' }
+  const key = Object.keys(DEPT_QUESTIONS).find(k => department.toLowerCase().includes(k.toLowerCase()))
+  return DEPT_QUESTIONS[key ?? ''] ?? { roman: 'Koi masla toh nahi? Kal ka kya plan hai?', arabic: 'کوئی مسئلہ؟ کل کا پلان؟' }
+}
+
+async function buildUrduMessage(staffName: string, role: string, projectName: string, department?: string): Promise<UrduMessage> {
   const firstName = staffName.split(' ')[0]
+  const deptQ     = getDeptQuestions(department ?? role)
   const prompt = `You are writing a daily WhatsApp follow-up for a UAE construction company (Sama Alostoura).
 
-Recipient: ${firstName} (${role})
+Recipient: ${firstName} (${role}${department ? `, ${department} Dept` : ''})
 Project: ${projectName}
 
 Write TWO versions of the same short friendly message (4-5 sentences):
 
-VERSION 1 - ARABIC_SCRIPT: Write in Urdu Arabic script (اردو). Greet with السلام علیکم, ask about today's progress on "${projectName}", ask about any issues, ask what's planned for tomorrow. End with شکریہ - Sama Alostoura Management
+VERSION 1 - ARABIC_SCRIPT: Write in Urdu Arabic script (اردو). Greet with السلام علیکم, ask about today's progress on "${projectName}", then ask: "${deptQ.arabic}". End with شکریہ - Sama Alostoura Management
 
-VERSION 2 - ROMAN_URDU: Write the EXACT same message but in Roman Urdu (Urdu words spelled in English letters, as spoken in Pakistan/UAE). Example style: "Assalam o Alaikum ${firstName} bhai! Sama Alostoura ki taraf se aap ko good morning. Aaj ${projectName} project ka kya update hai? Koi masla toh nahi? Kal ka kya plan hai? Shukriya - Sama Alostoura Management"
+VERSION 2 - ROMAN_URDU: Write the EXACT same message but in Roman Urdu (Urdu words spelled in English letters, as spoken in Pakistan/UAE). Include this question: "${deptQ.roman}". Example style: "Assalam o Alaikum ${firstName} bhai! Sama Alostoura ki taraf se aap ko good morning. Aaj ${projectName} ka kya update hai? ${deptQ.roman} Shukriya - Sama Alostoura Management"
 
 Respond in this EXACT format with no extra text:
 ARABIC_SCRIPT: <arabic urdu text here>
@@ -213,7 +248,7 @@ async function runFollowup() {
     ?? (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://sama-alostoura.vercel.app')
 
   const staff = await query(`
-    SELECT * FROM staff_members
+    SELECT id, name, role, department, phone FROM staff_members
     WHERE status = 'active' AND phone IS NOT NULL AND phone != ''
     AND role = ANY($1)
   `, [FOLLOWUP_ROLES]) as Array<{
@@ -241,8 +276,8 @@ async function runFollowup() {
         [member.id, project.name, token]
       )
 
-      // Generate Urdu message (arabic script for text, roman urdu for voice)
-      const urduMsg = await buildUrduMessage(member.name, member.role, project.name)
+      // Generate Urdu message with department-specific questions
+      const urduMsg = await buildUrduMessage(member.name, member.role, project.name, member.department)
 
       let voiceStatus = 'skipped'
 

@@ -21,6 +21,7 @@ const PUBLIC_PATHS = new Set([
   '/api/quickbooks/sync',
   '/api/projects/sync-all',
   '/api/whatsapp/webhook',
+  '/api/whatsapp/dispatch',
   '/api/test-ai',
   '/api/staff/daily-followup',
 ])
